@@ -12,9 +12,18 @@ export const githubRouter = Router();
 githubRouter.get('/oauth/url', authMiddleware, (req: AuthRequest, res: Response): void => {
   const clientId = config.githubClientId || 'Ov23li1zsUXHPz3jSsYD';
   const returnUrl = (req.query.returnUrl as string) || '/onboarding';
+
+  // Determine frontend client origin dynamically from request headers
+  let origin = config.clientUrl;
+  const reqOrigin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+  if (reqOrigin && (reqOrigin.includes('vercel.app') || reqOrigin.includes('swaplyone.in') || reqOrigin.includes('localhost'))) {
+    origin = reqOrigin;
+  }
+
   const stateObj = {
     userId: req.user!.id,
     returnUrl,
+    origin,
     timestamp: Date.now(),
     nonce: Math.random().toString(36).substring(2, 15)
   };
@@ -29,12 +38,16 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
 
   let returnUrl = '/onboarding';
   let userId: string | null = null;
+  let clientOrigin = config.clientUrl;
 
   if (state && typeof state === 'string') {
     try {
       const decoded = JSON.parse(Buffer.from(decodeURIComponent(state), 'base64').toString('utf-8'));
       if (decoded.userId) userId = decoded.userId;
       if (decoded.returnUrl) returnUrl = decoded.returnUrl;
+      if (decoded.origin && (decoded.origin.includes('vercel.app') || decoded.origin.includes('swaplyone.in') || decoded.origin.includes('localhost'))) {
+        clientOrigin = decoded.origin;
+      }
     } catch (err) {
       console.warn('Failed to decode OAuth state:', err);
     }
@@ -43,13 +56,13 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
   if (error) {
     console.warn(`[GITHUB OAUTH] User cancelled or error: ${error} - ${error_description}`);
     const sep = returnUrl.includes('?') ? '&' : '?';
-    res.redirect(`${config.clientUrl}${returnUrl}${sep}error=${encodeURIComponent(String(error))}`);
+    res.redirect(`${clientOrigin}${returnUrl}${sep}error=${encodeURIComponent(String(error))}`);
     return;
   }
 
   if (!code || !userId) {
     const sep = returnUrl.includes('?') ? '&' : '?';
-    res.redirect(`${config.clientUrl}${returnUrl}${sep}error=invalid_oauth_session`);
+    res.redirect(`${clientOrigin}${returnUrl}${sep}error=invalid_oauth_session`);
     return;
   }
 
@@ -74,7 +87,7 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
     if (!accessToken) {
       console.error('[GITHUB OAUTH] Token exchange failed:', tokenData);
       const sep = returnUrl.includes('?') ? '&' : '?';
-      res.redirect(`${config.clientUrl}${returnUrl}${sep}error=token_exchange_failed`);
+      res.redirect(`${clientOrigin}${returnUrl}${sep}error=token_exchange_failed`);
       return;
     }
 
@@ -88,7 +101,7 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
 
     if (!userRes.ok) {
       const sep = returnUrl.includes('?') ? '&' : '?';
-      res.redirect(`${config.clientUrl}${returnUrl}${sep}error=profile_fetch_failed`);
+      res.redirect(`${clientOrigin}${returnUrl}${sep}error=profile_fetch_failed`);
       return;
     }
 
@@ -111,11 +124,11 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
     `, [uuidv4(), userId, String(ghUser.id || 'gh_oauth'), username, avatarUrl, accessToken]);
 
     const sep = returnUrl.includes('?') ? '&' : '?';
-    res.redirect(`${config.clientUrl}${returnUrl}${sep}github=connected`);
+    res.redirect(`${clientOrigin}${returnUrl}${sep}github=connected`);
   } catch (error: any) {
     console.error('[GITHUB OAUTH ERROR]', error);
     const sep = returnUrl.includes('?') ? '&' : '?';
-    res.redirect(`${config.clientUrl}${returnUrl}${sep}error=oauth_internal_error`);
+    res.redirect(`${clientOrigin}${returnUrl}${sep}error=oauth_internal_error`);
   }
 });
 
