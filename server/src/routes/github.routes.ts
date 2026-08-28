@@ -118,8 +118,9 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
       WHERE id = ?
     `, [username, avatarUrl, userId]);
 
+    await runQuery('DELETE FROM github_accounts WHERE user_id = ? OR github_id = ?', [userId, String(ghUser.id || 'gh_oauth')]);
     await runQuery(`
-      INSERT OR REPLACE INTO github_accounts (id, user_id, github_id, username, avatar_url, access_token, connected_at)
+      INSERT INTO github_accounts (id, user_id, github_id, username, avatar_url, access_token, connected_at)
       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
     `, [uuidv4(), userId, String(ghUser.id || 'gh_oauth'), username, avatarUrl, accessToken]);
 

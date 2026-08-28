@@ -221,9 +221,11 @@ async function initPgSchema(pool: pg.Pool) {
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
       message TEXT NOT NULL,
       type TEXT DEFAULT 'INFO',
+      read INTEGER DEFAULT 0,
       is_read INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -231,6 +233,10 @@ async function initPgSchema(pool: pg.Pool) {
 
   try {
     await pool.query(schemaSql);
+    // Auto-migrate any missing columns on existing Supabase tables
+    await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`);
+    await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read INTEGER DEFAULT 0;`);
+    await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read INTEGER DEFAULT 0;`);
     console.log('[DATABASE] ✓ Supabase PostgreSQL schema initialized successfully.');
   } catch (err: any) {
     console.warn('[DATABASE SCHEMA NOTICE]', err.message);
