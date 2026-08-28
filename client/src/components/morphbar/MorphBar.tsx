@@ -170,7 +170,7 @@ export const MorphBar: React.FC = () => {
 
   return (
     <div
-      className={`fixed left-1/2 -translate-x-1/2 z-50 select-none transform-gpu transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+      className={`fixed left-1/2 -translate-x-1/2 z-[9999] select-none transform-gpu transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
         isCenter ? 'top-[44vh] -translate-y-1/2' : 'top-2.5 sm:top-3.5 translate-y-0'
       }`}
     >

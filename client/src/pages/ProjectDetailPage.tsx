@@ -25,6 +25,7 @@ import { TaskDetailModal } from '../components/tasks/TaskDetailModal';
 import { CodeRecoveryModal } from '../components/recovery/CodeRecoveryModal';
 import { GitHistoryModal } from '../components/github/GitHistoryModal';
 import { DevelopmentEvidenceBadge } from '../components/tasks/DevelopmentEvidenceBadge';
+import { fetchJson } from '../utils/api';
 
 export const ProjectDetailPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -61,11 +62,8 @@ export const ProjectDetailPage: React.FC = () => {
     if (!projectId || !token) return;
     try {
       setLoading(true);
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const { ok, data } = await fetchJson(`/api/projects/${encodeURIComponent(projectId)}`);
+      if (ok && data?.project) {
         setProject(data.project);
         setTodos(data.todos || []);
         if (data.project.default_branch) {
@@ -74,12 +72,9 @@ export const ProjectDetailPage: React.FC = () => {
 
         // Fetch Git commits for the project's repository
         if (data.project.github_repo_name) {
-          const gitRes = await fetch(`/api/github/history?repo=${encodeURIComponent(data.project.github_repo_name)}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (gitRes.ok) {
-            const gitData = await gitRes.json();
-            setCommits(gitData.commits || []);
+          const { ok: gitOk, data: gitData } = await fetchJson(`/api/github/history?repo=${encodeURIComponent(data.project.github_repo_name)}`);
+          if (gitOk) {
+            setCommits(gitData?.commits || []);
           }
         }
       }
@@ -105,12 +100,8 @@ export const ProjectDetailPage: React.FC = () => {
     if (!token) return;
 
     try {
-      await fetch(`/api/tasks/${task.id}`, {
+      await fetchJson(`/api/tasks/${task.id}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({ status: newStatus, user_status: newUserStatus })
       });
       triggerEInkRefresh();
@@ -126,12 +117,8 @@ export const ProjectDetailPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/tasks', {
+      const { ok } = await fetchJson('/api/tasks', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({
           projectId: project.id,
           title: newTodoTitle.trim(),
@@ -144,7 +131,7 @@ export const ProjectDetailPage: React.FC = () => {
         })
       });
 
-      if (res.ok) {
+      if (ok) {
         setNewTodoTitle('');
         setNewTodoDescription('');
         setIsAddTodoOpen(false);
@@ -166,24 +153,19 @@ export const ProjectDetailPage: React.FC = () => {
     setMemberError(null);
     setMemberSuccess(null);
     try {
-      const res = await fetch(`/api/projects/${project.id}/members`, {
+      const { ok, data } = await fetchJson(`/api/projects/${project.id}/members`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({ shioriId: memberShioriId.trim() })
       });
 
-      const data = await res.json();
-      if (res.ok) {
-        setMemberSuccess(data.message || 'Member added successfully.');
+      if (ok) {
+        setMemberSuccess(data?.message || 'Member added successfully.');
         setMemberShioriId('');
         triggerEInkRefresh();
         fetchProjectData();
         setTimeout(() => setIsAddMemberOpen(false), 1500);
       } else {
-        setMemberError(data.error || 'Failed to add member.');
+        setMemberError(data?.error || 'Failed to add member.');
       }
     } catch (err) {
       setMemberError('Failed to add member. Please try again.');

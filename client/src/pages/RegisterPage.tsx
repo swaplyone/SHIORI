@@ -67,7 +67,7 @@ export const RegisterPage: React.FC = () => {
 
       if (ok && data?.token && data?.user) {
         login(data.token, data.user);
-        navigate('/home');
+        navigate('/onboarding');
       } else {
         setError(data?.error || 'Incorrect or expired verification code.');
       }

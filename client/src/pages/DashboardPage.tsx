@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { fetchJson } from '../utils/api';
 
 export const DashboardPage: React.FC = () => {
   const { token, user } = useAuth();
@@ -33,18 +34,16 @@ export const DashboardPage: React.FC = () => {
     try {
       setLoading(true);
       const [projRes, repoRes] = await Promise.all([
-        fetch('/api/projects', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/github/available-repositories', { headers: { Authorization: `Bearer ${token}` } })
+        fetchJson('/api/projects'),
+        fetchJson('/api/github/available-repositories')
       ]);
 
       if (projRes.ok) {
-        const projData = await projRes.json();
-        setProjects(projData.projects || []);
+        setProjects(projRes.data?.projects || []);
       }
 
       if (repoRes.ok) {
-        const repoData = await repoRes.json();
-        const repos = repoData.repositories || [];
+        const repos = repoRes.data?.repositories || [];
         setAvailableRepos(repos);
         if (repos.length > 0) {
           setSelectedRepoName(repos[0].name);
@@ -71,19 +70,15 @@ export const DashboardPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/projects', {
+      const { ok } = await fetchJson('/api/projects', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({
           repositoryName: selectedRepoName,
           defaultBranch: 'main'
         })
       });
 
-      if (res.ok) {
+      if (ok) {
         setIsAddProjectOpen(false);
         triggerEInkRefresh();
         fetchHomeData();
