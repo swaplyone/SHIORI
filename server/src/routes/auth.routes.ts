@@ -318,3 +318,33 @@ authRouter.patch('/profile', authMiddleware, async (req: AuthRequest, res: Respo
   const user = await queryOne('SELECT id, shiori_id, email, username, name, bio, avatar_url, theme, points, github_connected, github_username FROM users WHERE id = ?', [req.user!.id]);
   res.json({ user });
 });
+
+// 7. Delete User Account Permanently
+authRouter.delete('/account', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+
+  try {
+    // Clean up all user associated data
+    await runQuery('DELETE FROM tasks WHERE created_by = ? OR assignee_id = ?', [userId, userId]);
+    await runQuery('DELETE FROM project_members WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM projects WHERE created_by = ?', [userId]);
+    await runQuery('DELETE FROM workspace_members WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM workspaces WHERE creator_id = ?', [userId]);
+    await runQuery('DELETE FROM user_repositories WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM github_accounts WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM connections WHERE user_a_id = ? OR user_b_id = ?', [userId, userId]);
+    await runQuery('DELETE FROM connection_requests WHERE sender_id = ? OR receiver_id = ?', [userId, userId]);
+    await runQuery('DELETE FROM connection_verification_sessions WHERE user_a_id = ? OR user_b_id = ?', [userId, userId]);
+    await runQuery('DELETE FROM notifications WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM user_settings WHERE user_id = ?', [userId]);
+
+    // Delete user record
+    await runQuery('DELETE FROM users WHERE id = ?', [userId]);
+
+    res.json({ success: true, message: 'Your SHIORI account has been permanently deleted.' });
+  } catch (error: any) {
+    console.error('[DELETE ACCOUNT ERROR]', error);
+    res.status(500).json({ error: 'Failed to delete account. Please try again.' });
+  }
+});
+

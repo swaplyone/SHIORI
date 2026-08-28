@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { Settings, Moon, Sun, Monitor, Shield, Bell, Github, Smartphone, Lock, User } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Settings, Moon, Sun, Monitor, Shield, Bell, Github, Smartphone, Lock, User, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { EInkTheme } from '../types';
+import { fetchJson } from '../utils/api';
 
 export const SettingsPage: React.FC = () => {
-  const { user, settings, setTheme, updateSettings, token } = useAuth();
+  const { user, settings, setTheme, updateSettings, token, logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'appearance' | 'privacy' | 'notifications' | 'account' | 'pwa'>('appearance');
 
   const [name, setName] = useState(user?.name || 'Lijith');
@@ -13,6 +16,28 @@ export const SettingsPage: React.FC = () => {
   const [privacyGithub, setPrivacyGithub] = useState(settings?.privacy_github || 'workspace');
   const [privacyStats, setPrivacyStats] = useState(settings?.privacy_stats || 'private');
   const [savedNotice, setSavedNotice] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    try {
+      const { ok } = await fetchJson('/api/auth/account', {
+        method: 'DELETE'
+      });
+
+      if (ok) {
+        logout();
+        navigate('/register');
+      } else {
+        alert('Failed to delete account. Please try again.');
+      }
+    } catch (err) {
+      console.error('Failed to delete account:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleSaveSettings = async () => {
     if (!token) return;
@@ -310,6 +335,54 @@ export const SettingsPage: React.FC = () => {
                 UPDATE PROFILE
               </button>
             </div>
+          </div>
+
+          {/* DANGER ZONE: DELETE ACCOUNT */}
+          <div className="p-6 bg-eink-surface border-2 border-red-500/60 rounded-sm space-y-4">
+            <div className="flex items-center gap-2 text-red-600">
+              <span className="font-bold text-sm uppercase tracking-wider">DANGER ZONE</span>
+            </div>
+
+            <div className="space-y-1">
+              <h4 className="font-bold text-xs text-eink-text uppercase">PERMANENTLY DELETE ACCOUNT</h4>
+              <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
+                Permanently delete your SHIORI developer profile, your connected workspaces, tasks, repository bindings, and collaborator sessions. This action is irreversible.
+              </p>
+            </div>
+
+            {showDeleteConfirm ? (
+              <div className="p-4 bg-eink-bg border border-red-500/50 rounded-sm space-y-3 animate-fade-in">
+                <p className="text-xs font-bold text-red-600">
+                  Are you absolutely sure? All your workspaces, projects, and task records will be permanently removed.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={isDeleting}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-sm transition-colors shadow-sm"
+                  >
+                    {isDeleting ? 'DELETING ACCOUNT...' : 'YES, PERMANENTLY DELETE MY ACCOUNT'}
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={isDeleting}
+                    className="px-3 py-2 border border-eink-border text-eink-text hover:bg-eink-surface text-xs font-bold rounded-sm transition-colors"
+                  >
+                    CANCEL
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-4 py-2 border-2 border-red-500/60 text-red-600 hover:bg-red-500 hover:text-white font-bold text-xs rounded-sm transition-colors"
+                >
+                  DELETE ACCOUNT
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
