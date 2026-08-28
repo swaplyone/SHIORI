@@ -7,9 +7,9 @@ import { emitToWorkspace, emitToTask } from '../services/socket.service.js';
 
 export const tasksRouter = Router();
 
-// GET all tasks (filtered by workspace, project, status, search)
+// GET all tasks (filtered by workspace, project, status, search, repo)
 tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { workspaceId, projectId, status, search } = req.query;
+  const { workspaceId, projectId, status, search, repo } = req.query;
 
   let sql = `
     SELECT t.*, 
@@ -21,9 +21,13 @@ tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Pr
     FROM tasks t
     LEFT JOIN projects p ON t.project_id = p.id
     LEFT JOIN users u ON t.assignee_id = u.id
-    WHERE 1=1
+    WHERE (
+      t.workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = ?)
+      OR t.created_by = ?
+      OR t.assignee_id = ?
+    )
   `;
-  const params: any[] = [];
+  const params: any[] = [req.user!.id, req.user!.id, req.user!.id];
 
   if (workspaceId) {
     sql += ' AND t.workspace_id = ?';
@@ -33,6 +37,11 @@ tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Pr
   if (projectId) {
     sql += ' AND t.project_id = ?';
     params.push(projectId);
+  }
+
+  if (repo) {
+    sql += ' AND (t.github_repo = ? OR p.github_repo_name = ?)';
+    params.push(repo, repo);
   }
 
   if (status) {
