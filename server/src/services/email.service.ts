@@ -49,7 +49,7 @@ function createTransporter() {
     connectionTimeout: 15000,
     greetingTimeout: 15000,
     socketTimeout: 15000,
-  });
+  } as any);
 }
 
 // Startup Diagnostics (Safe, Never logs passwords)
