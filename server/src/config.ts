@@ -15,6 +15,8 @@ for (const envPath of candidateEnvFiles) {
   }
 }
 
+const dbDir = process.env.DATA_DIR || (fs.existsSync('/var/data') ? '/var/data' : process.cwd());
+
 export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
   jwtSecret: process.env.JWT_SECRET || 'shiori-secret-developer-token-key-2026',
@@ -22,5 +24,5 @@ export const config = {
   githubClientId: process.env.GITHUB_CLIENT_ID || 'Ov23li1zsUXHPz3jSsYD',
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET || '91383118cc197d454fe2c9f50caa42edf96c519b',
   githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET || 'shiori_webhook_signature_secret',
-  dbPath: path.resolve(process.cwd(), 'shiori.sqlite'),
+  dbPath: process.env.DB_PATH || path.resolve(dbDir, 'shiori.sqlite'),
 };
