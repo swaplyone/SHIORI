@@ -50,15 +50,24 @@ Do not share this code with anyone.`;
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: {
-        user,
-        pass,
-      },
-    });
+    const isGmail = !host || host.includes('gmail') || (user && (user.includes('gmail.com') || user.includes('swaplyone.in')));
+    const transporter = isGmail
+      ? nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user,
+            pass,
+          },
+        })
+      : nodemailer.createTransport({
+          host,
+          port,
+          secure: port === 465,
+          auth: {
+            user,
+            pass,
+          },
+        });
 
     await transporter.sendMail({
       from: `"SHIORI" <${from}>`,
