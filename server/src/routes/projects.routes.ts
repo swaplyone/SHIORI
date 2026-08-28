@@ -7,20 +7,6 @@ export const projectsRouter = Router();
 
 // GET all projects for the user (owned or member of)
 projectsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  // Ensure default projects exist in database
-  const count = await queryOne('SELECT COUNT(*) as count FROM projects');
-  if (!count || count.count === 0) {
-    const wsId = 'ws-swaplyone-01';
-    await runQuery(`
-      INSERT OR IGNORE INTO projects (id, workspace_id, name, slug, description, status, github_repo_name, default_branch, created_by)
-      VALUES 
-      ('proj-compiler-01', ?, 'SWAPLY COMPILER', 'swaply-one-compiler', 'High-performance AOT bytecode compiler & optimizer', 'ACTIVE', 'swaply-one-compiler', 'main', ?),
-      ('proj-shiori-02', ?, 'SHIORI', 'shiori-web', 'E-ink developer productivity and task tracking PWA', 'ACTIVE', 'shiori-web', 'main', ?),
-      ('proj-website-03', ?, 'PERSONAL WEBSITE', 'personal-website', 'Developer portfolio and technical writings', 'ACTIVE', 'personal-website', 'main', ?)
-    `, [wsId, req.user!.id, wsId, req.user!.id, wsId, req.user!.id]);
-  }
-
-  // Ensure user is member of projects
   const projects = await queryAll(`
     SELECT p.*,
            (SELECT COUNT(*) FROM tasks WHERE project_id = p.id AND status != 'DONE') as active_todos,
@@ -28,24 +14,13 @@ projectsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response):
            (SELECT COUNT(*) FROM tasks WHERE project_id = p.id) as total_tasks,
            (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) as members_count
     FROM projects p
-    ORDER BY p.created_at ASC
-  `);
+    WHERE p.created_by = ? OR p.id IN (SELECT project_id FROM project_members WHERE user_id = ?)
+    ORDER BY p.created_at DESC
+  `, [req.user!.id, req.user!.id]);
 
   // Enrich with members and commit activity
   const enriched = await Promise.all(
     projects.map(async (p) => {
-      // Ensure default members if empty
-      const memCount = await queryOne('SELECT COUNT(*) as count FROM project_members WHERE project_id = ?', [p.id]);
-      if (!memCount || memCount.count === 0) {
-        await runQuery(`
-          INSERT OR IGNORE INTO project_members (id, project_id, user_id, role)
-          VALUES 
-          (?, ?, 'user-lijith-001', 'owner'),
-          (?, ?, 'user-rahul-003', 'member'),
-          (?, ?, 'user-tejas-002', 'member')
-        `, [uuidv4(), p.id, uuidv4(), p.id, uuidv4(), p.id]);
-      }
-
       const members = await queryAll(`
         SELECT u.id, u.name, u.email, u.shiori_id, pm.role, pm.joined_at
         FROM project_members pm
@@ -59,10 +34,10 @@ projectsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response):
 
       return {
         ...p,
-        membersCount: members.length || (p.name === 'SWAPLY COMPILER' ? 3 : p.name === 'SHIORI' ? 2 : 1),
+        membersCount: members.length,
         members,
-        commitsTodayCount: p.github_repo_name === 'swaply-one-compiler' ? 8 : p.github_repo_name === 'shiori-web' ? 5 : 3,
-        lastCommitMessage: lastCommit?.message || 'Fix parser & update docs'
+        commitsTodayCount: 0,
+        lastCommitMessage: lastCommit?.message || 'Workspace repository initialized'
       };
     })
   );
@@ -89,29 +64,12 @@ projectsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Respons
   }
 
   // Get project members
-  let members = await queryAll(`
+  const members = await queryAll(`
     SELECT u.id, u.name, u.email, u.shiori_id, pm.role, pm.joined_at
     FROM project_members pm
     JOIN users u ON pm.user_id = u.id
     WHERE pm.project_id = ?
   `, [project.id]);
-
-  if (members.length === 0) {
-    await runQuery(`
-      INSERT OR IGNORE INTO project_members (id, project_id, user_id, role)
-      VALUES 
-      (?, ?, 'user-lijith-001', 'owner'),
-      (?, ?, 'user-rahul-003', 'member'),
-      (?, ?, 'user-tejas-002', 'member')
-    `, [uuidv4(), project.id, uuidv4(), project.id, uuidv4(), project.id]);
-
-    members = await queryAll(`
-      SELECT u.id, u.name, u.email, u.shiori_id, pm.role, pm.joined_at
-      FROM project_members pm
-      JOIN users u ON pm.user_id = u.id
-      WHERE pm.project_id = ?
-    `, [project.id]);
-  }
 
   // Get project TODOs
   const todos = await queryAll(`
@@ -142,15 +100,25 @@ projectsRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response)
     return;
   }
 
+  // Get user workspace
+  let workspace = await queryOne('SELECT id FROM workspaces WHERE creator_id = ? LIMIT 1', [req.user!.id]);
+  if (!workspace) {
+    const wsId = uuidv4();
+    await runQuery(`
+      INSERT INTO workspaces (id, name, slug, description, creator_id)
+      VALUES (?, 'Personal Workspace', ?, 'My workspace', ?)
+    `, [wsId, `ws-${req.user!.username}`, req.user!.id]);
+    workspace = { id: wsId };
+  }
+
   const name = repositoryName.toUpperCase().replace(/-/g, ' ');
   const slug = repositoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const id = `proj-${slug}-${uuidv4().slice(0, 4)}`;
-  const wsId = 'ws-swaplyone-01';
 
   await runQuery(`
     INSERT INTO projects (id, workspace_id, name, slug, description, status, github_repo_name, github_repo_url, default_branch, created_by)
     VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?)
-  `, [id, wsId, name, slug, description || `GitHub repository project for ${repositoryName}`, repositoryName, `https://github.com/swaplyone/${repositoryName}`, defaultBranch, req.user!.id]);
+  `, [id, workspace.id, name, slug, description || `GitHub repository project for ${repositoryName}`, repositoryName, `https://github.com/${repositoryName}`, defaultBranch, req.user!.id]);
 
   // Add creator as project owner
   await runQuery(`
@@ -160,9 +128,9 @@ projectsRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response)
 
   // Add to user_repositories
   await runQuery(`
-    INSERT OR IGNORE INTO user_repositories (id, user_id, repo_name, full_name, default_branch, is_active)
+    INSERT OR REPLACE INTO user_repositories (id, user_id, repo_name, full_name, default_branch, is_active)
     VALUES (?, ?, ?, ?, ?, 1)
-  `, [uuidv4(), req.user!.id, repositoryName, `swaplyone/${repositoryName}`, defaultBranch]);
+  `, [uuidv4(), req.user!.id, repositoryName, repositoryName, defaultBranch]);
 
   const created = await queryOne('SELECT * FROM projects WHERE id = ?', [id]);
   res.status(201).json({ project: created });

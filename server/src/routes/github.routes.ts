@@ -216,38 +216,173 @@ githubRouter.post('/disconnect', authMiddleware, async (req: AuthRequest, res: R
   res.json({ success: true, connected: false });
 });
 
-// Available GitHub Repositories (All repos available on user's GitHub account)
-const ALL_GITHUB_REPOSITORIES = [
-  { id: 'repo-1', name: 'swaply-one-compiler', full_name: 'swaplyone/swaply-one-compiler', default_branch: 'main', private: true, description: 'AOT Bytecode compiler and diagnostic pipeline' },
-  { id: 'repo-2', name: 'shiori-web', full_name: 'swaplyone/shiori-web', default_branch: 'main', private: false, description: 'E-ink developer productivity and task tracking PWA' },
-  { id: 'repo-3', name: 'personal-website', full_name: 'swaplyone/personal-website', default_branch: 'main', private: false, description: 'Personal developer portfolio and writings' },
-  { id: 'repo-4', name: 'ai-artisan-marketplace', full_name: 'swaplyone/ai-artisan-marketplace', default_branch: 'main', private: false, description: 'AI artisan developer catalog and workflow extensions' },
-  { id: 'repo-5', name: 'college-project', full_name: 'swaplyone/college-project', default_branch: 'main', private: true, description: 'Distributed consensus algorithms research' },
-];
+// GET All accessible GitHub Repositories (Calls GitHub API with user's stored access_token)
+githubRouter.get('/available-repositories', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const ghAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [req.user!.id]);
 
-// GET All accessible GitHub Repositories (for selecting/adding without reconnecting)
-githubRouter.get('/available-repositories', authMiddleware, async (_req: AuthRequest, res: Response): Promise<void> => {
-  res.json({ repositories: ALL_GITHUB_REPOSITORIES });
+  if (!ghAccount || !ghAccount.access_token) {
+    res.json({ connected: false, repositories: [] });
+    return;
+  }
+
+  try {
+    const ghRes = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member', {
+      headers: {
+        Authorization: `Bearer ${ghAccount.access_token}`,
+        'User-Agent': 'SHIORI-App',
+        Accept: 'application/vnd.github.v3+json'
+      }
+    });
+
+    if (!ghRes.ok) {
+      console.error(`[GITHUB API ERROR] Status ${ghRes.status} while fetching repositories.`);
+      res.status(ghRes.status).json({ error: 'Failed to fetch repositories from GitHub.', connected: true, repositories: [] });
+      return;
+    }
+
+    const reposData = (await ghRes.json()) as any[];
+    const userProjects = await queryAll('SELECT id, name, github_repo_name FROM projects WHERE created_by = ?', [req.user!.id]);
+
+    const mappedRepos = reposData.map((repo: any) => {
+      const existingProject = userProjects.find(
+        (p: any) => p.github_repo_name === repo.name || p.name.toLowerCase() === repo.name.toLowerCase()
+      );
+
+      return {
+        id: String(repo.id),
+        name: repo.name,
+        fullName: repo.full_name,
+        owner: repo.owner?.login || ghAccount.username,
+        ownerAvatar: repo.owner?.avatar_url || '',
+        description: repo.description || '',
+        isPrivate: Boolean(repo.private),
+        defaultBranch: repo.default_branch || 'main',
+        htmlUrl: repo.html_url,
+        updatedAt: repo.updated_at,
+        starsCount: repo.stargazers_count || 0,
+        language: repo.language || '',
+        isConnected: Boolean(existingProject),
+        projectId: existingProject?.id || null
+      };
+    });
+
+    res.json({
+      connected: true,
+      username: ghAccount.username,
+      repositories: mappedRepos
+    });
+  } catch (error: any) {
+    console.error('[GITHUB REPOS ERROR]', error);
+    res.status(500).json({ error: 'Internal error fetching GitHub repositories.', connected: true, repositories: [] });
+  }
+});
+
+// POST Connect a selected GitHub Repository to SHIORI Workspace
+githubRouter.post('/repositories/connect', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { repoId, repoName, repoFullName, defaultBranch = 'main', isPrivate = false, description = '' } = req.body;
+
+  if (!repoName) {
+    res.status(400).json({ error: 'Repository name is required.' });
+    return;
+  }
+
+  try {
+    // 1. Get or create user's workspace
+    let workspace = await queryOne('SELECT id FROM workspaces WHERE creator_id = ? LIMIT 1', [req.user!.id]);
+    if (!workspace) {
+      const wsId = uuidv4();
+      await runQuery(`
+        INSERT INTO workspaces (id, name, slug, description, creator_id)
+        VALUES (?, 'Personal Workspace', ?, 'My development workspace', ?)
+      `, [wsId, `ws-${req.user!.username}`, req.user!.id]);
+      workspace = { id: wsId };
+    }
+
+    // 2. Check if project already exists for this repository
+    let project = await queryOne('SELECT id, name, github_repo_name FROM projects WHERE workspace_id = ? AND (github_repo_name = ? OR name = ?)', [
+      workspace.id,
+      repoName,
+      repoName
+    ]);
+
+    if (project) {
+      await runQuery(`
+        UPDATE projects SET
+          github_repo_name = ?,
+          default_branch = ?,
+          updated_at = datetime('now')
+        WHERE id = ?
+      `, [repoName, defaultBranch, project.id]);
+    } else {
+      const projId = uuidv4();
+      const slug = repoName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      await runQuery(`
+        INSERT INTO projects (id, workspace_id, name, slug, description, github_repo_name, default_branch, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        projId,
+        workspace.id,
+        repoName,
+        slug,
+        description || `SHIORI project for ${repoFullName || repoName}`,
+        repoName,
+        defaultBranch,
+        req.user!.id
+      ]);
+
+      // Add user as project owner
+      await runQuery(`
+        INSERT OR IGNORE INTO project_members (id, project_id, user_id, role)
+        VALUES (?, ?, ?, 'owner')
+      `, [uuidv4(), projId, req.user!.id]);
+
+      // Create initial task
+      await runQuery(`
+        INSERT INTO tasks (
+          id, task_number, task_code, project_id, workspace_id,
+          title, description, status, priority,
+          github_repo, github_branch, created_by
+        ) VALUES (
+          ?, 1, 'TASK-001', ?, ?,
+          'Initialize repository workspace and review codebase',
+          'Automated kickoff task for ' || ?,
+          'TODO', 'HIGH',
+          ?, ?, ?
+        )
+      `, [uuidv4(), projId, workspace.id, repoName, repoName, defaultBranch, req.user!.id]);
+
+      project = { id: projId, name: repoName, github_repo_name: repoName };
+    }
+
+    // 3. Record in user_repositories
+    await runQuery(`
+      INSERT OR REPLACE INTO user_repositories (id, user_id, repo_name, full_name, default_branch, is_active)
+      VALUES (?, ?, ?, ?, ?, 1)
+    `, [uuidv4(), req.user!.id, repoName, repoFullName || repoName, defaultBranch]);
+
+    res.json({
+      success: true,
+      message: `Repository ${repoName} connected to SHIORI workspace.`,
+      project: {
+        id: project.id,
+        name: project.name,
+        githubRepoName: repoName,
+        defaultBranch
+      },
+      workspaceId: workspace.id
+    });
+  } catch (error: any) {
+    console.error('[CONNECT REPOSITORY ERROR]', error);
+    res.status(500).json({ error: 'Failed to connect repository to workspace.' });
+  }
 });
 
 // GET User's Active SHIORI Repositories with TODO counts & Git activity
 githubRouter.get('/user-repositories', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  // Ensure default repos exist in user_repositories if table was empty
-  const count = await queryOne('SELECT COUNT(*) as count FROM user_repositories WHERE user_id = ?', [req.user!.id]);
-  if (!count || count.count === 0) {
-    await runQuery(`
-      INSERT OR IGNORE INTO user_repositories (id, user_id, repo_name, full_name, default_branch, is_active)
-      VALUES 
-      ('ur-1', ?, 'swaply-one-compiler', 'swaplyone/swaply-one-compiler', 'main', 1),
-      ('ur-2', ?, 'shiori-web', 'swaplyone/shiori-web', 'main', 1),
-      ('ur-3', ?, 'personal-website', 'swaplyone/personal-website', 'main', 1)
-    `, [req.user!.id, req.user!.id, req.user!.id]);
-  }
-
   const userRepos = await queryAll(`
     SELECT * FROM user_repositories 
     WHERE user_id = ? AND is_active = 1
-    ORDER BY created_at ASC
+    ORDER BY created_at DESC
   `, [req.user!.id]);
 
   // Enrich with active TODO counts and recent commit info
@@ -276,9 +411,9 @@ githubRouter.get('/user-repositories', authMiddleware, async (req: AuthRequest, 
         defaultBranch: r.default_branch || 'main',
         activeTodosCount: activeTodos?.count || 0,
         completedTodosCount: completedTodos?.count || 0,
-        commitsTodayCount: r.repo_name === 'swaply-one-compiler' ? 3 : r.repo_name === 'shiori-web' ? 2 : 1,
-        lastCommitMessage: lastCommit?.message || (r.repo_name === 'swaply-one-compiler' ? 'Fix parser AST token bounds' : 'Update README & documentation'),
-        lastCommitHash: lastCommit?.commit_hash || 'a82f31c'
+        commitsTodayCount: 0,
+        lastCommitMessage: lastCommit?.message || 'Initial commit',
+        lastCommitHash: lastCommit?.commit_hash || ''
       };
     })
   );
@@ -288,17 +423,11 @@ githubRouter.get('/user-repositories', authMiddleware, async (req: AuthRequest, 
 
 // POST Toggle / Add Repository to user's SHIORI workspace
 githubRouter.post('/user-repositories/toggle', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { repoName, isEnabled } = req.body;
+  const { repoName, repoFullName, defaultBranch = 'main', isEnabled } = req.body;
   if (!repoName) {
     res.status(400).json({ error: 'repoName is required.' });
     return;
   }
-
-  const repoMeta = ALL_GITHUB_REPOSITORIES.find((r) => r.name === repoName) || {
-    name: repoName,
-    full_name: `swaplyone/${repoName}`,
-    default_branch: 'main'
-  };
 
   const existing = await queryOne('SELECT id, is_active FROM user_repositories WHERE user_id = ? AND repo_name = ?', [req.user!.id, repoName]);
   if (existing) {
@@ -308,7 +437,7 @@ githubRouter.post('/user-repositories/toggle', authMiddleware, async (req: AuthR
     await runQuery(`
       INSERT INTO user_repositories (id, user_id, repo_name, full_name, default_branch, is_active)
       VALUES (?, ?, ?, ?, ?, 1)
-    `, [uuidv4(), req.user!.id, repoMeta.name, repoMeta.full_name, repoMeta.default_branch]);
+    `, [uuidv4(), req.user!.id, repoName, repoFullName || repoName, defaultBranch]);
   }
 
   res.json({ success: true, repoName, isEnabled: isEnabled ?? true });
@@ -321,11 +450,15 @@ githubRouter.delete('/user-repositories/:repoName', authMiddleware, async (req: 
   res.json({ success: true, message: `Repository ${repoName} archived from active view.` });
 });
 
-// List Repositories (Legacy alias)
-githubRouter.get('/repositories', authMiddleware, async (_req: AuthRequest, res: Response): Promise<void> => {
-  res.json({
-    repositories: ALL_GITHUB_REPOSITORIES
-  });
+// List Repositories (Legacy alias redirecting to user-repositories)
+githubRouter.get('/repositories', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const userRepos = await queryAll(`
+    SELECT * FROM user_repositories 
+    WHERE user_id = ? AND is_active = 1
+    ORDER BY created_at DESC
+  `, [req.user!.id]);
+
+  res.json({ repositories: userRepos });
 });
 
 // GET Repository Git History
