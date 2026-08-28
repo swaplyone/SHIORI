@@ -26,8 +26,6 @@ export interface SendEmailResult {
 
 function createTransporter() {
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
-  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
   const user = process.env.SMTP_USER || process.env.SMTP_USERNAME;
   const pass = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
 
@@ -36,12 +34,14 @@ function createTransporter() {
   }
 
   const isGmail = host.includes('gmail') || (user && (user.includes('swaplyone.in') || user.includes('gmail.com')));
+  const targetPort = isGmail ? 465 : (process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 465);
+  const isSecure = isGmail ? true : (targetPort === 465 || process.env.SMTP_SECURE === 'true');
 
   return nodemailer.createTransport({
     host: isGmail ? 'smtp.gmail.com' : host,
-    port: secure ? 465 : port,
-    secure: secure,
-    family: 4, // Force IPv4 to prevent ENETUNREACH on cloud environments like Render
+    port: targetPort,
+    secure: isSecure,
+    family: 4, // Strict IPv4 to avoid ENETUNREACH on cloud environments like Render
     auth: {
       user,
       pass,
