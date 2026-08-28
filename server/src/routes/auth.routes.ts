@@ -324,17 +324,22 @@ authRouter.delete('/account', authMiddleware, async (req: AuthRequest, res: Resp
   const userId = req.user!.id;
 
   try {
-    // Clean up all user associated data
+    // Clean up all user associated data safely
     await runQuery('DELETE FROM tasks WHERE created_by = ? OR assignee_id = ?', [userId, userId]);
+    await runQuery('DELETE FROM task_comments WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM task_activity WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM project_members WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM projects WHERE created_by = ?', [userId]);
+    await runQuery('DELETE FROM workspace_invitations WHERE inviter_id = ? OR invitee_id = ?', [userId, userId]);
+    await runQuery('DELETE FROM workspace_verification_sessions WHERE inviter_id = ? OR invitee_id = ?', [userId, userId]);
     await runQuery('DELETE FROM workspace_members WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM workspaces WHERE creator_id = ?', [userId]);
     await runQuery('DELETE FROM user_repositories WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM github_accounts WHERE user_id = ?', [userId]);
-    await runQuery('DELETE FROM connections WHERE user_a_id = ? OR user_b_id = ?', [userId, userId]);
-    await runQuery('DELETE FROM connection_requests WHERE sender_id = ? OR receiver_id = ?', [userId, userId]);
     await runQuery('DELETE FROM connection_verification_sessions WHERE user_a_id = ? OR user_b_id = ?', [userId, userId]);
+    await runQuery('DELETE FROM connection_requests WHERE sender_id = ? OR recipient_id = ?', [userId, userId]);
+    await runQuery('DELETE FROM connections WHERE user_a_id = ? OR user_b_id = ?', [userId, userId]);
+    await runQuery('DELETE FROM blocks WHERE blocker_id = ? OR blocked_id = ?', [userId, userId]);
     await runQuery('DELETE FROM notifications WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM user_settings WHERE user_id = ?', [userId]);
 
