@@ -29,113 +29,124 @@ function generateShioriId(): string {
 
 // 1. Send Registration OTP to Email
 authRouter.post('/register/send-otp', async (req: Request, res: Response): Promise<void> => {
-  const { email, password, username, name } = req.body;
+  try {
+    const { email, password, username, name } = req.body;
 
-  if (!email || !password || !username || !name) {
-    res.status(400).json({ error: 'All fields (name, email, username, password) are required.' });
-    return;
+    if (!email || !password || !username || !name) {
+      res.status(400).json({ error: 'All fields (name, email, username, password) are required.' });
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanUsername = username.trim().toLowerCase();
+
+    const existing = await queryOne('SELECT id FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [cleanEmail, cleanUsername]);
+    if (existing) {
+      res.status(400).json({ error: 'An account with this email or username already exists.' });
+      return;
+    }
+
+    // Generate 6-digit cryptographic OTP
+    const otp = generateSecureOTP();
+    const otpHash = hashOTP(otp);
+    const passwordHash = await bcrypt.hash(password, 10);
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
+
+    // Store in registration_otps with explicit purpose
+    await runQuery(`
+      INSERT OR REPLACE INTO registration_otps (email, otp_hash, otp_plain, name, username, password_hash, attempts, expires_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, datetime('now'))
+    `, [cleanEmail, otpHash, otp, name.trim(), cleanUsername, passwordHash, expiresAt]);
+
+    // Dispatch real email via SMTP concurrently
+    sendOtpEmail({
+      toEmail: cleanEmail,
+      userName: name.trim(),
+      otp,
+      purpose: 'ACCOUNT_VERIFICATION'
+    }).catch((err) => console.error('[SEND_OTP ERROR]', err));
+
+    res.json({
+      success: true,
+      message: `Verification code sent to ${cleanEmail}.`
+    });
+  } catch (error: any) {
+    console.error('[AUTH /register/send-otp ERROR]', error);
+    res.status(500).json({ error: error.message || 'Internal server error while processing registration.' });
   }
-
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanUsername = username.trim().toLowerCase();
-
-  const existing = await queryOne('SELECT id FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [cleanEmail, cleanUsername]);
-  if (existing) {
-    res.status(400).json({ error: 'An account with this email or username already exists.' });
-    return;
-  }
-
-  // Generate 6-digit cryptographic OTP
-  const otp = generateSecureOTP();
-  const otpHash = hashOTP(otp);
-  const passwordHash = await bcrypt.hash(password, 10);
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
-
-  // Store in registration_otps with explicit purpose
-  await runQuery(`
-    INSERT OR REPLACE INTO registration_otps (email, otp_hash, otp_plain, name, username, password_hash, attempts, expires_at, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 0, ?, datetime('now'))
-  `, [cleanEmail, otpHash, otp, name.trim(), cleanUsername, passwordHash, expiresAt]);
-
-  // Dispatch real email via SMTP concurrently
-  sendOtpEmail({
-    toEmail: cleanEmail,
-    userName: name.trim(),
-    otp,
-    purpose: 'ACCOUNT_VERIFICATION'
-  }).catch((err) => console.error('[SEND_OTP ERROR]', err));
-
-  res.json({
-    success: true,
-    message: `Verification code sent to ${cleanEmail}.`
-  });
 });
 
 // 1b. Resend Account Verification OTP
 authRouter.post('/register/resend-otp', async (req: Request, res: Response): Promise<void> => {
-  const { email } = req.body;
-  if (!email) {
-    res.status(400).json({ error: 'Email is required.' });
-    return;
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).json({ error: 'Email is required.' });
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const pending = await queryOne('SELECT * FROM registration_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+    if (!pending) {
+      res.status(400).json({ error: 'No pending registration found for this email. Please register first.' });
+      return;
+    }
+
+    const otp = generateSecureOTP();
+    const otpHash = hashOTP(otp);
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+    await runQuery(`
+      UPDATE registration_otps
+      SET otp_hash = ?, otp_plain = ?, attempts = 0, expires_at = ?, created_at = datetime('now')
+      WHERE LOWER(email) = LOWER(?)
+    `, [otpHash, otp, expiresAt, cleanEmail]);
+
+    // Dispatch real email via SMTP concurrently
+    sendOtpEmail({
+      toEmail: cleanEmail,
+      userName: pending.name,
+      otp,
+      purpose: 'ACCOUNT_VERIFICATION'
+    }).catch((err) => console.error('[RESEND_OTP ERROR]', err));
+
+    res.json({ success: true, message: `New verification code sent to ${cleanEmail}.` });
+  } catch (error: any) {
+    console.error('[AUTH /register/resend-otp ERROR]', error);
+    res.status(500).json({ error: error.message || 'Failed to resend verification code.' });
   }
-
-  const cleanEmail = email.trim().toLowerCase();
-  const pending = await queryOne('SELECT * FROM registration_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
-  if (!pending) {
-    res.status(400).json({ error: 'No pending registration found for this email. Please register first.' });
-    return;
-  }
-
-  const otp = generateSecureOTP();
-  const otpHash = hashOTP(otp);
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
-  await runQuery(`
-    UPDATE registration_otps
-    SET otp_hash = ?, otp_plain = ?, attempts = 0, expires_at = ?, created_at = datetime('now')
-    WHERE LOWER(email) = LOWER(?)
-  `, [otpHash, otp, expiresAt, cleanEmail]);
-
-  // Dispatch real email via SMTP concurrently
-  sendOtpEmail({
-    toEmail: cleanEmail,
-    userName: pending.name,
-    otp,
-    purpose: 'ACCOUNT_VERIFICATION'
-  }).catch((err) => console.error('[RESEND_OTP ERROR]', err));
-
-  res.json({ success: true, message: `New verification code sent to ${cleanEmail}.` });
 });
 
 // 2. Verify Registration OTP & Create Account
 authRouter.post('/register/verify-otp', async (req: Request, res: Response): Promise<void> => {
-  const { email, otp } = req.body;
+  try {
+    const { email, otp } = req.body;
 
-  if (!email || !otp) {
-    res.status(400).json({ error: 'Email and verification code are required.' });
-    return;
-  }
+    if (!email || !otp) {
+      res.status(400).json({ error: 'Email and verification code are required.' });
+      return;
+    }
 
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanOtp = String(otp).replace(/\s+/g, '');
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanOtp = String(otp).replace(/\s+/g, '');
 
-  const pending = await queryOne('SELECT * FROM registration_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
-  if (!pending) {
-    res.status(400).json({ error: 'No verification pending for this email. Please request a new code.' });
-    return;
-  }
+    const pending = await queryOne('SELECT * FROM registration_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+    if (!pending) {
+      res.status(400).json({ error: 'No verification pending for this email. Please request a new code.' });
+      return;
+    }
 
-  // Check expiration
-  if (new Date(pending.expires_at).getTime() < Date.now()) {
-    res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
-    return;
-  }
+    // Check expiration
+    if (new Date(pending.expires_at).getTime() < Date.now()) {
+      res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
+      return;
+    }
 
-  // Check attempts
-  if (pending.attempts >= 5) {
-    res.status(400).json({ error: 'Too many failed attempts. Please request a new verification code.' });
-    return;
-  }
+    // Check attempts
+    if (pending.attempts >= 5) {
+      res.status(400).json({ error: 'Too many failed attempts. Please request a new verification code.' });
+      return;
+    }
 
   // Verify OTP hash
   const isValid = verifyOTPHash(cleanOtp, pending.otp_hash);

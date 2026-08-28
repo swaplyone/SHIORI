@@ -339,9 +339,14 @@ export function saveDb(): void {
 
 export async function queryAll<T = any>(sql: string, params: any[] = []): Promise<T[]> {
   if (pgPool) {
-    const { sql: pgSql, params: pgParams } = translateSqlForPostgres(sql, params);
-    const result = await pgPool.query(pgSql, pgParams);
-    return result.rows as T[];
+    try {
+      const { sql: pgSql, params: pgParams } = translateSqlForPostgres(sql, params);
+      const result = await pgPool.query(pgSql, pgParams);
+      return result.rows as T[];
+    } catch (err: any) {
+      console.error('[DATABASE PG ERROR queryAll]', err.message);
+      // Graceful fallback to SQLite
+    }
   }
 
   const database = await getDb();
@@ -358,9 +363,14 @@ export async function queryAll<T = any>(sql: string, params: any[] = []): Promis
 
 export async function queryOne<T = any>(sql: string, params: any[] = []): Promise<T | null> {
   if (pgPool) {
-    const { sql: pgSql, params: pgParams } = translateSqlForPostgres(sql, params);
-    const result = await pgPool.query(pgSql, pgParams);
-    return (result.rows[0] as T) || null;
+    try {
+      const { sql: pgSql, params: pgParams } = translateSqlForPostgres(sql, params);
+      const result = await pgPool.query(pgSql, pgParams);
+      return (result.rows[0] as T) || null;
+    } catch (err: any) {
+      console.error('[DATABASE PG ERROR queryOne]', err.message);
+      // Graceful fallback to SQLite
+    }
   }
 
   const database = await getDb();
@@ -377,9 +387,14 @@ export async function queryOne<T = any>(sql: string, params: any[] = []): Promis
 
 export async function runQuery(sql: string, params: any[] = []): Promise<void> {
   if (pgPool) {
-    const { sql: pgSql, params: pgParams } = translateSqlForPostgres(sql, params);
-    await pgPool.query(pgSql, pgParams);
-    return;
+    try {
+      const { sql: pgSql, params: pgParams } = translateSqlForPostgres(sql, params);
+      await pgPool.query(pgSql, pgParams);
+      return;
+    } catch (err: any) {
+      console.error('[DATABASE PG ERROR runQuery]', err.message);
+      // Graceful fallback to SQLite
+    }
   }
 
   const database = await getDb();
