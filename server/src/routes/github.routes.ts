@@ -134,9 +134,9 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
 
 // GET GitHub connection status
 githubRouter.get('/status', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const user = await queryOne('SELECT github_connected, github_username, github_avatar FROM users WHERE id = ?', [req.user!.id]);
+  const ghAccount = await queryOne('SELECT username, avatar_url, access_token FROM github_accounts WHERE user_id = ? AND access_token IS NOT NULL ORDER BY connected_at DESC LIMIT 1', [req.user!.id]);
   
-  if (!user || !user.github_connected) {
+  if (!ghAccount || !ghAccount.access_token) {
     res.json({
       connected: false,
       username: null,
@@ -152,18 +152,11 @@ githubRouter.get('/status', authMiddleware, async (req: AuthRequest, res: Respon
 
   res.json({
     connected: true,
-    username: user.github_username || 'lijith-swaply',
-    avatarUrl: user.github_avatar || '',
-    repositoriesCount: 42,
-    pullRequestsCount: prsCount?.count || 8,
-    recentCommitsCount: commitsCount?.count || 18,
-    recentCommits: [
-      { hash: 'a83f21c', message: 'fix: compiler error rendering', time: '12 minutes ago', branch: 'feature/error-page' },
-      { hash: '91bc832', message: 'feat: add error state', time: '42 minutes ago', branch: 'feature/error-page' },
-      { hash: '8c92a11', message: 'refactor: parser errors', time: '1 hour ago', branch: 'feature/error-page' },
-      { hash: 'c92fa01', message: 'feat: add JWT login', time: '3 hours ago', branch: 'feature/auth' },
-      { hash: 'b149ee0', message: 'feat: webhook HMAC validation', time: 'Yesterday', branch: 'main' }
-    ]
+    username: ghAccount.username || 'developer',
+    avatarUrl: ghAccount.avatar_url || '',
+    repositoriesCount: 0,
+    pullRequestsCount: prsCount?.count || 0,
+    recentCommitsCount: commitsCount?.count || 0
   });
 });
 

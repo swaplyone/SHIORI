@@ -12,7 +12,8 @@ import {
   GitBranch,
   FolderGit2,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  ExternalLink
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { fetchJson } from '../utils/api';
@@ -55,7 +56,6 @@ export const OnboardingPage: React.FC = () => {
   // Check URL errors & GitHub connection status
   useEffect(() => {
     const errorParam = searchParams.get('error');
-    const githubParam = searchParams.get('github');
 
     if (errorParam) {
       if (errorParam === 'access_denied') {
@@ -65,45 +65,43 @@ export const OnboardingPage: React.FC = () => {
       }
     }
 
-    if (githubParam === 'connected') {
-      setIsAuthorized(true);
-      fetchRepositories();
-    }
-
     const initOnboarding = async () => {
       try {
         setCheckingStatus(true);
         const { ok, data } = await fetchJson('/api/github/status');
-        if (ok && data?.connected) {
+        if (ok && data?.connected && data?.username) {
           setIsAuthorized(true);
           setGithubUsername(data.username);
           updateUser({ github_connected: 1, github_username: data.username });
           await fetchRepositories();
-        } else if (user?.github_connected || githubParam === 'connected') {
-          setIsAuthorized(true);
-          setGithubUsername(user?.github_username || 'developer');
-          await fetchRepositories();
+        } else {
+          setIsAuthorized(false);
+          setGithubUsername(null);
         }
       } catch (err) {
         console.error('Failed to check GitHub status:', err);
+        setIsAuthorized(false);
       } finally {
         setCheckingStatus(false);
       }
     };
 
     initOnboarding();
-  }, [searchParams, user?.github_connected]);
+  }, [searchParams]);
 
   const fetchRepositories = async () => {
     try {
       setLoadingRepos(true);
       const { ok, data } = await fetchJson('/api/github/available-repositories');
-      if (ok && data?.repositories) {
+      if (ok && data?.repositories && data?.connected) {
         setRepositories(data.repositories);
         const alreadyConnected = data.repositories.find((r: Repository) => r.isConnected && r.projectId);
         if (alreadyConnected) {
           setConnectedProject({ id: alreadyConnected.projectId!, name: alreadyConnected.name });
         }
+      } else if (data?.connected === false) {
+        // Token was invalid or revoked
+        setIsAuthorized(false);
       } else if (data?.error) {
         setErrorMessage(data.error);
       }
@@ -120,6 +118,7 @@ export const OnboardingPage: React.FC = () => {
     try {
       const { ok, data } = await fetchJson('/api/github/oauth/url?returnUrl=/onboarding');
       if (ok && data?.url) {
+        // Redirect browser to official GitHub OAuth Consent screen
         window.location.href = data.url;
         return;
       } else {
@@ -214,7 +213,7 @@ export const OnboardingPage: React.FC = () => {
                 CONNECT YOUR GITHUB ACCOUNT
               </h2>
               <p className="text-xs text-eink-textSecondary leading-relaxed font-sans max-w-md mx-auto">
-                Authorize SHIORI to import your code repository into an e-ink workspace, link development TODOs to commits, and track automated CI checks.
+                Authorize SHIORI with GitHub to import your repositories into an e-ink workspace, link development TODOs to commits, and track automated CI checks.
               </p>
             </div>
 
@@ -229,15 +228,15 @@ export const OnboardingPage: React.FC = () => {
                   <ShieldCheck className="w-4 h-4 text-eink-text shrink-0 mt-0.5" />
                   <div>
                     <span className="font-bold text-eink-text">Repository Access (Public & Private):</span>
-                    <p className="text-[11px] text-eink-textSecondary">Retrieve your repositories so you can bring your codebase into SHIORI.</p>
+                    <p className="text-[11px] text-eink-textSecondary">Fetch your repositories so you can bring your codebase into SHIORI.</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-2">
                   <ShieldCheck className="w-4 h-4 text-eink-text shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold text-eink-text">Webhook CI Verification:</span>
-                    <p className="text-[11px] text-eink-textSecondary">Receive GitHub Actions test results to auto-complete verified tasks.</p>
+                    <span className="font-bold text-eink-text">User Profile & Organizations:</span>
+                    <p className="text-[11px] text-eink-textSecondary">Retrieve your GitHub username and avatar for collaborator sessions.</p>
                   </div>
                 </div>
               </div>
@@ -248,7 +247,7 @@ export const OnboardingPage: React.FC = () => {
                 type="button"
                 onClick={handleAuthorizeGitHub}
                 disabled={loading || checkingStatus}
-                className="w-full py-3 bg-eink-text text-eink-bg text-xs font-bold rounded-sm flex items-center justify-center gap-2 shadow-eink-sm hover:opacity-90 transition-opacity"
+                className="w-full py-3 bg-eink-text text-eink-bg text-xs font-bold rounded-sm flex items-center justify-center gap-2 shadow-eink-sm hover:opacity-90 transition-opacity cursor-pointer"
               >
                 <Github className="w-4 h-4" />
                 <span>{loading ? 'CONNECTING TO GITHUB...' : 'AUTHORIZE WITH GITHUB'}</span>
@@ -277,9 +276,19 @@ export const OnboardingPage: React.FC = () => {
                   Select a repository to create your SHIORI workspace.
                 </p>
               </div>
-              <div className="flex items-center gap-1.5 text-xs font-mono px-2.5 py-1 bg-eink-bg border border-eink-border rounded-sm">
-                <Github className="w-3.5 h-3.5 text-eink-text" />
-                <span className="font-bold text-eink-text">@{githubUsername || 'developer'}</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-mono px-2.5 py-1 bg-eink-bg border border-eink-border rounded-sm">
+                  <Github className="w-3.5 h-3.5 text-eink-text" />
+                  <span className="font-bold text-eink-text">@{githubUsername || 'developer'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAuthorizeGitHub}
+                  className="text-[10px] px-2 py-1 border border-eink-border hover:bg-eink-bg text-eink-textSecondary hover:text-eink-text rounded-sm font-technical"
+                  title="Reconnect or switch GitHub account"
+                >
+                  RECONNECT
+                </button>
               </div>
             </div>
 
@@ -303,12 +312,22 @@ export const OnboardingPage: React.FC = () => {
                   <p>Fetching repositories from GitHub...</p>
                 </div>
               ) : filteredRepos.length === 0 ? (
-                <div className="p-8 text-center border border-dashed border-eink-border rounded-sm space-y-2 text-xs">
+                <div className="p-8 text-center border border-dashed border-eink-border rounded-sm space-y-3 text-xs">
                   <FolderGit2 className="w-6 h-6 text-eink-textMuted mx-auto" />
                   <p className="font-bold text-eink-text">No repositories found</p>
-                  <p className="text-[11px] text-eink-textSecondary font-sans">
-                    {searchQuery ? `No matches for "${searchQuery}"` : 'Create a repository on GitHub or check permissions.'}
+                  <p className="text-[11px] text-eink-textSecondary font-sans max-w-sm mx-auto">
+                    {searchQuery
+                      ? `No matches for "${searchQuery}"`
+                      : 'No repositories were returned for this GitHub account. Click below to re-authorize or check permissions.'}
                   </p>
+                  <button
+                    type="button"
+                    onClick={handleAuthorizeGitHub}
+                    className="px-3 py-1.5 bg-eink-text text-eink-bg text-xs font-bold rounded-sm shadow-eink-sm inline-flex items-center gap-1.5 hover:opacity-90"
+                  >
+                    <Github className="w-3.5 h-3.5" />
+                    <span>RE-AUTHORIZE WITH GITHUB</span>
+                  </button>
                 </div>
               ) : (
                 filteredRepos.map((repo) => {
