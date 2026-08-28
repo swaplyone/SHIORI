@@ -196,10 +196,14 @@ authRouter.post('/register/verify-otp', async (req: Request, res: Response): Pro
 
   const token = generateToken(user);
 
-  res.status(201).json({
-    token,
-    user
-  });
+    res.status(201).json({
+      token,
+      user
+    });
+  } catch (error: any) {
+    console.error('[AUTH /register/verify-otp ERROR]', error);
+    res.status(500).json({ error: error.message || 'Failed to verify code and create account.' });
+  }
 });
 
 // 3. Direct Register (with auto-generated SHIORI ID)
