@@ -163,7 +163,7 @@ SHIORI — A SwaplyOne product • Plan. Build. Verify.`;
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.RESEND_FROM || 'SHIORI <onboarding@resend.dev>',
+          from: process.env.RESEND_FROM || 'SHIORI <verify@swaplyone.in>',
           to: [cleanTo],
           subject,
           text: textContent,
