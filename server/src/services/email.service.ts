@@ -21,8 +21,6 @@ export interface SendEmailResult {
 
 function createTransporter() {
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
-  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
   const user = process.env.SMTP_USER || process.env.SMTP_USERNAME;
   const pass = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
 
@@ -32,17 +30,33 @@ function createTransporter() {
 
   const isGmail = host.includes('gmail') || user.includes('swaplyone.in') || user.includes('gmail.com');
 
+  if (isGmail) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user,
+        pass,
+      },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 15000,
+    });
+  }
+
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+
   return nodemailer.createTransport({
-    host: isGmail ? 'smtp.gmail.com' : host,
+    host,
     port: secure ? 465 : port,
     secure: secure,
     auth: {
       user,
       pass,
     },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
   });
 }
 
