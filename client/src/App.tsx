@@ -43,9 +43,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
-// Automatically redirect authenticated users away from landing/login/register to the home screen
 const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -58,6 +57,9 @@ const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) 
   }
 
   if (isAuthenticated) {
+    if (!user?.github_connected) {
+      return <Navigate to="/onboarding" replace />;
+    }
     return <Navigate to="/home" replace />;
   }
 

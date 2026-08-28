@@ -26,7 +26,11 @@ export const LoginPage: React.FC = () => {
 
       if (ok && data?.token && data?.user) {
         login(data.token, data.user);
-        navigate('/home');
+        if (!data.user.github_connected) {
+          navigate('/onboarding');
+        } else {
+          navigate('/home');
+        }
       } else {
         setError(data?.error || 'Invalid email or password.');
       }
