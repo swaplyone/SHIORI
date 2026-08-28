@@ -4,24 +4,26 @@ import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('lijith@swaplyone.com');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { login, demoLogin } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
+
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: email.trim(), password })
       });
+
       const text = await res.text();
       let data: any = {};
       try {
@@ -32,21 +34,15 @@ export const LoginPage: React.FC = () => {
 
       if (res.ok && data.token && data.user) {
         login(data.token, data.user);
-        navigate('/tasks');
+        navigate('/home');
       } else {
-        setError(data.error || 'Login failed. Please check your credentials.');
+        setError(data.error || 'Invalid email or password.');
       }
     } catch (err: any) {
-      setError(err.message || 'Network error');
+      setError(err.message || 'Network connection error. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleDemo = async () => {
-    setLoading(true);
-    await demoLogin();
-    navigate('/tasks');
   };
 
   return (
@@ -55,34 +51,37 @@ export const LoginPage: React.FC = () => {
         {/* Brand */}
         <div className="text-center space-y-1 pb-4 border-b border-eink-border">
           <img src="/logo.png" alt="SHIORI" className="w-10 h-10 object-contain mx-auto mb-2 rounded-sm" />
-          <h1 className="font-bold text-xl tracking-tight text-eink-text">SHIORI</h1>
-          <p className="text-[10px] text-eink-textMuted uppercase">A SwaplyOne product</p>
+          <h1 className="font-bold text-xl tracking-tight text-eink-text uppercase">SHIORI</h1>
+          <p className="text-[10px] text-eink-textMuted uppercase tracking-wider">A SwaplyOne product • Plan. Build. Verify.</p>
         </div>
 
         {error && (
-          <div className="p-3 bg-eink-bg border border-eink-border text-xs text-eink-text font-bold rounded-sm">
+          <div className="p-3 bg-eink-bg border-2 border-eink-text text-xs text-eink-text font-bold rounded-sm">
             ✕ {error}
           </div>
         )}
 
         <form onSubmit={handleLogin} className="space-y-4 text-xs">
           <div>
-            <label className="block text-[10px] text-eink-textMuted uppercase mb-1">EMAIL ADDRESS</label>
+            <label className="block text-[10px] text-eink-textMuted uppercase mb-1 font-bold">EMAIL ADDRESS OR USERNAME</label>
             <input
-              type="email"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="e.g. your-email@company.com"
               className="w-full px-3 py-2 bg-eink-bg border border-eink-border rounded-sm outline-none text-eink-text font-sans"
+              autoFocus
               required
             />
           </div>
 
           <div>
-            <label className="block text-[10px] text-eink-textMuted uppercase mb-1">PASSWORD</label>
+            <label className="block text-[10px] text-eink-textMuted uppercase mb-1 font-bold">PASSWORD</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••••••"
               className="w-full px-3 py-2 bg-eink-bg border border-eink-border rounded-sm outline-none text-eink-text font-sans"
               required
             />
@@ -91,21 +90,14 @@ export const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm flex items-center justify-center gap-2 hover:opacity-90"
+            className="w-full py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all text-xs"
           >
             <span>{loading ? 'SIGNING IN...' : 'SIGN IN'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </form>
 
-        <div className="space-y-3 pt-2 border-t border-eink-border text-center text-xs">
-          <button
-            onClick={handleDemo}
-            className="w-full py-2 border border-eink-border bg-eink-bg hover:bg-eink-surface text-eink-text font-bold rounded-sm"
-          >
-            ⚡ INSTANT 1-CLICK DEMO (AS LIJITH)
-          </button>
-
+        <div className="pt-2 border-t border-eink-border text-center text-xs">
           <p className="text-eink-textMuted">
             Don't have an account?{' '}
             <Link to="/register" className="text-eink-text font-bold underline">

@@ -115,44 +115,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await fetch('/api/auth/demo-login', { method: 'POST' });
       if (res.ok) {
-        const text = await res.text();
-        try {
-          const data = JSON.parse(text);
-          if (data.token && data.user) {
-            login(data.token, data.user);
-            return;
-          }
-        } catch {
-          // Parse failed
+        const data = await res.json();
+        if (data.token && data.user) {
+          login(data.token, data.user);
+          return;
         }
       }
-      // Fallback demo user
-      const fallbackUser: User = {
-        id: 'user-lijith-001',
-        shiori_id: 'SHI-3A91M',
-        email: 'lijith@swaplyone.com',
-        username: 'lijith',
-        name: 'Lijith',
-        bio: 'Systems engineer & SwaplyOne architect',
-        theme: 'light',
-        github_connected: 1,
-        github_username: 'lijith-swaply'
-      };
-      login('demo-token-lijith', fallbackUser);
     } catch (err) {
-      console.error('Demo login error, activating local demo profile:', err);
-      const fallbackUser: User = {
-        id: 'user-lijith-001',
-        shiori_id: 'SHI-3A91M',
-        email: 'lijith@swaplyone.com',
-        username: 'lijith',
-        name: 'Lijith',
-        bio: 'Systems engineer & SwaplyOne architect',
-        theme: 'light',
-        github_connected: 1,
-        github_username: 'lijith-swaply'
-      };
-      login('demo-token-lijith', fallbackUser);
+      console.error('Login session error:', err);
     } finally {
       setIsLoading(false);
     }

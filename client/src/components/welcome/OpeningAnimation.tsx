@@ -273,15 +273,6 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
             >
               [ ENTER ]
             </button>
-
-            <div className="pt-2">
-              <button
-                onClick={handleQuickDemo}
-                className="text-[11px] font-technical text-eink-textMuted hover:text-eink-text underline tracking-wider"
-              >
-                1-Click Instant Demo →
-              </button>
-            </div>
           </div>
         )}
 
@@ -293,7 +284,7 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
                 SHIORI WORKSPACE
               </span>
               <span className="text-[9px] bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono font-bold">
-                AWAKENED
+                READY
               </span>
             </div>
 
@@ -312,14 +303,6 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
               >
                 <span>CREATE ACCOUNT</span>
                 <span className="text-[10px] text-eink-textMuted">SHIORI ID</span>
-              </button>
-
-              <button
-                onClick={handleQuickDemo}
-                className="w-full py-2 px-4 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border text-eink-text font-mono text-[11px] rounded-sm flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <Sparkles className="w-3 h-3" />
-                <span>Quick Demo (Lijith)</span>
               </button>
             </div>
           </div>
