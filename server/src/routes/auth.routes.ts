@@ -57,18 +57,13 @@ authRouter.post('/register/send-otp', async (req: Request, res: Response): Promi
     VALUES (?, ?, ?, ?, ?, ?, 0, ?, datetime('now'))
   `, [cleanEmail, otpHash, otp, name.trim(), cleanUsername, passwordHash, expiresAt]);
 
-  // Dispatch real email via SMTP
-  const emailResult = await sendOtpEmail({
+  // Dispatch real email via SMTP concurrently
+  sendOtpEmail({
     toEmail: cleanEmail,
     userName: name.trim(),
     otp,
     purpose: 'ACCOUNT_VERIFICATION'
-  });
-
-  if (!emailResult.success) {
-    res.status(500).json({ error: 'Unable to send verification email. Please verify your email address or try again.' });
-    return;
-  }
+  }).catch((err) => console.error('[SEND_OTP ERROR]', err));
 
   res.json({
     success: true,
@@ -101,17 +96,13 @@ authRouter.post('/register/resend-otp', async (req: Request, res: Response): Pro
     WHERE LOWER(email) = LOWER(?)
   `, [otpHash, otp, expiresAt, cleanEmail]);
 
-  const emailResult = await sendOtpEmail({
+  // Dispatch real email via SMTP concurrently
+  sendOtpEmail({
     toEmail: cleanEmail,
     userName: pending.name,
     otp,
     purpose: 'ACCOUNT_VERIFICATION'
-  });
-
-  if (!emailResult.success) {
-    res.status(500).json({ error: 'Unable to send verification email. Please try again.' });
-    return;
-  }
+  }).catch((err) => console.error('[RESEND_OTP ERROR]', err));
 
   res.json({ success: true, message: `New verification code sent to ${cleanEmail}.` });
 });
