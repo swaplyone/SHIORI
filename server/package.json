@@ -25,13 +25,13 @@
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^9.0.6",
     "pg": "^8.23.0",
+    "@types/pg": "^8.23.1",
     "socket.io": "^4.8.1",
     "sql.js": "^1.12.0",
     "typescript": "^5.8.2",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "@types/pg": "^8.23.1",
     "tsx": "^4.19.3"
   }
 }

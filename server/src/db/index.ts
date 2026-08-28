@@ -21,8 +21,8 @@ if (databaseUrl) {
     connectionTimeoutMillis: 10000,
   });
 
-  pgPool.on('error', (err) => {
-    console.error('[DATABASE POOL ERROR]', err.message);
+  pgPool.on('error', (err: any) => {
+    console.error('[DATABASE POOL ERROR]', err?.message || err);
   });
 }
 
