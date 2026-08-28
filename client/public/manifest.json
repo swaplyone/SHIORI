@@ -1,0 +1,41 @@
+{
+  "name": "SHIORI — Developer Workspace",
+  "short_name": "SHIORI",
+  "description": "Plan. Build. Verify. Your tasks, connected to the work you actually do.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F3EE",
+  "theme_color": "#111111",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/shiori-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Task",
+      "short_name": "New Task",
+      "description": "Create a new task",
+      "url": "/tasks?new=true",
+      "icons": [{ "src": "/icons/shiori-icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Daily Journal",
+      "short_name": "Journal",
+      "description": "View today's engineering notebook",
+      "url": "/journal",
+      "icons": [{ "src": "/icons/shiori-icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "GitHub Hub",
+      "short_name": "GitHub",
+      "description": "Development & CI checks",
+      "url": "/github",
+      "icons": [{ "src": "/icons/shiori-icon.svg", "sizes": "192x192" }]
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Brashkick';
+  src: url('/fonts/brashkick.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-island {
+  font-family: 'Brashkick', 'IBM Plex Mono', monospace;
+}
+
+:root {
+  /* E-Ink Light (Default) */
+  --eink-bg: #F4F3EE;
+  --eink-surface: #EAE9E3;
+  --eink-surface-hover: #E2E1DA;
+  --eink-text: #111111;
+  --eink-text-secondary: #4A4A4A;
+  --eink-text-muted: #777777;
+  --eink-border: #B8B7B1;
+  --eink-border-dark: #888880;
+  --eink-dark-surface: #1A1A1A;
+  --eink-dark-text: #F4F3EE;
+  --eink-accent: #222222;
+}
+
+.dark, [data-theme="dark"] {
+  /* E-Ink Dark */
+  --eink-bg: #141414;
+  --eink-surface: #1F1F1F;
+  --eink-surface-hover: #2A2A2A;
+  --eink-text: #EAE9E3;
+  --eink-text-secondary: #A0A09B;
+  --eink-text-muted: #6B6B66;
+  --eink-border: #383835;
+  --eink-border-dark: #52524D;
+  --eink-dark-surface: #EAE9E3;
+  --eink-dark-text: #141414;
+  --eink-accent: #EAE9E3;
+}
+
+[data-theme="monochrome"] {
+  /* Pure Monochrome */
+  --eink-bg: #FFFFFF;
+  --eink-surface: #F0F0F0;
+  --eink-surface-hover: #E4E4E4;
+  --eink-text: #000000;
+  --eink-text-secondary: #222222;
+  --eink-text-muted: #555555;
+  --eink-border: #000000;
+  --eink-border-dark: #000000;
+  --eink-dark-surface: #000000;
+  --eink-dark-text: #FFFFFF;
+  --eink-accent: #000000;
+}
+
+body {
+  background-color: var(--eink-bg);
+  color: var(--eink-text);
+  font-family: 'Geist', 'Inter', -apple-system, sans-serif;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle E-Ink Paper Texture Effect */
+.eink-paper {
+  background-color: var(--eink-bg);
+  background-image: radial-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 0);
+  background-size: 16px 16px;
+}
+
+/* Crisp technical typography */
+.font-technical {
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+}
+
+/* Custom Scrollbar for E-Ink aesthetic */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: var(--eink-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--eink-border);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--eink-border-dark);
+}
+
+/* E-Ink Card Border & Subtle Shadow */
+.eink-box {
+  background-color: var(--eink-surface);
+  border: 1px solid var(--eink-border);
+}
+
+.eink-border-b {
+  border-bottom: 1px solid var(--eink-border);
+}
+
+.eink-border-t {
+  border-top: 1px solid var(--eink-border);
+}
+
+.eink-border-r {
+  border-right: 1px solid var(--eink-border);
+}
+
+.eink-border-l {
+  border-left: 1px solid var(--eink-border);
+}
+
+/* Subtle E-Ink screen flash effect */
+.eink-refresh-active {
+  animation: einkRefresh 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@keyframes einkRefresh {
+  0% {
+    filter: invert(0.9) contrast(150%);
+    opacity: 0.9;
+  }
+  50% {
+    filter: invert(0.3) contrast(120%);
+    opacity: 0.95;
+  }
+  100% {
+    filter: none;
+    opacity: 1;
+  }
+}
