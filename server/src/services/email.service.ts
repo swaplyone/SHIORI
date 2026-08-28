@@ -22,6 +22,7 @@ export interface SendEmailResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  provider?: 'resend' | 'smtp' | 'console';
 }
 
 function createTransporter() {
@@ -52,31 +53,29 @@ function createTransporter() {
   } as any);
 }
 
-// Startup Diagnostics (Safe, Never logs passwords)
+// Startup Diagnostics (Safe, Never logs passwords or API keys)
 export async function verifySmtpConnection(): Promise<void> {
+  const resendKey = process.env.RESEND_API_KEY;
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
   const user = process.env.SMTP_USER || process.env.SMTP_USERNAME;
   const pass = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
 
   console.log('=========================================');
-  console.log('[SMTP DIAGNOSTICS]');
+  console.log('[EMAIL DIAGNOSTICS]');
+  console.log(`RESEND_API_KEY configured: ${Boolean(resendKey)}`);
   console.log(`SMTP_HOST configured: ${Boolean(host)} (${host || 'none'})`);
-  console.log(`SMTP_PORT configured: ${process.env.SMTP_PORT || '465'}`);
   console.log(`SMTP_USER configured: ${Boolean(user)} (${user ? user.replace(/(.{2})(.*)(@.*)/, '$1***$3') : 'none'})`);
   console.log(`SMTP_PASS configured: ${Boolean(pass)}`);
   console.log('=========================================');
 
   const transporter = createTransporter();
-  if (!transporter) {
-    console.warn('[SMTP WARNING] SMTP credentials not fully configured. Codes will be logged to server console.');
-    return;
-  }
-
-  try {
-    await transporter.verify();
-    console.log('[SMTP STATUS] ✓ SMTP server connection verified and ready to deliver emails.');
-  } catch (err: any) {
-    console.error('[SMTP STATUS] ✕ SMTP verification failed:', err.message || err);
+  if (transporter) {
+    try {
+      await transporter.verify();
+      console.log('[SMTP STATUS] ✓ Direct SMTP connection verified over IPv4 SSL (465).');
+    } catch (err: any) {
+      console.warn('[SMTP STATUS] ✕ Direct SMTP verification notice:', err.message || err);
+    }
   }
 }
 
@@ -152,27 +151,60 @@ SHIORI — A SwaplyOne product • Plan. Build. Verify.`;
   console.log(`[EMAIL DISPATCH] OTP: ${otp}`);
   console.log(`=========================================`);
 
+  // Provider 1: Resend HTTPS API (Port 443 - zero firewall blocks on cloud)
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      console.log(`[EMAIL] Attempting delivery via Resend API to ${cleanTo}...`);
+      const resendRes = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM || 'SHIORI <onboarding@resend.dev>',
+          to: [cleanTo],
+          subject,
+          text: textContent,
+          html: htmlContent,
+        }),
+      });
+
+      const resData = (await resendRes.json()) as any;
+      if (resendRes.ok && resData?.id) {
+        console.log(`[EMAIL] Accepted by Resend API. Email ID: ${resData.id}`);
+        return { success: true, messageId: resData.id, provider: 'resend' };
+      } else {
+        console.warn(`[EMAIL NOTICE] Resend returned ${resendRes.status} (${resData?.message || 'sandbox restriction'}). Falling back to direct SMTP...`);
+      }
+    } catch (resendErr: any) {
+      console.warn('[EMAIL NOTICE] Resend request failed, attempting SMTP fallback:', resendErr.message);
+    }
+  }
+
+  // Provider 2: Direct SMTP over IPv4 SSL (465)
   const transporter = createTransporter();
-  if (!transporter) {
-    console.warn('[EMAIL WARNING] SMTP transporter not available. Code logged to console.');
-    // In local dev without SMTP, return success with console delivery
-    return { success: true, messageId: `console-${Date.now()}` };
+  if (transporter) {
+    try {
+      console.log(`[EMAIL] Sending ${purpose} email to ${cleanTo} via SMTP...`);
+      const info = await transporter.sendMail({
+        from,
+        to: cleanTo,
+        subject,
+        text: textContent,
+        html: htmlContent,
+      });
+
+      console.log(`[EMAIL] Accepted by SMTP provider. messageId: ${info.messageId}`);
+      return { success: true, messageId: info.messageId, provider: 'smtp' };
+    } catch (smtpErr: any) {
+      console.error(`[EMAIL ERROR] SMTP delivery failed:`, smtpErr.message || smtpErr);
+      return { success: false, error: smtpErr.message || 'SMTP delivery failed' };
+    }
   }
 
-  try {
-    console.log(`[EMAIL] Sending ${purpose} email to ${cleanTo}...`);
-    const info = await transporter.sendMail({
-      from,
-      to: cleanTo,
-      subject,
-      text: textContent,
-      html: htmlContent,
-    });
-
-    console.log(`[EMAIL] Accepted by SMTP provider. messageId: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
-  } catch (error: any) {
-    console.error(`[EMAIL] FAILED to send email to ${cleanTo}:`, error.message || error);
-    return { success: false, error: error.message || 'SMTP delivery failed' };
-  }
+  // Local development console delivery
+  console.log('[EMAIL NOTICE] No external email provider active. Code logged to console.');
+  return { success: true, messageId: `console-${Date.now()}`, provider: 'console' };
 }
