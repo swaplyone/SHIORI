@@ -57,12 +57,12 @@ authRouter.post('/register/send-otp', async (req: Request, res: Response): Promi
     VALUES (?, ?, ?, ?, ?, ?, 0, ?, datetime('now'))
   `, [cleanEmail, otpHash, otp, name.trim(), cleanUsername, passwordHash, expiresAt]);
 
-  // Dispatch real email via SMTP
-  await sendOtpEmail({
+  // Dispatch real email via SMTP in background
+  sendOtpEmail({
     toEmail: cleanEmail,
     userName: name.trim(),
     otp
-  });
+  }).catch((err) => console.error('[SEND_OTP ERROR]', err));
 
   res.json({
     success: true,

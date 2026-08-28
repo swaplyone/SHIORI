@@ -7,11 +7,11 @@ export interface SendOtpEmailParams {
 }
 
 export async function sendOtpEmail({ toEmail, userName, otp }: SendOtpEmailParams): Promise<boolean> {
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || '587', 10);
-  const user = process.env.SMTP_USER;
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  const user = process.env.SMTP_USER || 'founder@swaplyone.in';
   const pass = process.env.SMTP_PASSWORD;
-  const from = process.env.SMTP_FROM || 'no-reply@shiori.app';
+  const from = process.env.SMTP_FROM || 'SHIORI <founder@swaplyone.in>';
 
   const subject = 'SHIORI connection verification code';
   const textContent = `Your SHIORI verification code is:
@@ -37,37 +37,32 @@ Do not share this code with anyone.`;
     </div>
   `;
 
-  // Always log to server console for easy developer testing and offline work
+  // Always log to server console for testing
   console.log(`=========================================`);
   console.log(`[EMAIL DISPATCH] To: ${toEmail}`);
   console.log(`[EMAIL DISPATCH] Subject: ${subject}`);
   console.log(`[EMAIL DISPATCH] OTP: ${otp}`);
   console.log(`=========================================`);
 
-  if (!host || !user) {
-    // SMTP not configured - console delivery handled
+  if (!user || !pass) {
+    console.log('[SMTP NOTICE] SMTP_USER or SMTP_PASSWORD not set. Code logged to console.');
     return true;
   }
 
   try {
-    const isGmail = !host || host.includes('gmail') || (user && (user.includes('gmail.com') || user.includes('swaplyone.in')));
-    const transporter = isGmail
-      ? nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user,
-            pass,
-          },
-        })
-      : nodemailer.createTransport({
-          host,
-          port,
-          secure: port === 465,
-          auth: {
-            user,
-            pass,
-          },
-        });
+    const isGmail = host.includes('gmail') || user.includes('swaplyone.in') || user.includes('gmail.com');
+    const transporter = nodemailer.createTransport({
+      host: isGmail ? 'smtp.gmail.com' : host,
+      port: 465,
+      secure: true,
+      auth: {
+        user,
+        pass,
+      },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 8000,
+    });
 
     const senderHeader = from.includes('<') ? from : `"SHIORI" <${from}>`;
 
@@ -79,7 +74,7 @@ Do not share this code with anyone.`;
       html: htmlContent,
     });
 
-    console.log(`[SMTP] Verification email sent successfully to ${toEmail}. Message ID: ${info.messageId}`);
+    console.log(`[SMTP] Verification email delivered to ${toEmail}. Message ID: ${info.messageId}`);
     return true;
   } catch (error) {
     console.error('[SMTP ERROR] Failed to deliver email via SMTP:', error);
