@@ -11,30 +11,49 @@ export const githubRouter = Router();
 // GET GitHub OAuth authorization URL
 githubRouter.get('/oauth/url', authMiddleware, (req: AuthRequest, res: Response): void => {
   const clientId = config.githubClientId || 'Ov23li1zsUXHPz3jSsYD';
-  const redirectUri = `${config.clientUrl}/api/github/callback`;
-  const state = Buffer.from(JSON.stringify({ userId: req.user!.id, timestamp: Date.now() })).toString('base64');
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,user,read:org&state=${state}`;
+  const returnUrl = (req.query.returnUrl as string) || '/onboarding';
+  const stateObj = {
+    userId: req.user!.id,
+    returnUrl,
+    timestamp: Date.now(),
+    nonce: Math.random().toString(36).substring(2, 15)
+  };
+  const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,user,read:org&state=${encodeURIComponent(state)}`;
   res.json({ url: authUrl });
 });
 
 // GET OAuth Callback endpoint (Exchanges code for access token)
 githubRouter.get('/callback', async (req: Request, res: Response): Promise<void> => {
-  const { code, state } = req.query;
+  const { code, state, error, error_description } = req.query;
 
-  if (!code) {
-    res.redirect(`${config.clientUrl}/settings?error=no_code`);
+  let returnUrl = '/onboarding';
+  let userId: string | null = null;
+
+  if (state && typeof state === 'string') {
+    try {
+      const decoded = JSON.parse(Buffer.from(decodeURIComponent(state), 'base64').toString('utf-8'));
+      if (decoded.userId) userId = decoded.userId;
+      if (decoded.returnUrl) returnUrl = decoded.returnUrl;
+    } catch (err) {
+      console.warn('Failed to decode OAuth state:', err);
+    }
+  }
+
+  if (error) {
+    console.warn(`[GITHUB OAUTH] User cancelled or error: ${error} - ${error_description}`);
+    const sep = returnUrl.includes('?') ? '&' : '?';
+    res.redirect(`${config.clientUrl}${returnUrl}${sep}error=${encodeURIComponent(String(error))}`);
+    return;
+  }
+
+  if (!code || !userId) {
+    const sep = returnUrl.includes('?') ? '&' : '?';
+    res.redirect(`${config.clientUrl}${returnUrl}${sep}error=invalid_oauth_session`);
     return;
   }
 
   try {
-    let userId = 'user-lijith-001';
-    if (state && typeof state === 'string') {
-      try {
-        const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf-8'));
-        if (decoded.userId) userId = decoded.userId;
-      } catch {}
-    }
-
     // Exchange code for access token with GitHub
     const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
@@ -43,8 +62,8 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
         Accept: 'application/json'
       },
       body: JSON.stringify({
-        client_id: config.githubClientId,
-        client_secret: config.githubClientSecret,
+        client_id: config.githubClientId || 'Ov23li1zsUXHPz3jSsYD',
+        client_secret: config.githubClientSecret || '91383118cc197d454fe2c9f50caa42edf96c519b',
         code
       })
     });
@@ -52,41 +71,51 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
     const tokenData = (await tokenRes.json()) as any;
     const accessToken = tokenData.access_token;
 
-    if (accessToken) {
-      // Fetch user profile from GitHub
-      const userRes = await fetch('https://api.github.com/user', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'User-Agent': 'SHIORI-App'
-        }
-      });
-      const ghUser = (await userRes.json()) as any;
-
-      const username = ghUser.login || 'developer';
-      const avatarUrl = ghUser.avatar_url || '';
-
-      await runQuery(`
-        UPDATE users SET
-          github_connected = 1,
-          github_username = ?,
-          github_avatar = ?,
-          updated_at = datetime('now')
-        WHERE id = ?
-      `, [username, avatarUrl, userId]);
-
-      await runQuery(`
-        INSERT OR REPLACE INTO github_accounts (id, user_id, github_id, username, avatar_url, access_token, connected_at)
-        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-      `, [uuidv4(), userId, String(ghUser.id || 'gh_oauth'), username, avatarUrl, accessToken]);
-
-      res.redirect(`${config.clientUrl}/home?github=connected`);
+    if (!accessToken) {
+      console.error('[GITHUB OAUTH] Token exchange failed:', tokenData);
+      const sep = returnUrl.includes('?') ? '&' : '?';
+      res.redirect(`${config.clientUrl}${returnUrl}${sep}error=token_exchange_failed`);
       return;
     }
 
-    res.redirect(`${config.clientUrl}/home?github=connected`);
-  } catch (error) {
-    console.error('GitHub OAuth error:', error);
-    res.redirect(`${config.clientUrl}/settings?error=oauth_failed`);
+    // Fetch user profile from GitHub
+    const userRes = await fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'User-Agent': 'SHIORI-App'
+      }
+    });
+
+    if (!userRes.ok) {
+      const sep = returnUrl.includes('?') ? '&' : '?';
+      res.redirect(`${config.clientUrl}${returnUrl}${sep}error=profile_fetch_failed`);
+      return;
+    }
+
+    const ghUser = (await userRes.json()) as any;
+    const username = ghUser.login || 'developer';
+    const avatarUrl = ghUser.avatar_url || '';
+
+    await runQuery(`
+      UPDATE users SET
+        github_connected = 1,
+        github_username = ?,
+        github_avatar = ?,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `, [username, avatarUrl, userId]);
+
+    await runQuery(`
+      INSERT OR REPLACE INTO github_accounts (id, user_id, github_id, username, avatar_url, access_token, connected_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), userId, String(ghUser.id || 'gh_oauth'), username, avatarUrl, accessToken]);
+
+    const sep = returnUrl.includes('?') ? '&' : '?';
+    res.redirect(`${config.clientUrl}${returnUrl}${sep}github=connected`);
+  } catch (error: any) {
+    console.error('[GITHUB OAUTH ERROR]', error);
+    const sep = returnUrl.includes('?') ? '&' : '?';
+    res.redirect(`${config.clientUrl}${returnUrl}${sep}error=oauth_internal_error`);
   }
 });
 

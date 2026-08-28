@@ -85,23 +85,20 @@ export const RegisterPage: React.FC = () => {
     setResendLoading(true);
 
     try {
-      const { ok, data } = await fetchJson('/api/auth/register/send-otp', {
+      const { ok, data } = await fetchJson('/api/auth/register/resend-otp', {
         method: 'POST',
         body: JSON.stringify({
-          name: name.trim(),
-          username: username.trim(),
-          email: email.trim(),
-          password
+          email: email.trim()
         })
       });
 
       if (ok) {
         setResendMessage(`New code sent to ${email}`);
       } else {
-        setError(data?.error || 'Failed to resend code.');
+        setError(data?.error || 'Failed to resend verification code.');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to resend.');
+      setError(err.message || 'Failed to resend verification code.');
     } finally {
       setResendLoading(false);
     }

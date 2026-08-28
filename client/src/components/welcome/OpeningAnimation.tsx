@@ -113,11 +113,15 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
       clearTimeout(t6);
       clearTimeout(t7);
       clearTimeout(t8);
+      setIsBarVisible(true);
+      setBarPosition('top');
     };
-  }, []);
+  }, [setIsBarVisible, setBarPosition]);
 
   const handleEnter = () => {
     triggerInkRefresh();
+    setIsBarVisible(true);
+    setBarPosition('top');
     setIsEntering(true);
   };
 

@@ -60,10 +60,13 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+import { verifySmtpConnection } from './services/email.service.js';
+
 // Seed & Start Server
 async function start() {
   try {
     await seedDatabase();
+    await verifySmtpConnection();
     server.listen(config.port, () => {
       console.log(`=========================================`);
       console.log(`  SHIORI API Server & WebSocket Engine  `);

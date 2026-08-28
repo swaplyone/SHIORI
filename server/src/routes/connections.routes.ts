@@ -218,14 +218,26 @@ connectionsRouter.post('/respond', authMiddleware, async (req: AuthRequest, res:
     `, [sessionId, requestId, connectionReq.sender_id, connectionReq.recipient_id, otpAHash, otpBHash, otpA, otpB, expiresAt]);
 
     // Fetch emails for both participants
-    const userA = await queryOne('SELECT email, name FROM users WHERE id = ?', [connectionReq.sender_id]);
-    const userB = await queryOne('SELECT email, name FROM users WHERE id = ?', [connectionReq.recipient_id]);
+    const userA = await queryOne('SELECT email, name, shiori_id FROM users WHERE id = ?', [connectionReq.sender_id]);
+    const userB = await queryOne('SELECT email, name, shiori_id FROM users WHERE id = ?', [connectionReq.recipient_id]);
 
     if (userA?.email) {
-      await sendOtpEmail({ toEmail: userA.email, userName: userA.name, otp: otpA });
+      await sendOtpEmail({
+        toEmail: userA.email,
+        userName: userA.name,
+        otp: otpA,
+        purpose: 'FRIEND_REQUEST',
+        details: { requesterName: userB?.name, requesterShioriId: userB?.shiori_id }
+      });
     }
     if (userB?.email) {
-      await sendOtpEmail({ toEmail: userB.email, userName: userB.name, otp: otpB });
+      await sendOtpEmail({
+        toEmail: userB.email,
+        userName: userB.name,
+        otp: otpB,
+        purpose: 'FRIEND_REQUEST',
+        details: { requesterName: userA?.name, requesterShioriId: userA?.shiori_id }
+      });
     }
 
     // Send notifications to both participants
@@ -238,6 +250,59 @@ connectionsRouter.post('/respond', authMiddleware, async (req: AuthRequest, res:
       sessionId
     });
   }
+});
+
+// Resend Friend Request OTP
+connectionsRouter.post('/session/:sessionId/resend-otp', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { sessionId } = req.params;
+  const session = await queryOne('SELECT * FROM connection_verification_sessions WHERE id = ?', [sessionId]);
+  if (!session) {
+    res.status(404).json({ error: 'Verification session not found.' });
+    return;
+  }
+
+  const isUserA = session.user_a_id === req.user!.id;
+  const isUserB = session.user_b_id === req.user!.id;
+  if (!isUserA && !isUserB) {
+    res.status(403).json({ error: 'Unauthorized.' });
+    return;
+  }
+
+  const newOtp = generateSecureOTP();
+  const newHash = hashOTP(newOtp);
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+  if (isUserA) {
+    await runQuery(`
+      UPDATE connection_verification_sessions
+      SET otp_a_hash = ?, otp_a_plain = ?, attempts_a = 0, expires_at = ?
+      WHERE id = ?
+    `, [newHash, newOtp, expiresAt, sessionId]);
+  } else {
+    await runQuery(`
+      UPDATE connection_verification_sessions
+      SET otp_b_hash = ?, otp_b_plain = ?, attempts_b = 0, expires_at = ?
+      WHERE id = ?
+    `, [newHash, newOtp, expiresAt, sessionId]);
+  }
+
+  const otherUserId = isUserA ? session.user_b_id : session.user_a_id;
+  const otherUser = await queryOne('SELECT name, shiori_id FROM users WHERE id = ?', [otherUserId]);
+
+  const emailResult = await sendOtpEmail({
+    toEmail: req.user!.email,
+    userName: req.user!.name,
+    otp: newOtp,
+    purpose: 'FRIEND_REQUEST',
+    details: { requesterName: otherUser?.name, requesterShioriId: otherUser?.shiori_id }
+  });
+
+  if (!emailResult.success) {
+    res.status(500).json({ error: 'Unable to deliver verification email. Please try again.' });
+    return;
+  }
+
+  res.json({ success: true, message: `New connection verification code sent to ${req.user!.email}.` });
 });
 
 // GET Verification Session (Delivers ONLY the caller's specific OTP)

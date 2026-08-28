@@ -51,23 +51,69 @@ authRouter.post('/register/send-otp', async (req: Request, res: Response): Promi
   const passwordHash = await bcrypt.hash(password, 10);
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
 
-  // Store in registration_otps
+  // Store in registration_otps with explicit purpose
   await runQuery(`
     INSERT OR REPLACE INTO registration_otps (email, otp_hash, otp_plain, name, username, password_hash, attempts, expires_at, created_at)
     VALUES (?, ?, ?, ?, ?, ?, 0, ?, datetime('now'))
   `, [cleanEmail, otpHash, otp, name.trim(), cleanUsername, passwordHash, expiresAt]);
 
-  // Dispatch real email via SMTP in background
-  sendOtpEmail({
+  // Dispatch real email via SMTP
+  const emailResult = await sendOtpEmail({
     toEmail: cleanEmail,
     userName: name.trim(),
-    otp
-  }).catch((err) => console.error('[SEND_OTP ERROR]', err));
+    otp,
+    purpose: 'ACCOUNT_VERIFICATION'
+  });
+
+  if (!emailResult.success) {
+    res.status(500).json({ error: 'Unable to send verification email. Please verify your email address or try again.' });
+    return;
+  }
 
   res.json({
     success: true,
     message: `Verification code sent to ${cleanEmail}.`
   });
+});
+
+// 1b. Resend Account Verification OTP
+authRouter.post('/register/resend-otp', async (req: Request, res: Response): Promise<void> => {
+  const { email } = req.body;
+  if (!email) {
+    res.status(400).json({ error: 'Email is required.' });
+    return;
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const pending = await queryOne('SELECT * FROM registration_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+  if (!pending) {
+    res.status(400).json({ error: 'No pending registration found for this email. Please register first.' });
+    return;
+  }
+
+  const otp = generateSecureOTP();
+  const otpHash = hashOTP(otp);
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+  await runQuery(`
+    UPDATE registration_otps
+    SET otp_hash = ?, otp_plain = ?, attempts = 0, expires_at = ?, created_at = datetime('now')
+    WHERE LOWER(email) = LOWER(?)
+  `, [otpHash, otp, expiresAt, cleanEmail]);
+
+  const emailResult = await sendOtpEmail({
+    toEmail: cleanEmail,
+    userName: pending.name,
+    otp,
+    purpose: 'ACCOUNT_VERIFICATION'
+  });
+
+  if (!emailResult.success) {
+    res.status(500).json({ error: 'Unable to send verification email. Please try again.' });
+    return;
+  }
+
+  res.json({ success: true, message: `New verification code sent to ${cleanEmail}.` });
 });
 
 // 2. Verify Registration OTP & Create Account

@@ -164,7 +164,8 @@ export const MorphBar: React.FC = () => {
     }
   };
 
-  if (!isBarVisible) return null;
+  // Protect MorphBar: only hide on root '/' if opening animation specifically requested, otherwise always visible
+  if (!isBarVisible && location.pathname === '/') return null;
 
   const isCenter = barPosition === 'center';
 
