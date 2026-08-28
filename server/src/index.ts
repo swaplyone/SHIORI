@@ -59,13 +59,14 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/simulator', simulatorRouter);
 app.use('/api/recovery', recoveryRouter);
 
-// Health check
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'online',
+// Health check endpoints for UptimeRobot & Keep-Alive Monitoring
+app.get(['/', '/health', '/api/health', '/ping', '/api/ping'], (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
     app: 'SHIORI',
     tagline: 'Plan. Build. Verify.',
     brand: 'A SwaplyOne product',
+    uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString()
   });
 });

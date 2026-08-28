@@ -55,12 +55,19 @@ export const OnboardingPage: React.FC = () => {
   // Check URL errors & GitHub connection status
   useEffect(() => {
     const errorParam = searchParams.get('error');
+    const githubParam = searchParams.get('github');
+
     if (errorParam) {
       if (errorParam === 'access_denied') {
         setErrorMessage('GitHub authorization was cancelled. Please authorize to access your repositories.');
       } else {
         setErrorMessage(`GitHub authorization failed (${errorParam}). Please try connecting again.`);
       }
+    }
+
+    if (githubParam === 'connected') {
+      setIsAuthorized(true);
+      fetchRepositories();
     }
 
     const initOnboarding = async () => {
@@ -72,9 +79,9 @@ export const OnboardingPage: React.FC = () => {
           setGithubUsername(data.username);
           updateUser({ github_connected: 1, github_username: data.username });
           await fetchRepositories();
-        } else if (user?.github_connected) {
+        } else if (user?.github_connected || githubParam === 'connected') {
           setIsAuthorized(true);
-          setGithubUsername(user.github_username || 'developer');
+          setGithubUsername(user?.github_username || 'developer');
           await fetchRepositories();
         }
       } catch (err) {
