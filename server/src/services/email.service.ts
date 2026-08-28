@@ -69,19 +69,20 @@ Do not share this code with anyone.`;
           },
         });
 
-    await transporter.sendMail({
-      from: `"SHIORI" <${from}>`,
+    const senderHeader = from.includes('<') ? from : `"SHIORI" <${from}>`;
+
+    const info = await transporter.sendMail({
+      from: senderHeader,
       to: toEmail,
       subject,
       text: textContent,
       html: htmlContent,
     });
 
-    console.log(`[SMTP] Verification email sent successfully to ${toEmail}`);
+    console.log(`[SMTP] Verification email sent successfully to ${toEmail}. Message ID: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error('[SMTP] Failed to deliver verification email via SMTP:', error);
-    // Don't fail the verification process if external SMTP has network timeout
+    console.error('[SMTP ERROR] Failed to deliver email via SMTP:', error);
     return false;
   }
 }
