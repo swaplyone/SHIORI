@@ -1,4 +1,9 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns';
+
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {}
 
 export type OtpPurpose = 'ACCOUNT_VERIFICATION' | 'FRIEND_REQUEST';
 
@@ -21,6 +26,8 @@ export interface SendEmailResult {
 
 function createTransporter() {
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
   const user = process.env.SMTP_USER || process.env.SMTP_USERNAME;
   const pass = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
 
@@ -28,28 +35,13 @@ function createTransporter() {
     return null;
   }
 
-  const isGmail = host.includes('gmail') || user.includes('swaplyone.in') || user.includes('gmail.com');
-
-  if (isGmail) {
-    return nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user,
-        pass,
-      },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 15000,
-    });
-  }
-
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
-  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+  const isGmail = host.includes('gmail') || (user && (user.includes('swaplyone.in') || user.includes('gmail.com')));
 
   return nodemailer.createTransport({
-    host,
+    host: isGmail ? 'smtp.gmail.com' : host,
     port: secure ? 465 : port,
     secure: secure,
+    family: 4, // Force IPv4 to prevent ENETUNREACH on cloud environments like Render
     auth: {
       user,
       pass,
