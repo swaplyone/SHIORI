@@ -240,15 +240,43 @@ function translateSqlForPostgres(sql: string, params: any[]): { sql: string; par
 
   translatedSql = translatedSql
     .replace(/datetime\('now'\)/gi, 'NOW()')
-    .replace(/datetime\('now',\s*'\+7 days'\)/gi, "(NOW() + INTERVAL '7 days')")
-    .replace(/INSERT OR IGNORE INTO/gi, 'INSERT INTO')
-    .replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
+    .replace(/datetime\('now',\s*'\+7 days'\)/gi, "(NOW() + INTERVAL '7 days')");
 
-  // Handle SQLite INSERT OR IGNORE / REPLACE for PostgreSQL
-  if (sql.includes('INSERT OR IGNORE INTO')) {
+  // Handle specific INSERT OR REPLACE / IGNORE queries for PostgreSQL
+  if (/INSERT OR REPLACE INTO registration_otps/i.test(sql)) {
+    translatedSql = translatedSql.replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
+    if (!translatedSql.toLowerCase().includes('on conflict')) {
+      translatedSql += ` ON CONFLICT (email) DO UPDATE SET 
+        otp_hash = EXCLUDED.otp_hash,
+        otp_plain = EXCLUDED.otp_plain,
+        name = EXCLUDED.name,
+        username = EXCLUDED.username,
+        password_hash = EXCLUDED.password_hash,
+        attempts = EXCLUDED.attempts,
+        expires_at = EXCLUDED.expires_at,
+        created_at = NOW()`;
+    }
+  } else if (/INSERT OR REPLACE INTO github_accounts/i.test(sql)) {
+    translatedSql = translatedSql.replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
+    if (!translatedSql.toLowerCase().includes('on conflict')) {
+      translatedSql += ` ON CONFLICT (user_id, github_id) DO UPDATE SET 
+        username = EXCLUDED.username,
+        avatar_url = EXCLUDED.avatar_url,
+        access_token = EXCLUDED.access_token,
+        connected_at = NOW()`;
+    }
+  } else if (/INSERT OR REPLACE INTO user_settings/i.test(sql)) {
+    translatedSql = translatedSql.replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
+    if (!translatedSql.toLowerCase().includes('on conflict')) {
+      translatedSql += ` ON CONFLICT (user_id) DO NOTHING`;
+    }
+  } else if (/INSERT OR IGNORE INTO/i.test(sql)) {
+    translatedSql = translatedSql.replace(/INSERT OR IGNORE INTO/gi, 'INSERT INTO');
     if (!translatedSql.toLowerCase().includes('on conflict')) {
       translatedSql += ' ON CONFLICT DO NOTHING';
     }
+  } else if (/INSERT OR REPLACE INTO/i.test(sql)) {
+    translatedSql = translatedSql.replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
   }
 
   return { sql: translatedSql, params };
