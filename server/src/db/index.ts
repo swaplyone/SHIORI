@@ -295,6 +295,52 @@ async function initPgSchema(pool: pg.Pool) {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS workspace_invitations (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      inviter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      invitee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT DEFAULT 'PENDING',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '7 days')
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_verification_sessions (
+      id TEXT PRIMARY KEY,
+      invitation_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      inviter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      invitee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      otp_inviter_hash TEXT,
+      otp_invitee_hash TEXT,
+      otp_inviter_plain TEXT,
+      otp_invitee_plain TEXT,
+      verified_inviter INTEGER DEFAULT 0,
+      verified_invitee INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'PENDING',
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS blocks (
+      id TEXT PRIMARY KEY,
+      blocker_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (blocker_id, blocked_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_journals (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+      entry_date TEXT NOT NULL,
+      content TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (user_id, entry_date)
+    );
+
     CREATE TABLE IF NOT EXISTS global_activities (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

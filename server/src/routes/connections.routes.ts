@@ -450,8 +450,8 @@ connectionsRouter.post('/session/:sessionId/verify', authMiddleware, async (req:
   });
 });
 
-// GET Connections List
-connectionsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+// GET Connections List (supports / and /list)
+connectionsRouter.get(['/', '/list'], authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const connections = await queryAll(`
     SELECT c.id as connection_id, c.connected_at,
            u.id as user_id, u.shiori_id, u.name, u.username, u.bio, u.avatar_url,
