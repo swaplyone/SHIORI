@@ -116,13 +116,16 @@ export const OnboardingPage: React.FC = () => {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const { ok, data } = await fetchJson('/api/github/oauth/url?returnUrl=/onboarding');
+      const { ok, status, data } = await fetchJson('/api/github/oauth/url?returnUrl=/onboarding');
       if (ok && data?.url) {
         // Redirect browser to official GitHub OAuth Consent screen
         window.location.href = data.url;
         return;
+      } else if (status === 401) {
+        setErrorMessage('Session expired. Redirecting to sign in...');
+        setTimeout(() => navigate('/login'), 1200);
       } else {
-        setErrorMessage(data?.error || 'Unable to initiate GitHub OAuth session.');
+        setErrorMessage(data?.error || 'Unable to initiate GitHub OAuth session. Please try again.');
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error while connecting to GitHub.');

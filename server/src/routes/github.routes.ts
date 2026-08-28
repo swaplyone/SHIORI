@@ -28,7 +28,7 @@ githubRouter.get('/oauth/url', authMiddleware, (req: AuthRequest, res: Response)
     nonce: Math.random().toString(36).substring(2, 15)
   };
   const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,user,read:org&state=${encodeURIComponent(state)}`;
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,user,read:org&state=${encodeURIComponent(state)}&prompt=consent`;
   res.json({ url: authUrl });
 });
 
