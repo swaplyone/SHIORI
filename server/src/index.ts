@@ -72,10 +72,12 @@ app.get(['/', '/health', '/api/health', '/ping', '/api/ping'], (_req, res) => {
 });
 
 import { verifySmtpConnection } from './services/email.service.js';
+import { initDatabaseConnection } from './db/index.js';
 
 // Seed & Start Server
 async function start() {
   try {
+    await initDatabaseConnection();
     await seedDatabase();
     await verifySmtpConnection();
     server.listen(config.port, () => {
