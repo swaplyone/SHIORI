@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserSettings, EInkTheme } from '../types';
+import { fetchJson } from '../utils/api';
 
 interface AuthContextType {
   user: User | null;
@@ -57,21 +58,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const storedToken = localStorage.getItem('shiori_token');
       if (storedToken) {
         try {
-          const res = await fetch('/api/auth/me', {
+          const { ok, status, data } = await fetchJson('/api/auth/me', {
             headers: { Authorization: `Bearer ${storedToken}` },
           });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.user) {
-              setUser(data.user);
-              localStorage.setItem('shiori_user', JSON.stringify(data.user));
-              if (data.user.theme) applyTheme(data.user.theme);
-            }
+          if (ok && data?.user) {
+            setUser(data.user);
+            localStorage.setItem('shiori_user', JSON.stringify(data.user));
+            if (data.user.theme) applyTheme(data.user.theme);
             if (data.settings) {
               setSettings(data.settings);
               localStorage.setItem('shiori_settings', JSON.stringify(data.settings));
             }
-          } else if (res.status === 401) {
+          } else if (status === 401) {
             // Only clear session if server explicitly returned 401 Unauthorized
             localStorage.removeItem('shiori_token');
             localStorage.removeItem('shiori_user');

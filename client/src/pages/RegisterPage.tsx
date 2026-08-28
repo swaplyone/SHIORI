@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ShieldCheck, Mail, KeyRound, RotateCcw } from 'lucide-react';
+import { ArrowRight, ShieldCheck, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { fetchJson } from '../utils/api';
 
 export const RegisterPage: React.FC = () => {
   // Step 1: form details, Step 2: OTP verification
@@ -27,17 +28,20 @@ export const RegisterPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/register/send-otp', {
+      const { ok, data } = await fetchJson('/api/auth/register/send-otp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, username, email, password })
+        body: JSON.stringify({
+          name: name.trim(),
+          username: username.trim(),
+          email: email.trim(),
+          password
+        })
       });
 
-      const data = await res.json();
-      if (res.ok) {
+      if (ok) {
         setStep('OTP');
       } else {
-        setError(data.error || 'Failed to send verification code.');
+        setError(data?.error || 'Failed to send verification code. Please check your details.');
       }
     } catch (err: any) {
       setError(err.message || 'Network error. Please try again.');
@@ -53,18 +57,19 @@ export const RegisterPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/register/verify-otp', {
+      const { ok, data } = await fetchJson('/api/auth/register/verify-otp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp })
+        body: JSON.stringify({
+          email: email.trim(),
+          otp: otp.trim()
+        })
       });
 
-      const data = await res.json();
-      if (res.ok && data.token && data.user) {
+      if (ok && data?.token && data?.user) {
         login(data.token, data.user);
         navigate('/home');
       } else {
-        setError(data.error || 'Incorrect verification code.');
+        setError(data?.error || 'Incorrect or expired verification code.');
       }
     } catch (err: any) {
       setError(err.message || 'Verification failed. Please try again.');
@@ -80,16 +85,20 @@ export const RegisterPage: React.FC = () => {
     setResendLoading(true);
 
     try {
-      const res = await fetch('/api/auth/register/send-otp', {
+      const { ok, data } = await fetchJson('/api/auth/register/send-otp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, username, email, password })
+        body: JSON.stringify({
+          name: name.trim(),
+          username: username.trim(),
+          email: email.trim(),
+          password
+        })
       });
-      const data = await res.json();
-      if (res.ok) {
+
+      if (ok) {
         setResendMessage(`New code sent to ${email}`);
       } else {
-        setError(data.error || 'Failed to resend code.');
+        setError(data?.error || 'Failed to resend code.');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to resend.');

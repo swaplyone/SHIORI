@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Lock, Mail } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { fetchJson } from '../utils/api';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -18,25 +19,16 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const { ok, data } = await fetchJson('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password })
       });
 
-      const text = await res.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = { error: 'Server response error' };
-      }
-
-      if (res.ok && data.token && data.user) {
+      if (ok && data?.token && data?.user) {
         login(data.token, data.user);
         navigate('/home');
       } else {
-        setError(data.error || 'Invalid email or password.');
+        setError(data?.error || 'Invalid email or password.');
       }
     } catch (err: any) {
       setError(err.message || 'Network connection error. Please try again.');
