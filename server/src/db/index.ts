@@ -113,24 +113,70 @@ async function initPgSchema(pool: pg.Pool) {
 
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
-      task_number INTEGER,
-      task_code TEXT,
+      task_number INTEGER NOT NULL,
+      task_code TEXT UNIQUE NOT NULL,
       project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
       workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
       description TEXT,
-      status TEXT DEFAULT 'TODO',
-      priority TEXT DEFAULT 'MEDIUM',
+      status TEXT NOT NULL DEFAULT 'TODO',
+      priority TEXT NOT NULL DEFAULT 'MEDIUM',
+      user_status TEXT DEFAULT 'PENDING',
       created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
       assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      due_date TEXT,
       github_repo TEXT,
       github_branch TEXT,
       github_pr_number INTEGER,
-      github_commit_hash TEXT,
+      github_pr_title TEXT,
+      github_pr_url TEXT,
+      github_pr_state TEXT,
+      github_ci_status TEXT DEFAULT 'UNKNOWN',
+      github_last_commit_hash TEXT,
+      github_last_commit_msg TEXT,
+      github_last_commit_author TEXT,
+      github_last_commit_time TEXT,
       auto_completed INTEGER DEFAULT 0,
       auto_completed_reason TEXT,
+      completed_at TEXT,
+      dev_evidence_commits_count INTEGER DEFAULT 0,
+      dev_evidence_prs_count INTEGER DEFAULT 0,
+      dev_evidence_files_changed INTEGER DEFAULT 0,
+      dev_evidence_checks_passed INTEGER DEFAULT 0,
+      dev_evidence_checks_failed INTEGER DEFAULT 0,
+      dev_evidence_pr_merged INTEGER DEFAULT 0,
+      dev_confidence_score INTEGER DEFAULT 0,
+      has_ci_discrepancy INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS task_subtasks (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      completed INTEGER DEFAULT 0,
+      position INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS task_activity (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      action_type TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      details TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS user_repositories (
@@ -147,7 +193,7 @@ async function initPgSchema(pool: pg.Pool) {
     CREATE TABLE IF NOT EXISTS github_accounts (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      github_id TEXT NOT NULL,
+      github_id TEXT,
       username TEXT NOT NULL,
       avatar_url TEXT,
       access_token TEXT,
@@ -157,15 +203,34 @@ async function initPgSchema(pool: pg.Pool) {
 
     CREATE TABLE IF NOT EXISTS github_commits (
       id TEXT PRIMARY KEY,
+      task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
       repo_name TEXT NOT NULL,
+      branch_name TEXT DEFAULT 'main',
       commit_hash TEXT NOT NULL,
       message TEXT NOT NULL,
       author_name TEXT,
       author_username TEXT,
       author_avatar TEXT,
-      branch TEXT DEFAULT 'main',
       files_changed INTEGER DEFAULT 1,
       pushed_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS github_workflow_runs (
+      id TEXT PRIMARY KEY,
+      task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+      repo_name TEXT NOT NULL,
+      branch_name TEXT DEFAULT 'main',
+      commit_hash TEXT NOT NULL,
+      workflow_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      conclusion TEXT,
+      duration_seconds INTEGER DEFAULT 0,
+      tests_total INTEGER DEFAULT 0,
+      tests_passed INTEGER DEFAULT 0,
+      tests_failed INTEGER DEFAULT 0,
+      logs TEXT,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
     );
 
     CREATE TABLE IF NOT EXISTS registration_otps (
@@ -229,14 +294,59 @@ async function initPgSchema(pool: pg.Pool) {
       is_read INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS global_activities (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      workspace_id TEXT,
+      project_id TEXT,
+      task_id TEXT,
+      category TEXT NOT NULL,
+      icon_symbol TEXT NOT NULL,
+      title TEXT NOT NULL,
+      meta_text TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `;
 
   try {
     await pool.query(schemaSql);
     // Auto-migrate any missing columns on existing Supabase tables
-    await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`);
-    await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read INTEGER DEFAULT 0;`);
-    await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read INTEGER DEFAULT 0;`);
+    const migrations = [
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS user_status TEXT DEFAULT 'PENDING';`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_pr_title TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_pr_url TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_pr_state TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_ci_status TEXT DEFAULT 'UNKNOWN';`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_last_commit_hash TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_last_commit_msg TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_last_commit_author TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_last_commit_time TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS auto_completed INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS auto_completed_reason TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_evidence_commits_count INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_evidence_prs_count INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_evidence_files_changed INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_evidence_checks_passed INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_evidence_checks_failed INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_evidence_pr_merged INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_confidence_score INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS has_ci_discrepancy INTEGER DEFAULT 0;`,
+      `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`,
+      `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read INTEGER DEFAULT 0;`,
+      `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read INTEGER DEFAULT 0;`,
+      `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;`,
+      `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS branch_name TEXT DEFAULT 'main';`
+    ];
+
+    for (const migration of migrations) {
+      try {
+        await pool.query(migration);
+      } catch {}
+    }
+
     console.log('[DATABASE] ✓ Supabase PostgreSQL schema initialized successfully.');
   } catch (err: any) {
     console.warn('[DATABASE SCHEMA NOTICE]', err.message);
