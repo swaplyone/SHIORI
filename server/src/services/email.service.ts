@@ -176,10 +176,42 @@ SHIORI — A SwaplyOne product • Plan. Build. Verify.`;
         console.log(`[EMAIL] Accepted by Resend API. Email ID: ${resData.id}`);
         return { success: true, messageId: resData.id, provider: 'resend' };
       } else {
-        console.warn(`[EMAIL NOTICE] Resend returned ${resendRes.status} (${resData?.message || 'sandbox restriction'}). Falling back to direct SMTP...`);
+        console.warn(`[EMAIL NOTICE] Resend returned ${resendRes.status} (${resData?.message || 'sandbox restriction'}). Checking secondary providers...`);
       }
     } catch (resendErr: any) {
-      console.warn('[EMAIL NOTICE] Resend request failed, attempting SMTP fallback:', resendErr.message);
+      console.warn('[EMAIL NOTICE] Resend request failed, checking secondary providers:', resendErr.message);
+    }
+  }
+
+  // Provider 2: Brevo HTTPS API (Port 443 - sends to any recipient without domain restriction)
+  const brevoApiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
+  if (brevoApiKey) {
+    try {
+      console.log(`[EMAIL] Attempting delivery via Brevo HTTPS API to ${cleanTo}...`);
+      const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'SHIORI', email: process.env.BREVO_FROM_EMAIL || 'founder@swaplyone.in' },
+          to: [{ email: cleanTo, name: userName || 'Developer' }],
+          subject,
+          htmlContent,
+          textContent,
+        }),
+      });
+
+      const brevoData = (await brevoRes.json()) as any;
+      if (brevoRes.ok && (brevoData?.messageId || brevoData?.messageIds)) {
+        console.log(`[EMAIL] Accepted by Brevo API. messageId: ${brevoData.messageId || brevoData.messageIds[0]}`);
+        return { success: true, messageId: brevoData.messageId, provider: 'resend' };
+      } else {
+        console.warn(`[EMAIL NOTICE] Brevo returned ${brevoRes.status}:`, brevoData);
+      }
+    } catch (brevoErr: any) {
+      console.warn('[EMAIL NOTICE] Brevo request failed:', brevoErr.message);
     }
   }
 
