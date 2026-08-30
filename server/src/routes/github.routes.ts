@@ -550,7 +550,7 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
 
           // Match commit message to tasks in this project
           const matchingTasks = await queryAll(`
-            SELECT t.id, t.task_code, t.title, t.dev_evidence_commits_count 
+            SELECT t.id, t.task_code, t.title, t.status, t.created_at, t.dev_evidence_commits_count 
             FROM tasks t
             LEFT JOIN projects p ON t.project_id = p.id
             WHERE (p.github_repo_name = ? OR t.github_repo = ? OR p.name = ? OR p.name ILIKE ?)
@@ -558,20 +558,26 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
 
           for (const task of matchingTasks) {
             const taskCodeLower = (task.task_code || '').toLowerCase();
-            const taskTitleLower = (task.title || '').toLowerCase();
-            const msgLower = (c.message || '').toLowerCase();
+            const taskTitleLower = (task.title || '').trim().toLowerCase();
+            const msgLower = (c.message || '').trim().toLowerCase();
 
-            // Extract meaningful words from task title
-            const taskWords = taskTitleLower
-              .split(/[\s,_\-:]+/)
-              .filter((w: string) => w.length >= 4);
+            // 1. Commit timestamp check: commit must have occurred AFTER or around when task was created
+            const commitTime = new Date(c.date || c.pushedAt).getTime();
+            const taskCreatedTime = new Date(task.created_at || 0).getTime();
+            const isCommitAfterTask = commitTime >= (taskCreatedTime - 30000);
 
+            // 2. Strict matching rules (prevent loose 1-word accidental completions)
             const hasCodeMatch = taskCodeLower && msgLower.includes(taskCodeLower);
-            const hasTitleMatch = taskTitleLower && msgLower.includes(taskTitleLower);
-            const hasWordMatch = taskWords.length > 0 && taskWords.some((w: string) => msgLower.includes(w));
+            const hasFullTitleMatch = taskTitleLower.length >= 6 && msgLower.includes(taskTitleLower);
 
-            if (hasCodeMatch || hasTitleMatch || hasWordMatch) {
-              // Task was touched by this real commit!
+            // Check conventional commit pattern, e.g. fix(welcome): or feat(welcome): matching title phrase
+            const cleanTitleWords = taskTitleLower
+              .replace(/^(fix|feat|chore|refactor|add|update|build|docs|test)[:\s\(\)]+/i, '')
+              .trim();
+            const hasPhraseMatch = cleanTitleWords.length >= 8 && msgLower.includes(cleanTitleWords);
+
+            if (isCommitAfterTask && (hasCodeMatch || hasFullTitleMatch || hasPhraseMatch)) {
+              // Task was genuinely completed by this new commit!
               await runQuery(`
                 UPDATE tasks SET
                   github_last_commit_hash = ?,
