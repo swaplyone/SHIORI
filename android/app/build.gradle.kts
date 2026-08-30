@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "in.swaplyone.shiori"
+    namespace = "com.swaplyone.shiori"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "in.swaplyone.shiori"
+        applicationId = "com.swaplyone.shiori"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

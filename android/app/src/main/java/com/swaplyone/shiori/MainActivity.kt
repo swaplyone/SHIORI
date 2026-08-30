@@ -1,4 +1,4 @@
-package in.swaplyone.shiori
+package com.swaplyone.shiori
 
 import android.Manifest
 import android.content.Context
@@ -232,7 +232,7 @@ fun ShioriFocusScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isPaused) "Paused on Lock Screen" else "Ticking on Lock Screen & Status Bar",
+                                text = if (isPaused) "Paused on Lock Screen" else "Live on Lock Screen & Status Bar",
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = Color.Gray

@@ -1,4 +1,4 @@
-package in.swaplyone.shiori
+package com.swaplyone.shiori
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -23,13 +23,13 @@ import java.net.URL
 class FocusTimerService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "shiori_focus_timer_channel"
+        const val CHANNEL_ID = "shiori_focus_timer_live_v2"
         const val NOTIFICATION_ID = 1001
 
-        const val ACTION_START = "in.swaplyone.shiori.ACTION_START"
-        const val ACTION_PAUSE = "in.swaplyone.shiori.ACTION_PAUSE"
-        const val ACTION_RESUME = "in.swaplyone.shiori.ACTION_RESUME"
-        const val ACTION_STOP = "in.swaplyone.shiori.ACTION_STOP"
+        const val ACTION_START = "com.swaplyone.shiori.ACTION_START"
+        const val ACTION_PAUSE = "com.swaplyone.shiori.ACTION_PAUSE"
+        const val ACTION_RESUME = "com.swaplyone.shiori.ACTION_RESUME"
+        const val ACTION_STOP = "com.swaplyone.shiori.ACTION_STOP"
 
         const val EXTRA_TASK_TITLE = "extra_task_title"
         const val EXTRA_PROJECT_NAME = "extra_project_name"
@@ -164,24 +164,33 @@ class FocusTimerService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val mins = currentSecondsRemaining / 60
+        val secs = currentSecondsRemaining % 60
+        val timeFormatted = String.format("%02d:%02d", mins, secs)
+
+        val title = if (isPaused) "⏸ FOCUS PAUSED ($timeFormatted)" else "⏳ FOCUS MODE (Active)"
+        val contentText = "$currentTaskTitle • $currentProjectName"
+
+        val bigTextStyle = NotificationCompat.BigTextStyle()
+            .setBigContentTitle(title)
+            .bigText("$currentTaskTitle\nProject: $currentProjectName\nSession: ${currentTotalSeconds / 60}m focus block")
+
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_shiori)
-            .setContentTitle(if (isPaused) "⏸ FOCUS PAUSED" else "⏳ FOCUS MODE")
-            .setContentText("$currentTaskTitle • $currentProjectName")
+            .setContentTitle(title)
+            .setContentText(contentText)
+            .setStyle(bigTextStyle)
             .setContentIntent(openAppPendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_WORKOUT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
 
         if (isPaused) {
-            val mins = currentSecondsRemaining / 60
-            val secs = currentSecondsRemaining % 60
-            builder.setContentText(String.format("Paused at %02d:%02d • %s", mins, secs, currentTaskTitle))
             builder.setUsesChronometer(false)
 
-            // Add Resume Button
+            // Add Resume Action Button
             val resumeIntent = Intent(this, NotificationActionReceiver::class.java).apply {
                 action = ACTION_RESUME
             }
@@ -189,14 +198,14 @@ class FocusTimerService : Service() {
                 this, 1, resumeIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            builder.addAction(R.drawable.ic_play, "RESUME", resumePending)
+            builder.addAction(R.drawable.ic_play, "▶ RESUME", resumePending)
         } else {
             // Native Android Live Chronometer Countdown
             builder.setUsesChronometer(true)
             builder.setChronometerCountDown(true)
             builder.setWhen(currentEndTimeMillis)
 
-            // Add Pause Button
+            // Add Pause Action Button
             val pauseIntent = Intent(this, NotificationActionReceiver::class.java).apply {
                 action = ACTION_PAUSE
             }
@@ -204,10 +213,10 @@ class FocusTimerService : Service() {
                 this, 2, pauseIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            builder.addAction(R.drawable.ic_pause, "PAUSE", pausePending)
+            builder.addAction(R.drawable.ic_pause, "⏸ PAUSE", pausePending)
         }
 
-        // Add Stop Button
+        // Add Stop Action Button
         val stopIntent = Intent(this, NotificationActionReceiver::class.java).apply {
             action = ACTION_STOP
         }
@@ -215,7 +224,7 @@ class FocusTimerService : Service() {
             this, 3, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        builder.addAction(R.drawable.ic_stop, "STOP", stopPending)
+        builder.addAction(R.drawable.ic_stop, "⏹ STOP", stopPending)
 
         return builder.build()
     }
@@ -225,11 +234,12 @@ class FocusTimerService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "SHIORI Focus Timer",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Displays live countdown timer on lock screen and notification panel"
+                description = "Live countdown timer with interactive controls on lock screen"
                 setShowBadge(true)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                enableVibration(false)
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)

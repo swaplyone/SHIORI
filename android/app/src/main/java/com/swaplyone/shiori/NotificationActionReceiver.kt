@@ -1,4 +1,4 @@
-package in.swaplyone.shiori
+package com.swaplyone.shiori
 
 import android.app.NotificationManager
 import android.content.BroadcastReceiver
@@ -13,8 +13,8 @@ import java.net.URL
 class NotificationActionReceiver : BroadcastReceiver() {
 
     companion object {
-        const val ACTION_TASK_ACCEPT = "in.swaplyone.shiori.ACTION_TASK_ACCEPT"
-        const val ACTION_TASK_REJECT = "in.swaplyone.shiori.ACTION_TASK_REJECT"
+        const val ACTION_TASK_ACCEPT = "com.swaplyone.shiori.ACTION_TASK_ACCEPT"
+        const val ACTION_TASK_REJECT = "com.swaplyone.shiori.ACTION_TASK_REJECT"
         const val EXTRA_TASK_ID = "extra_task_id"
         const val EXTRA_NOTIF_ID = "extra_notif_id"
     }
@@ -59,4 +59,3 @@ class NotificationActionReceiver : BroadcastReceiver() {
         context.startService(serviceIntent)
     }
 }
-
