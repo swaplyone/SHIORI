@@ -271,6 +271,13 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }).catch(() => {});
       }
 
+      reminderManager.showNotification('⏳ FOCUS MODE', {
+        body: `${durationMinutes}:00 • ${taskTitle} • ${projectName}`,
+        tag: 'shiori-focus-timer',
+        renotify: false,
+        silent: true,
+      } as any);
+
       dispatchEvent('FOCUS_TIMER', { taskTitle, projectName });
     },
     [dispatchEvent]
@@ -318,6 +325,13 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }).catch(() => {});
       }
 
+      reminderManager.showNotification('⏸ FOCUS PAUSED', {
+        body: `Paused • ${prev.taskTitle}`,
+        tag: 'shiori-focus-timer',
+        renotify: false,
+        silent: true,
+      } as any);
+
       return {
         ...prev,
         isPaused: true,
@@ -339,6 +353,15 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }).catch(() => {});
       }
 
+      const mins = Math.floor(prev.secondsRemaining / 60);
+      const secs = prev.secondsRemaining % 60;
+      reminderManager.showNotification('⏳ FOCUS MODE', {
+        body: `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} remaining • ${prev.taskTitle}`,
+        tag: 'shiori-focus-timer',
+        renotify: false,
+        silent: true,
+      } as any);
+
       return {
         ...prev,
         isPaused: false,
@@ -354,6 +377,14 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       fetch('/api/focus/session/stop', {
         method: 'POST',
         headers: { Authorization: `Bearer ${storedToken}` },
+      }).catch(() => {});
+    }
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.getNotifications({ tag: 'shiori-focus-timer' }).then((notifs) => {
+          notifs.forEach((n) => n.close());
+        });
       }).catch(() => {});
     }
 
