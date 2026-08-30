@@ -13,16 +13,55 @@ import {
   Smartphone,
   Sparkles
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { reminderManager } from '../utils/reminderManager';
 import { shioriAudio } from '../utils/shioriAudio';
 
 export const NotificationsPage: React.FC = () => {
+  const { token } = useAuth();
   const { notifications, markAsRead, markAllAsRead, triggerEInkRefresh } = useNotifications();
   const { openTaskModal } = useOutletContext<{ openTaskModal: (id: string) => void }>();
   const [permission, setPermission] = useState<string>(() => reminderManager.getPermission());
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const [delayedCountdown, setDelayedCountdown] = useState<number | null>(null);
+  const [actionStatus, setActionStatus] = useState<{ [key: string]: string }>({});
+
+  const handleAcceptAssignment = async (taskId: string, notifId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/accept`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setActionStatus((prev) => ({ ...prev, [notifId]: 'ACCEPTED' }));
+        markAsRead(notifId);
+        triggerEInkRefresh();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRejectAssignment = async (taskId: string, notifId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/reject`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setActionStatus((prev) => ({ ...prev, [notifId]: 'REJECTED' }));
+        markAsRead(notifId);
+        triggerEInkRefresh();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     setPermission(reminderManager.getPermission());
@@ -238,26 +277,60 @@ export const NotificationsPage: React.FC = () => {
                     {isFailed ? '✕' : isRecovered ? '✓' : isAssignment ? '📋' : isInvite ? '✉' : '→'}
                   </div>
 
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-eink-text">{n.title}</span>
-                      {n.task_code && (
-                        <span className="px-1 py-0.2 bg-eink-surface border border-eink-border rounded text-[10px]">
-                          {n.task_code}
-                        </span>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-eink-text">{n.title}</span>
+                        {n.task_code && (
+                          <span className="px-1 py-0.2 bg-eink-surface border border-eink-border rounded text-[10px] font-mono">
+                            {n.task_code}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-eink-textSecondary font-sans">{n.message}</p>
+                      <span className="text-[10px] text-eink-textMuted block pt-1">{n.created_at}</span>
+
+                      {/* 1-Click Accept / Reject Action for Task Assignments */}
+                      {isAssignment && n.task_id && (
+                        <div className="pt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          {actionStatus[n.id] === 'ACCEPTED' ? (
+                            <span className="px-2 py-1 bg-eink-text text-eink-bg text-[10px] font-bold rounded-sm flex items-center gap-1">
+                              <Check className="w-3 h-3" />
+                              <span>ACCEPTED</span>
+                            </span>
+                          ) : actionStatus[n.id] === 'REJECTED' ? (
+                            <span className="px-2 py-1 border border-eink-border text-[10px] font-bold text-eink-textMuted rounded-sm">
+                              DECLINED
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => handleAcceptAssignment(n.task_id!, n.id, e)}
+                                className="px-3 py-1 bg-eink-text text-eink-bg text-[10px] font-bold rounded-sm hover:opacity-90 active:scale-95 flex items-center gap-1 cursor-pointer shadow-eink-sm"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>ACCEPT TASK</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => handleRejectAssignment(n.task_id!, n.id, e)}
+                                className="px-3 py-1 border border-eink-border bg-eink-bg hover:bg-eink-surface text-[10px] font-bold text-eink-textSecondary hover:text-eink-text rounded-sm cursor-pointer"
+                              >
+                                DECLINE
+                              </button>
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
-                    <p className="text-xs text-eink-textSecondary font-sans">{n.message}</p>
-                    <span className="text-[10px] text-eink-textMuted block pt-1">{n.created_at}</span>
                   </div>
-                </div>
 
-                {!n.read && (
-                  <span className="w-2 h-2 rounded-full bg-eink-text shrink-0 mt-1.5" />
-                )}
+                  {!n.read && (
+                    <span className="w-2 h-2 rounded-full bg-eink-text shrink-0 mt-1.5" />
+                  )}
+                </div>
               </div>
-            </div>
-          );
+            );
         })}
 
         {notifications.length === 0 && (

@@ -467,6 +467,7 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_deleted INTEGER DEFAULT 0;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignment_status TEXT DEFAULT 'NONE';`,
       `CREATE TABLE IF NOT EXISTS daily_notes (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

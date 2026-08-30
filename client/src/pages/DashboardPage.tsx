@@ -41,6 +41,7 @@ export const DashboardPage: React.FC = () => {
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [selectedRepoName, setSelectedRepoName] = useState('');
   const [pendingInvitations, setPendingInvitations] = useState<any[]>([]);
+  const [pendingAssignments, setPendingAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(() => !sessionStorage.getItem('shiori_cached_projects'));
   const [submitting, setSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
@@ -48,10 +49,11 @@ export const DashboardPage: React.FC = () => {
   const fetchHomeData = async () => {
     if (!token) return;
     try {
-      const [projRes, repoRes, inviteRes] = await Promise.all([
+      const [projRes, repoRes, inviteRes, assignRes] = await Promise.all([
         fetchJson('/api/projects'),
         fetchJson('/api/github/available-repositories'),
-        fetchJson('/api/projects/invitations/pending')
+        fetchJson('/api/projects/invitations/pending'),
+        fetchJson('/api/tasks/pending/assignments')
       ]);
 
       if (projRes.ok && projRes.data?.projects) {
@@ -61,6 +63,10 @@ export const DashboardPage: React.FC = () => {
 
       if (inviteRes.ok && inviteRes.data?.invitations) {
         setPendingInvitations(inviteRes.data.invitations);
+      }
+
+      if (assignRes.ok && assignRes.data?.tasks) {
+        setPendingAssignments(assignRes.data.tasks);
       }
 
       if (repoRes.ok && repoRes.data?.repositories) {
@@ -134,6 +140,36 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
+  const handleAcceptTaskAssignment = async (taskId: string) => {
+    if (!token) return;
+    try {
+      const { ok } = await fetchJson(`/api/tasks/${taskId}/accept`, {
+        method: 'POST'
+      });
+      if (ok) {
+        triggerEInkRefresh();
+        fetchHomeData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRejectTaskAssignment = async (taskId: string) => {
+    if (!token) return;
+    try {
+      const { ok } = await fetchJson(`/api/tasks/${taskId}/reject`, {
+        method: 'POST'
+      });
+      if (ok) {
+        triggerEInkRefresh();
+        fetchHomeData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const totalActiveTodos = projects.reduce((sum, p) => sum + (p.active_todos || 0), 0);
   const totalCompletedTodos = projects.reduce((sum, p) => sum + (p.completed_tasks || 0), 0);
   const totalCommitsToday = projects.reduce((sum, p) => sum + (p.commitsTodayCount || 0), 0);
@@ -170,6 +206,69 @@ export const DashboardPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* PENDING WORK ASSIGNED BANNER */}
+      {pendingAssignments.length > 0 && (
+        <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 shadow-eink-card animate-fade-in font-technical">
+          <div className="flex items-center justify-between border-b border-eink-border pb-2">
+            <span className="font-bold text-xs uppercase text-eink-text tracking-wider flex items-center gap-2">
+              <span>📋</span>
+              <span>WORK ASSIGNED TO YOU ({pendingAssignments.length})</span>
+            </span>
+            <span className="text-[11px] text-eink-textSecondary">
+              Accept to add to your daily queue or decline to unassign
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {pendingAssignments.map((task) => (
+              <div
+                key={task.id}
+                className="p-3.5 bg-eink-bg border border-eink-border rounded-sm space-y-2 flex flex-col justify-between"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 bg-eink-surface border border-eink-border rounded shrink-0">
+                        {task.task_code}
+                      </span>
+                      <span className="font-bold text-sm text-eink-text truncate">
+                        {task.title}
+                      </span>
+                    </div>
+                    {task.project_name && (
+                      <span className="text-[10px] bg-eink-surface px-1.5 py-0.2 border border-eink-border rounded font-mono font-bold shrink-0">
+                        {task.project_name}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-eink-textSecondary">
+                    Assigned by <strong className="text-eink-text font-mono">{task.creator_name || 'Teammate'}</strong>
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-eink-border/50">
+                  <button
+                    type="button"
+                    onClick={() => handleRejectTaskAssignment(task.id)}
+                    className="px-3 py-1.5 border border-eink-border hover:bg-eink-surface text-xs text-eink-textSecondary hover:text-eink-text rounded-sm cursor-pointer"
+                  >
+                    DECLINE
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAcceptTaskAssignment(task.id)}
+                    className="px-4 py-1.5 bg-eink-text text-eink-bg font-bold text-xs rounded-sm shadow-eink-sm hover:opacity-90 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>ACCEPT TASK</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* PENDING PROJECT INVITATIONS BANNER */}
       {pendingInvitations.length > 0 && (

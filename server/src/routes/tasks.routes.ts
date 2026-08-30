@@ -213,24 +213,25 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   const rawAssignee = req.body.assigneeId || req.body.assignee_id || req.body.assignee;
   const targetAssigneeId = typeof rawAssignee === 'object' ? rawAssignee?.id : (rawAssignee || null);
   const nowIso = new Date().toISOString();
+  const initialAssignmentStatus = (targetAssigneeId && targetAssigneeId !== req.user!.id) ? 'ASSIGNED' : 'ACCEPTED';
 
   await runQuery(`
     INSERT INTO tasks (
       id, task_number, task_code, project_id, workspace_id, title, description,
       status, priority, user_status, assignee_id, created_by, due_date, due_at,
       reminder_at, recurrence_rule, tags, github_repo, github_branch, github_ci_status,
-      is_archived, is_deleted, created_at, updated_at
+      is_archived, is_deleted, assignment_status, created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?,
       ?, ?, 'TODO', ?, ?, ?, ?,
       ?, ?, ?, ?, ?, 'UNKNOWN',
-      0, 0, datetime('now'), datetime('now')
+      0, 0, ?, datetime('now'), datetime('now')
     )
   `, [
     taskId, nextNum, taskCode, projectId, finalWorkspaceId, title, description || '',
     status, priority, targetAssigneeId || req.user!.id, req.user!.id, dueDate || 'Tomorrow',
     due_at || null, reminder_at || null, recurrence_rule || null, tags || null,
-    finalGithubRepo || null, githubBranch || null
+    finalGithubRepo || null, githubBranch || null, initialAssignmentStatus
   ]);
 
   const createdTask: any = {
@@ -256,6 +257,7 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     github_ci_status: 'UNKNOWN',
     is_archived: 0,
     is_deleted: 0,
+    assignment_status: initialAssignmentStatus,
     created_at: nowIso,
     updated_at: nowIso
   };
@@ -1003,3 +1005,22 @@ tasksRouter.post('/:id/reject', authMiddleware, async (req: AuthRequest, res: Re
 
   res.json({ task: updatedTask, message: 'Task assignment rejected.' });
 });
+
+// GET /api/tasks/pending/assignments - Fetch all tasks assigned to current user pending accept/reject
+tasksRouter.get('/pending/assignments', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const pending = await queryAll(`
+    SELECT t.*, p.name as project_name, p.slug as project_slug, creator.name as creator_name, creator.shiori_id as creator_shiori_id
+    FROM tasks t
+    LEFT JOIN projects p ON t.project_id = p.id
+    LEFT JOIN users creator ON t.created_by = creator.id
+    WHERE t.assignee_id = ? 
+      AND t.created_by != ? 
+      AND (t.assignment_status = 'ASSIGNED' OR t.assignment_status IS NULL OR t.assignment_status = 'NONE')
+      AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+    ORDER BY t.created_at DESC
+  `, [userId, userId]);
+
+  res.json({ tasks: pending });
+});
+
