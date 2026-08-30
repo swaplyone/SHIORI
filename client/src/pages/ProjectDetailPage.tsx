@@ -156,7 +156,9 @@ export const ProjectDetailPage: React.FC = () => {
       if (ok) {
         if (data?.task) {
           setTodos((prev) => [data.task, ...prev]);
-          setCreatedHandoffTask(data.task);
+          if (data.task.status !== 'DONE' && data.task.user_status !== 'COMPLETED') {
+            setCreatedHandoffTask(data.task);
+          }
         }
         setNewTodoTitle('');
         setNewTodoDescription('');

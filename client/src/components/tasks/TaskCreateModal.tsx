@@ -151,7 +151,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               reminderAt: reminderDate.toISOString(),
             });
           }
-          setCreatedTask(data.task);
+          if (data.task.status !== 'DONE' && data.task.user_status !== 'COMPLETED') {
+            setCreatedTask(data.task);
+          } else {
+            onClose();
+          }
         } else {
           onClose();
         }

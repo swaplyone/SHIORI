@@ -387,25 +387,29 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           <div className="flex items-center gap-2">
             {task && (
               <>
-                <button
-                  type="button"
-                  onClick={() => setIsFocusOpen(true)}
-                  className="px-2.5 py-1 bg-eink-text text-eink-bg rounded-sm text-[11px] font-bold flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer"
-                  title="Open Focus Mode for this task"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>FOCUS MODE</span>
-                </button>
+                {task.status !== 'DONE' && task.user_status !== 'COMPLETED' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsFocusOpen(true)}
+                      className="px-2.5 py-1 bg-eink-text text-eink-bg rounded-sm text-[11px] font-bold flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+                      title="Open Focus Mode for this task"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>FOCUS MODE</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => setIsHandoffOpen(true)}
-                  className="px-2.5 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm text-[11px] font-mono font-bold text-eink-text flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Open AI Developer Handoff"
-                >
-                  <Terminal className="w-3.5 h-3.5" />
-                  <span>AI PROMPT</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsHandoffOpen(true)}
+                      className="px-2.5 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm text-[11px] font-mono font-bold text-eink-text flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Open AI Developer Handoff"
+                    >
+                      <Terminal className="w-3.5 h-3.5" />
+                      <span>AI PROMPT</span>
+                    </button>
+                  </>
+                )}
 
                 {Boolean(task.is_archived) ? (
                   <button
