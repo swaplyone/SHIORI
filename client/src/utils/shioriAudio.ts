@@ -245,10 +245,42 @@ class ShioriAudioEngine {
 
       noise.connect(lpf);
       lpf.connect(gain);
-      gain.connect(ctx.destination);
-
       noise.start();
       noise.stop(ctx.currentTime + duration);
+    } catch {}
+  }
+
+  /**
+   * 5. FOCUS COMPLETION CHIME: Gentle Japanese singing bowl / singing bell harmonic
+   */
+  public playFocusChime(volume = 0.12): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx || ctx.state === 'suspended') return;
+
+    try {
+      const now = ctx.currentTime;
+      const duration = 2.4;
+
+      // Frequencies for a calm singing bowl chord: E5 (659.25Hz), B5 (987.77Hz), E6 (1318.51Hz)
+      const freqs = [659.25, 987.77, 1318.51];
+      freqs.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime((volume / (idx + 1)), now + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.00001, now + duration);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + duration);
+      });
     } catch {}
   }
 }
