@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import {
   Github,
@@ -16,11 +16,12 @@ import {
   ShieldCheck,
   Code,
   FileCode,
-  Calendar
+  Calendar,
+  ArrowUpDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Task, TaskStatus } from '../types';
+import { Task, TaskStatus, TaskPriority } from '../types';
 import { TaskDetailModal } from '../components/tasks/TaskDetailModal';
 import { CodeRecoveryModal } from '../components/recovery/CodeRecoveryModal';
 import { GitHistoryModal } from '../components/github/GitHistoryModal';
@@ -40,6 +41,10 @@ export const ProjectDetailPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'todos' | 'git' | 'members'>('todos');
   const [loading, setLoading] = useState(true);
 
+  // Filter & Sort state for Project TODOs
+  const [priorityFilter, setPriorityFilter] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'priority' | 'due_date'>('newest');
+
   // Modals state
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isAddTodoOpen, setIsAddTodoOpen] = useState(false);
@@ -53,6 +58,9 @@ export const ProjectDetailPage: React.FC = () => {
   const [newTodoDescription, setNewTodoDescription] = useState('');
   const [newTodoBranch, setNewTodoBranch] = useState('main');
   const [newTodoAssignee, setNewTodoAssignee] = useState('');
+  const [newTodoPriority, setNewTodoPriority] = useState<TaskPriority>('MEDIUM');
+  const [newTodoDueDate, setNewTodoDueDate] = useState('Tomorrow');
+  const [newTodoDueAt, setNewTodoDueAt] = useState('');
   const [memberShioriId, setMemberShioriId] = useState('');
   const [memberError, setMemberError] = useState<string | null>(null);
   const [memberSuccess, setMemberSuccess] = useState<string | null>(null);
@@ -145,6 +153,9 @@ export const ProjectDetailPage: React.FC = () => {
     const tempDesc = newTodoDescription.trim() || null;
     const tempBranch = newTodoBranch.trim() || 'main';
     const tempAssigneeId = newTodoAssignee || null;
+    const tempPriority = newTodoPriority;
+    const tempDueDate = newTodoDueDate;
+    const tempDueAt = newTodoDueAt || null;
 
     // 1. Instant optimistic creation
     const tempId = `temp-${Date.now()}`;
@@ -154,18 +165,23 @@ export const ProjectDetailPage: React.FC = () => {
       title: tempTitle,
       description: tempDesc,
       status: 'TODO',
-      priority: 'MEDIUM',
+      priority: tempPriority,
       user_status: 'TODO',
       project_id: project.id,
       github_branch: tempBranch,
       assignee_id: tempAssigneeId,
       assignee_name: project.members?.find((m: any) => m.id === tempAssigneeId)?.name || 'Unassigned',
+      due_date: tempDueDate,
+      due_at: tempDueAt,
       created_at: new Date().toISOString()
     };
 
     setTodos((prev) => [optimisticTask, ...prev]);
     setNewTodoTitle('');
     setNewTodoDescription('');
+    setNewTodoPriority('MEDIUM');
+    setNewTodoDueDate('Tomorrow');
+    setNewTodoDueAt('');
     setIsAddTodoOpen(false);
     triggerEInkRefresh();
 
@@ -177,7 +193,9 @@ export const ProjectDetailPage: React.FC = () => {
           title: tempTitle,
           description: tempDesc,
           status: 'TODO',
-          priority: 'MEDIUM',
+          priority: tempPriority,
+          dueDate: tempDueDate,
+          due_at: tempDueAt,
           githubRepo: project.github_repo_name,
           githubBranch: tempBranch,
           assigneeId: tempAssigneeId
@@ -196,6 +214,43 @@ export const ProjectDetailPage: React.FC = () => {
       setTodos((prev) => prev.filter((t) => t.id !== tempId));
     }
   };
+
+  const getPriorityRank = (p?: string): number => {
+    switch ((p || '').toUpperCase()) {
+      case 'URGENT': return 4;
+      case 'HIGH': return 3;
+      case 'MEDIUM': return 2;
+      case 'LOW': return 1;
+      default: return 2;
+    }
+  };
+
+  const filteredAndSortedTodos = useMemo(() => {
+    return todos
+      .filter((t) => {
+        if (priorityFilter && (t.priority || 'MEDIUM').toUpperCase() !== priorityFilter.toUpperCase()) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'oldest') {
+          return (a.task_number || 0) - (b.task_number || 0);
+        }
+        if (sortBy === 'priority') {
+          const pDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
+          if (pDiff !== 0) return pDiff;
+          return (b.task_number || 0) - (a.task_number || 0);
+        }
+        if (sortBy === 'due_date') {
+          const dA = a.due_at ? new Date(a.due_at).getTime() : 9999999999999;
+          const dB = b.due_at ? new Date(b.due_at).getTime() : 9999999999999;
+          return dA - dB;
+        }
+        // Default: newest
+        return (b.task_number || 0) - (a.task_number || 0);
+      });
+  }, [todos, priorityFilter, sortBy]);
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -400,13 +455,47 @@ export const ProjectDetailPage: React.FC = () => {
       {/* TAB 1: TODOS (Shared with all project members) */}
       {activeTab === 'todos' && (
         <div className="space-y-4 font-technical">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase font-bold text-eink-textMuted tracking-wider">
-              PROJECT TODOS (SHARED IN REAL-TIME WITH ALL MEMBERS)
-            </span>
-            <span className="text-xs text-eink-textSecondary">
-              {todos.filter((t) => t.status !== 'DONE').length} pending · {todos.filter((t) => t.status === 'DONE').length} completed
-            </span>
+          {/* Header & Filter/Sort Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-eink-border/60">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-bold text-eink-textMuted tracking-wider">
+                PROJECT TODOS ({filteredAndSortedTodos.length})
+              </span>
+              <span className="text-xs text-eink-textSecondary">
+                {todos.filter((t) => t.status !== 'DONE').length} pending · {todos.filter((t) => t.status === 'DONE').length} completed
+              </span>
+            </div>
+
+            {/* Filter by Priority & Sort Controls */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {/* Sort Filter */}
+              <div className="flex items-center gap-1 bg-eink-surface border border-eink-border rounded-sm px-2 py-0.5 shadow-eink-sm">
+                <ArrowUpDown className="w-3 h-3 text-eink-text" />
+                <select
+                  value={sortBy}
+                  onChange={(e: any) => setSortBy(e.target.value)}
+                  className="bg-transparent text-xs font-technical font-bold text-eink-text outline-none cursor-pointer py-1"
+                >
+                  <option value="newest">SORT: NEWEST</option>
+                  <option value="oldest">SORT: OLDEST (1 → 30)</option>
+                  <option value="priority">SORT: PRIORITY</option>
+                  <option value="due_date">SORT: DUE DATE</option>
+                </select>
+              </div>
+
+              {/* Priority Filter */}
+              <select
+                value={priorityFilter}
+                onChange={(e) => setPriorityFilter(e.target.value)}
+                className="px-2.5 py-1.5 bg-eink-surface border border-eink-border rounded-sm text-xs font-technical font-bold text-eink-text outline-none shadow-eink-sm"
+              >
+                <option value="">ALL PRIORITIES</option>
+                <option value="URGENT">URGENT</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+            </div>
           </div>
 
           <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border">
@@ -425,18 +514,20 @@ export const ProjectDetailPage: React.FC = () => {
                   </div>
                 ))}
               </div>
-            ) : todos.length === 0 ? (
+            ) : filteredAndSortedTodos.length === 0 ? (
               <div className="p-12 text-center text-xs text-eink-textMuted font-technical space-y-2">
-                <p>No TODOs in this project yet.</p>
-                <button
-                  onClick={() => setIsAddTodoOpen(true)}
-                  className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs cursor-pointer"
-                >
-                  + CREATE FIRST TODO
-                </button>
+                <p>{todos.length === 0 ? 'No TODOs in this project yet.' : 'No TODOs match the selected priority filter.'}</p>
+                {todos.length === 0 && (
+                  <button
+                    onClick={() => setIsAddTodoOpen(true)}
+                    className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs cursor-pointer"
+                  >
+                    + CREATE FIRST TODO
+                  </button>
+                )}
               </div>
             ) : (
-              todos.map((task) => {
+              filteredAndSortedTodos.map((task) => {
                 const isDone = task.status === 'DONE';
                 return (
                   <div
@@ -464,6 +555,22 @@ export const ProjectDetailPage: React.FC = () => {
                           <span className="font-bold text-[10px] sm:text-xs bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
                             {task.task_code || 'TODO'}
                           </span>
+
+                          {/* Priority Badge */}
+                          <span
+                            className={`text-[9px] sm:text-[10px] font-mono font-bold px-1.5 py-0.2 border rounded ${
+                              (task.priority || 'MEDIUM') === 'URGENT'
+                                ? 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface'
+                                : task.priority === 'HIGH'
+                                ? 'bg-eink-text text-eink-bg border-eink-text'
+                                : task.priority === 'LOW'
+                                ? 'bg-eink-bg text-eink-textMuted border-eink-border'
+                                : 'bg-eink-bg text-eink-text border-eink-border'
+                            }`}
+                          >
+                            {task.priority === 'URGENT' ? '⚡ URGENT' : task.priority || 'MEDIUM'}
+                          </span>
+
                           <h4
                             className={`text-xs font-bold text-eink-text truncate max-w-[200px] sm:max-w-md ${
                               isDone ? 'line-through text-eink-textMuted' : ''
@@ -489,6 +596,15 @@ export const ProjectDetailPage: React.FC = () => {
                           <span>
                             {task.dev_evidence_commits_count || (task.github_last_commit_hash ? 1 : 0)} commits
                           </span>
+                          {task.due_date && (
+                            <>
+                              <span>•</span>
+                              <span className="flex items-center gap-1 text-eink-text font-bold">
+                                <Calendar className="w-3 h-3" />
+                                <span>{task.due_date}</span>
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -523,10 +639,10 @@ export const ProjectDetailPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setIsHistoryOpen(true)}
-                className="px-3 py-1.5 border border-eink-border hover:bg-eink-bg font-bold rounded flex items-center gap-1.5 text-eink-text"
+                className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90"
               >
                 <GitCommit className="w-3.5 h-3.5" />
-                <span>FULL GIT HISTORY</span>
+                <span>FULL COMMITS ({commits.length})</span>
               </button>
               <button
                 onClick={() => setIsRecoveryOpen(true)}
@@ -538,39 +654,50 @@ export const ProjectDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Recent Commits List */}
-          <div className="space-y-3">
-            <span className="text-[10px] uppercase font-bold text-eink-textMuted tracking-wider block">
-              RECENT COMMITS ({commits.length})
-            </span>
+          {/* Quick Commit History Strip */}
+          <div className="border border-eink-border rounded-sm bg-eink-surface overflow-hidden">
+            <div className="p-3 border-b border-eink-border bg-eink-bg flex items-center justify-between">
+              <span className="text-[10px] uppercase font-bold text-eink-textMuted tracking-wider">
+                RECENT COMMITS ({commits.length})
+              </span>
+              <span className="text-[10px] text-eink-textSecondary font-mono">
+                Branch: <strong>{project.default_branch || 'main'}</strong>
+              </span>
+            </div>
 
-            <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border/60 overflow-hidden shadow-eink-card">
-              {commits.map((c) => (
-                <div
-                  key={c.hash}
-                  onClick={() => setIsHistoryOpen(true)}
-                  className="p-3.5 flex items-center justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer text-xs"
-                >
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded">
-                        ⎇ {c.hash}
-                      </span>
-                      <h4 className="font-bold text-eink-text truncate">{c.message}</h4>
-                    </div>
-                    <div className="flex items-center gap-3 text-[11px] text-eink-textSecondary font-mono">
-                      <span>Author: <strong className="text-eink-text">{c.author}</strong></span>
-                      <span>•</span>
-                      <span>{c.date}</span>
-                    </div>
-                  </div>
-
-                  <div className="text-right font-mono text-xs shrink-0">
-                    <span className="font-bold text-eink-text">+{c.additions}</span>{' '}
-                    <span className="text-eink-textMuted">-{c.deletions}</span>
-                  </div>
+            <div className="divide-y divide-eink-border">
+              {commits.length === 0 ? (
+                <div className="p-8 text-center text-xs text-eink-textMuted font-mono">
+                  No Git commits recorded for this repository yet.
                 </div>
-              ))}
+              ) : (
+                commits.slice(0, 5).map((c) => (
+                  <div
+                    key={c.hash}
+                    onClick={() => setIsHistoryOpen(true)}
+                    className="p-3.5 flex items-center justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer text-xs"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded">
+                          ⎇ {c.hash}
+                        </span>
+                        <h4 className="font-bold text-eink-text truncate">{c.message}</h4>
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-eink-textSecondary font-mono">
+                        <span>Author: <strong className="text-eink-text">{c.author}</strong></span>
+                        <span>•</span>
+                        <span>{c.date}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-right font-mono text-xs shrink-0">
+                      <span className="font-bold text-eink-text">+{c.additions}</span>{' '}
+                      <span className="text-eink-textMuted">-{c.deletions}</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -629,7 +756,7 @@ export const ProjectDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* ADD TODO MODAL (Repository automatically inherited) */}
+      {/* ADD TODO MODAL (With Priority & Calendar Options) */}
       {isAddTodoOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4 font-technical select-none">
           <div className="bg-eink-bg border-2 border-eink-text w-full max-w-lg rounded-sm p-6 space-y-4 shadow-2xl">
@@ -674,6 +801,76 @@ export const ProjectDetailPage: React.FC = () => {
                   rows={2}
                   className="w-full px-3 py-2 bg-eink-surface border border-eink-border rounded-sm text-xs text-eink-text outline-none resize-none font-sans"
                 />
+              </div>
+
+              {/* PRIORITY SELECTION */}
+              <div>
+                <label className="block text-[10px] font-technical font-bold text-eink-textMuted uppercase mb-1.5">
+                  PRIORITY
+                </label>
+                <div className="grid grid-cols-4 gap-1.5 font-technical text-xs">
+                  {(['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as TaskPriority[]).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setNewTodoPriority(p)}
+                      className={`py-1.5 px-2 border rounded-sm font-bold text-[11px] transition-all cursor-pointer ${
+                        newTodoPriority === p
+                          ? p === 'URGENT'
+                            ? 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface shadow-eink-sm'
+                            : 'bg-eink-text text-eink-bg border-eink-text shadow-eink-sm'
+                          : 'bg-eink-surface hover:bg-eink-surfaceHover border-eink-border text-eink-text'
+                      }`}
+                    >
+                      {p === 'URGENT' ? '⚡ URGENT' : p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* CALENDAR / DUE DATE SELECTION */}
+              <div>
+                <label className="block text-[10px] font-technical font-bold text-eink-textMuted uppercase mb-1.5 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-eink-text" />
+                  <span>CALENDAR / DUE DATE</span>
+                </label>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-1.5 text-[11px] font-technical">
+                    {['Today', 'Tomorrow', 'This Friday', 'Next Week'].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          setNewTodoDueDate(preset);
+                          setNewTodoDueAt('');
+                        }}
+                        className={`px-2.5 py-1 border rounded-sm transition-all cursor-pointer ${
+                          newTodoDueDate === preset && !newTodoDueAt
+                            ? 'bg-eink-text text-eink-bg font-bold border-eink-text shadow-eink-sm'
+                            : 'bg-eink-surface text-eink-text border-eink-border hover:bg-eink-surfaceHover'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={newTodoDueAt}
+                      onChange={(e) => {
+                        setNewTodoDueAt(e.target.value);
+                        if (e.target.value) {
+                          setNewTodoDueDate(new Date(e.target.value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+                        }
+                      }}
+                      className="px-2.5 py-1.5 bg-eink-surface border border-eink-border rounded-sm text-xs font-mono text-eink-text outline-none cursor-pointer"
+                    />
+                    <span className="text-[11px] text-eink-textSecondary font-mono">
+                      📅 {newTodoDueDate || 'Tomorrow'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-technical">
@@ -721,14 +918,14 @@ export const ProjectDetailPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsAddTodoOpen(false)}
-                  className="px-3 py-1.5 border border-eink-border text-xs text-eink-textSecondary hover:bg-eink-surface rounded-sm"
+                  className="px-3 py-1.5 border border-eink-border text-xs text-eink-textSecondary hover:bg-eink-surface rounded-sm cursor-pointer"
                 >
                   CANCEL
                 </button>
                 <button
                   type="submit"
                   disabled={submitting || !newTodoTitle.trim()}
-                  className="px-4 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs shadow-eink-sm hover:opacity-90 disabled:opacity-50"
+                  className="px-4 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs shadow-eink-sm hover:opacity-90 disabled:opacity-50 cursor-pointer"
                 >
                   {submitting ? 'ADDING...' : 'ADD TODO'}
                 </button>
