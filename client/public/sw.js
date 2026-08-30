@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shiori-pwa-v2';
+const CACHE_NAME = 'shiori-pwa-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
