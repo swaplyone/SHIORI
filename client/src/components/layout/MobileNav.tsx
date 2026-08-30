@@ -33,22 +33,22 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSimulator, onOpenCom
     <>
       {/* Top Mobile Bar */}
       <header className="md:hidden sticky top-0 z-30 bg-eink-bg border-b border-eink-border px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <img
             src="/nav-logo.png"
             alt="SHIORI"
-            className="w-6 h-6 object-contain rounded-sm border border-eink-border bg-eink-bg"
+            className="w-6 h-6 object-contain bg-transparent border-0 shrink-0 select-none"
           />
-          <div>
-            <h1 className="font-technical font-bold text-sm leading-tight">SHIORI</h1>
-            <p className="text-[9px] text-eink-textMuted uppercase tracking-wider">A SwaplyOne product</p>
+          <div className="flex flex-col justify-center">
+            <h1 className="font-abask font-bold text-sm tracking-[0.16em] uppercase leading-none">SHIORI</h1>
+            <p className="text-[8px] text-eink-textMuted uppercase tracking-wider font-mono mt-0.5">A SwaplyOne product</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenCommandPalette}
-            className="px-2 py-1 border border-eink-border text-xs font-technical bg-eink-surface rounded"
+            className="px-2 py-1 border border-eink-border text-xs font-mono bg-eink-surface rounded"
           >
             /
           </button>
@@ -70,9 +70,16 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSimulator, onOpenCom
           <div className="relative w-72 max-w-[80vw] bg-eink-bg h-full border-r border-eink-border flex flex-col justify-between p-4 z-10 font-sans">
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-eink-border">
-                <div>
-                  <h2 className="font-technical font-bold text-lg">SHIORI</h2>
-                  <p className="text-[10px] text-eink-textMuted uppercase">Plan. Build. Verify.</p>
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src="/nav-logo.png"
+                    alt="SHIORI"
+                    className="w-7 h-7 object-contain bg-transparent border-0 shrink-0 select-none"
+                  />
+                  <div>
+                    <h2 className="font-abask font-bold text-lg tracking-[0.16em] uppercase leading-none">SHIORI</h2>
+                    <p className="text-[9px] text-eink-textMuted uppercase font-mono tracking-wider mt-0.5">Plan. Build. Verify.</p>
+                  </div>
                 </div>
                 <button
                   onClick={() => setDrawerOpen(false)}

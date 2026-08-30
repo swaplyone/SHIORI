@@ -47,16 +47,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSimulator, onOpenCommand
               <img
                 src="/nav-logo.png"
                 alt="SHIORI"
-                className="w-7 h-7 object-contain rounded-sm border border-eink-border bg-eink-bg"
+                className="w-7 h-7 object-contain bg-transparent border-0 shrink-0 select-none"
               />
-              <div>
-                <h1 className="font-technical font-bold text-sm tracking-wider text-eink-text uppercase">
+              <div className="flex flex-col justify-center">
+                <h1 className="font-abask font-bold text-base tracking-[0.16em] text-eink-text uppercase leading-none">
                   SHIORI
                 </h1>
-                <p className="text-[10px] text-eink-textMuted font-technical">A SwaplyOne product</p>
+                <p className="text-[9px] text-eink-textMuted tracking-wider font-mono uppercase mt-0.5">
+                  A SwaplyOne product
+                </p>
               </div>
             </div>
-            <span className="text-[9px] font-technical uppercase bg-eink-bg px-1.5 py-0.5 border border-eink-border rounded font-bold text-eink-text">
+            <span className="text-[9px] font-mono uppercase bg-eink-bg px-1.5 py-0.5 border border-eink-border rounded font-bold text-eink-text">
               E-INK
             </span>
           </div>
