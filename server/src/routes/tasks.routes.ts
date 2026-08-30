@@ -4,6 +4,7 @@ import { queryOne, queryAll, runQuery } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { recalculateTaskEvidence } from '../services/evidence.service.js';
 import { emitToWorkspace, emitToTask, emitToUser } from '../services/socket.service.js';
+import { sendPushToUser } from '../services/push.service.js';
 
 export const tasksRouter = Router();
 
@@ -305,6 +306,13 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
       title,
       assignerName: req.user!.name
     });
+
+    sendPushToUser(targetAssigneeId, {
+      title: `📋 Task Assigned: ${taskCode}`,
+      body: `${req.user!.name} assigned "${title}" to you.`,
+      url: `/tasks`,
+      tag: `shiori-assigned-${taskId}`
+    }).catch(console.error);
   }
 
   Promise.all(bgPromises).catch(console.error);
@@ -614,6 +622,13 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
       title: current.title,
       assignerName: req.user!.name
     });
+
+    sendPushToUser(assigneeId, {
+      title: `📋 Task Assigned: ${current.task_code}`,
+      body: `${req.user!.name} assigned "${current.title}" to you.`,
+      url: `/tasks`,
+      tag: `shiori-assigned-${id}`
+    }).catch(console.error);
   }
 
   emitToTask(id, 'task:updated', { task: updated, evidence });
@@ -877,6 +892,13 @@ tasksRouter.post('/:id/accept', authMiddleware, async (req: AuthRequest, res: Re
       type: 'TASK_ACCEPTED',
       task_id: id
     });
+
+    sendPushToUser(task.created_by, {
+      title: `✓ Task Accepted: ${task.task_code}`,
+      body: `${req.user!.name} accepted task "${task.title}".`,
+      url: `/tasks`,
+      tag: `shiori-accepted-${id}`
+    }).catch(console.error);
   }
 
   // Real-time broadcast to all workspace members
@@ -994,6 +1016,13 @@ tasksRouter.post('/:id/reject', authMiddleware, async (req: AuthRequest, res: Re
       type: 'TASK_REJECTED',
       task_id: id
     });
+
+    sendPushToUser(task.created_by, {
+      title: `✕ Task Declined: ${task.task_code}`,
+      body: `${req.user!.name} declined task "${task.title}".`,
+      url: `/tasks`,
+      tag: `shiori-declined-${id}`
+    }).catch(console.error);
   }
 
   // Real-time broadcast to all workspace members

@@ -258,6 +258,17 @@ async function initPgSchema(pool: pg.Pool) {
       completed_at TIMESTAMPTZ
     );
 
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      user_agent TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS registration_otps (
       email TEXT PRIMARY KEY,
       otp_hash TEXT NOT NULL,
@@ -477,6 +488,17 @@ async function initPgSchema(pool: pg.Pool) {
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(user_id, note_date)
       );`,
+      `CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL UNIQUE,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        user_agent TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_push_sub_user ON push_subscriptions(user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);`,
       `CREATE INDEX IF NOT EXISTS idx_tasks_workspace_id ON tasks(workspace_id);`,
       `CREATE INDEX IF NOT EXISTS idx_tasks_number ON tasks(task_number);`,

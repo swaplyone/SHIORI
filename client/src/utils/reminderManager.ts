@@ -1,4 +1,15 @@
-// Shiori Calm Reminder & Notification System
+// Shiori Calm Reminder & Real Web Push Notification System
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 export interface ScheduledReminder {
   taskId: string;
@@ -50,6 +61,59 @@ class ReminderManager {
     }
   }
 
+  public async subscribeToWebPush(token: string): Promise<boolean> {
+    if (
+      typeof window === 'undefined' ||
+      !('serviceWorker' in navigator) ||
+      !('PushManager' in window)
+    ) {
+      return false;
+    }
+
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (!reg || !reg.pushManager) return false;
+
+      // 1. Fetch public VAPID key from backend
+      const keyRes = await fetch('/api/notifications/vapid-public-key');
+      if (!keyRes.ok) return false;
+      const { publicKey } = await keyRes.json();
+      if (!publicKey) return false;
+
+      // 2. Subscribe via PushManager
+      let subscription = await reg.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as BufferSource
+        });
+      }
+
+      // 3. Register subscription with backend for locked-screen push
+      const subJson = subscription.toJSON();
+      if (subJson && subJson.endpoint && subJson.keys) {
+        await fetch('/api/notifications/subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            subscription: {
+              endpoint: subJson.endpoint,
+              keys: subJson.keys
+            }
+          })
+        });
+      }
+
+      return true;
+    } catch (err) {
+      console.warn('[PUSH SUBSCRIBE ERROR]', err);
+      return false;
+    }
+  }
+
   public async showNotification(title: string, options?: NotificationOptions) {
     if (!this.isNotificationSupported() || Notification.permission !== 'granted') {
       return;
@@ -62,7 +126,7 @@ class ReminderManager {
       ...options,
     };
 
-    // 1. Try ServiceWorkerRegistration (Required for iPhone iOS 16.4+ lock screen & Android PWA)
+    // 1. Try ServiceWorkerRegistration (Required for Android & iPhone iOS 16.4+ lock screen)
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       try {
         const reg = await navigator.serviceWorker.ready;
@@ -103,58 +167,41 @@ class ReminderManager {
     this.saveToStorage();
   }
 
-  private rearmAll() {
-    this.scheduledList.forEach((r) => this.armTimer(r));
-  }
-
   private armTimer(reminder: ScheduledReminder) {
-    const reminderTime = new Date(reminder.reminderAt).getTime();
+    const targetTime = new Date(reminder.reminderAt).getTime();
     const now = Date.now();
-    const delay = reminderTime - now;
+    const delay = targetTime - now;
 
     if (delay <= 0) {
-      // Overdue or immediate
+      // Time already passed
       return;
     }
 
-    // Limit to 24-day max timeout delay
-    if (delay > 2000000000) return;
-
     const timerId = window.setTimeout(() => {
-      this.triggerReminder(reminder);
+      this.showNotification(`Task Reminder: ${reminder.taskCode}`, {
+        body: reminder.taskTitle,
+        tag: `shiori-reminder-${reminder.taskId}`,
+        requireInteraction: true,
+      });
+
+      // Clear from scheduled list once fired
       this.clearReminder(reminder.taskId);
     }, delay);
 
     this.activeTimers.set(reminder.taskId, timerId);
   }
 
-  private triggerReminder(reminder: ScheduledReminder) {
-    const title = `Reminder: ${reminder.taskCode} ${reminder.taskTitle}`;
-    const options: NotificationOptions = {
-      body: 'Time to focus on this todo.',
-      icon: '/favicon-shiori.png',
-      badge: '/favicon-shiori.png',
-      tag: `shiori-reminder-${reminder.taskId}`,
-    };
+  private rearmAll() {
+    const now = Date.now();
+    this.scheduledList = this.scheduledList.filter((r) => {
+      const targetTime = new Date(r.reminderAt).getTime();
+      return targetTime > now;
+    });
+    this.saveToStorage();
 
-    if (this.isNotificationSupported() && Notification.permission === 'granted') {
-      try {
-        new Notification(title, options);
-      } catch (err) {
-        console.warn('Native notification failed, falling back to in-app event', err);
-      }
-    }
-
-    // Always dispatch in-app notification event for fallback and banner display
-    window.dispatchEvent(
-      new CustomEvent('shiori-inapp-reminder', {
-        detail: {
-          taskId: reminder.taskId,
-          taskCode: reminder.taskCode,
-          taskTitle: reminder.taskTitle,
-        },
-      })
-    );
+    this.scheduledList.forEach((reminder) => {
+      this.armTimer(reminder);
+    });
   }
 }
 

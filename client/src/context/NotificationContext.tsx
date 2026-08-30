@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Notification } from '../types';
+import type { Notification } from '../types';
 import { useAuth } from './AuthContext';
 import { useSocket } from './SocketContext';
 import { shioriAudio } from '../utils/shioriAudio';
@@ -59,6 +59,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   useEffect(() => {
     if (isAuthenticated) {
       fetchNotifications();
+      if (token && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        reminderManager.subscribeToWebPush(token);
+      }
     }
   }, [isAuthenticated, token]);
 

@@ -78,6 +78,9 @@ export const NotificationsPage: React.FC = () => {
     } else {
       setTestStatus('✕ Notification permission was not granted.');
     }
+    if (res === 'granted' && token) {
+      await reminderManager.subscribeToWebPush(token);
+    }
   };
 
   const handleSendTestNotification = async (type: 'instant' | 'delayed' | 'task_assignment') => {
@@ -88,6 +91,10 @@ export const NotificationsPage: React.FC = () => {
         setTestStatus('✕ Please allow browser notifications first.');
         return;
       }
+    }
+
+    if (token) {
+      await reminderManager.subscribeToWebPush(token);
     }
 
     if (type === 'instant') {
@@ -101,8 +108,20 @@ export const NotificationsPage: React.FC = () => {
       setTimeout(() => setTestStatus(null), 4000);
     } else if (type === 'delayed') {
       setDelayedCountdown(5);
-      setTestStatus('⏱ Lock your phone now! Notification will pop up in 5 seconds...');
+      setTestStatus('⏱ Lock your phone now! Real Web Push will arrive in 5 seconds...');
       
+      // Dispatch real server push after 5 seconds to wake locked mobile device
+      if (token) {
+        fetch('/api/notifications/test-push', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ delaySeconds: 5 })
+        }).catch(console.error);
+      }
+
       let count = 5;
       const interval = setInterval(() => {
         count -= 1;
@@ -111,23 +130,30 @@ export const NotificationsPage: React.FC = () => {
         } else {
           clearInterval(interval);
           setDelayedCountdown(null);
-          shioriAudio.playFocusChime();
-          reminderManager.showNotification('SHIORI Lock Screen Alert ⏳', {
-            body: 'Focus alert delivered to your locked phone screen!',
-            tag: `shiori-delayed-${Date.now()}`,
-          });
-          setTestStatus('✓ 5-second test alert fired to lock screen!');
+          setTestStatus('✓ 5-second Web Push alert dispatched to your locked phone screen!');
           setTimeout(() => setTestStatus(null), 4000);
         }
       }, 1000);
     } else if (type === 'task_assignment') {
       shioriAudio.playSoftClick(0.18);
       triggerEInkRefresh();
+
+      if (token) {
+        fetch('/api/notifications/test-push', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ delaySeconds: 0 })
+        }).catch(console.error);
+      }
+
       await reminderManager.showNotification('New Task Assigned: SHR-0068', {
-        body: 'Alex assigned task "Mobile Notification Verification" to you.',
+        body: 'Alex assigned task "Mobile Lock Screen Verification" to you.',
         tag: `shiori-assigned-test-${Date.now()}`,
       });
-      setTestStatus('✓ Simulated task assignment notification dispatched!');
+      setTestStatus('✓ Simulated task assignment push notification dispatched!');
       setTimeout(() => setTestStatus(null), 4000);
     }
   };
