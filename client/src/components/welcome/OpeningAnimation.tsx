@@ -4,6 +4,7 @@ import { ArrowRight, Check, Volume2, VolumeX } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useMorphBar } from '../../context/MorphBarContext';
 import { useShioriWelcomeSound } from '../../hooks/useShioriWelcomeSound';
+import { isStandaloneMode } from '../../utils/pwa';
 
 export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComplete }) => {
   const { isAuthenticated } = useAuth();
@@ -121,9 +122,12 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
       setEntryPhase('ghosting');
     }, 150);
 
-    // 380ms: Route to application
+    // 380ms: Route to application (or Install Gateway if in normal browser)
     setTimeout(() => {
-      if (isAuthenticated) {
+      const isStandalone = isStandaloneMode();
+      if (!isStandalone) {
+        navigate('/install');
+      } else if (isAuthenticated) {
         navigate('/home');
       } else {
         navigate('/login');

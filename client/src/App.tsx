@@ -22,6 +22,22 @@ import { ActivityPage } from './pages/ActivityPage';
 import { JournalPage } from './pages/JournalPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { InstallPage } from './pages/InstallPage';
+import { isStandaloneMode } from './utils/pwa';
+
+/**
+ * Gate that only permits full application access when running as an installed PWA.
+ * Normal browser visits are routed to the dedicated Installation Gateway.
+ */
+const StandaloneAppRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const isStandalone = isStandaloneMode();
+
+  if (!isStandalone) {
+    return <Navigate to="/install" replace />;
+  }
+
+  return <>{children}</>;
+};
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -80,37 +96,50 @@ export const App: React.FC = () => {
                 {/* Landing & Welcome Routes */}
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/welcome" element={<LandingPage />} />
+                
+                {/* Dedicated Installation Gateway */}
+                <Route path="/install" element={<InstallPage />} />
+
+                {/* Authentication Routes (Gated by Standalone PWA requirement) */}
                 <Route
                   path="/login"
                   element={
-                    <PublicOnlyRoute>
-                      <LoginPage />
-                    </PublicOnlyRoute>
+                    <StandaloneAppRoute>
+                      <PublicOnlyRoute>
+                        <LoginPage />
+                      </PublicOnlyRoute>
+                    </StandaloneAppRoute>
                   }
                 />
                 <Route
                   path="/register"
                   element={
-                    <PublicOnlyRoute>
-                      <RegisterPage />
-                    </PublicOnlyRoute>
+                    <StandaloneAppRoute>
+                      <PublicOnlyRoute>
+                        <RegisterPage />
+                      </PublicOnlyRoute>
+                    </StandaloneAppRoute>
                   }
                 />
                 <Route
                   path="/onboarding"
                   element={
-                    <ProtectedRoute>
-                      <OnboardingPage />
-                    </ProtectedRoute>
+                    <StandaloneAppRoute>
+                      <ProtectedRoute>
+                        <OnboardingPage />
+                      </ProtectedRoute>
+                    </StandaloneAppRoute>
                   }
                 />
 
                 {/* Workspace Protected Routes with AppLayout */}
                 <Route
                   element={
-                    <ProtectedRoute>
-                      <AppLayout />
-                    </ProtectedRoute>
+                    <StandaloneAppRoute>
+                      <ProtectedRoute>
+                        <AppLayout />
+                      </ProtectedRoute>
+                    </StandaloneAppRoute>
                   }
                 >
                   <Route path="/home" element={<DashboardPage />} />
@@ -130,8 +159,8 @@ export const App: React.FC = () => {
                   <Route path="/settings" element={<SettingsPage />} />
                 </Route>
 
-                {/* Fallback to Home */}
-                <Route path="*" element={<Navigate to="/home" replace />} />
+                {/* Fallback */}
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
           </MorphBarProvider>
