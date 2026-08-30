@@ -44,6 +44,8 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json());
 
+import { focusRouter } from './routes/focus.routes.js';
+
 // Routes
 app.use('/api/auth', authRouter);
 app.use('/api/tasks', tasksRouter);
@@ -58,6 +60,7 @@ app.use('/api/journal', journalRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/simulator', simulatorRouter);
 app.use('/api/recovery', recoveryRouter);
+app.use('/api/focus', focusRouter);
 
 // Health check endpoints for UptimeRobot & Keep-Alive Monitoring
 app.get(['/', '/health', '/api/health', '/ping', '/api/ping'], (_req, res) => {

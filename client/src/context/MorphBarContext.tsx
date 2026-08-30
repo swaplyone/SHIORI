@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useSocket } from './SocketContext';
 import { reminderManager } from '../utils/reminderManager';
 import { shioriAudio } from '../utils/shioriAudio';
-import { iosLockScreenTimer } from '../utils/iosLockScreenTimer';
 
 export type MorphBarStateType =
   | 'IDLE'
@@ -121,7 +120,6 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
 
       setEventQueue((prev) => {
-        // Filter out duplicate identical pending types
         const filtered = prev.filter((e) => e.type !== type || e.type === 'FOCUS_TIMER');
         const nextQueue = [...filtered, newEvent].sort((a, b) => b.priority - a.priority);
         return nextQueue;
@@ -169,20 +167,9 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [eventQueue, dismissCurrentEvent, focusTimer.isActive, focusTimer.isCompleted]);
 
-  // Timestamp-based Countdown & Background/Lock-Screen Accuracy Sync
+  // Timestamp-based Countdown & Background Sleep Sync
   useEffect(() => {
-    if (!focusTimer.isActive || focusTimer.isPaused) {
-      if (focusTimer.isPaused) {
-        iosLockScreenTimer.update(
-          focusTimer.secondsRemaining,
-          focusTimer.totalSeconds,
-          true,
-          focusTimer.taskTitle,
-          focusTimer.projectName
-        );
-      }
-      return;
-    }
+    if (!focusTimer.isActive || focusTimer.isPaused) return;
 
     const updateTimerFromTimestamp = () => {
       setFocusTimer((prev) => {
@@ -192,10 +179,13 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const totalElapsed = prev.elapsedSeconds + currentSegmentSeconds;
         const remaining = Math.max(0, prev.totalSeconds - totalElapsed);
 
-        iosLockScreenTimer.update(remaining, prev.totalSeconds, false, prev.taskTitle, prev.projectName);
+        if (typeof document !== 'undefined') {
+          const mins = Math.floor(remaining / 60);
+          const secs = remaining % 60;
+          document.title = `⏳ ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} | ${prev.taskTitle} - SHIORI`;
+        }
 
         if (remaining === 0) {
-          iosLockScreenTimer.stop();
           if (!hasPlayedCompletionSoundRef.current) {
             hasPlayedCompletionSoundRef.current = true;
             shioriAudio.playFocusChime();
@@ -203,6 +193,16 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               body: `Focus session complete: ${prev.taskTitle}`,
               tag: 'shiori-focus-complete',
             });
+            const storedToken = localStorage.getItem('shiori_token');
+            if (storedToken) {
+              fetch('/api/focus/session/complete', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${storedToken}` },
+              }).catch(() => {});
+            }
+          }
+          if (typeof document !== 'undefined') {
+            document.title = 'SHIORI - Focus Complete';
           }
           return {
             ...prev,
@@ -244,10 +244,6 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       projectName = 'SHIORI',
       durationMinutes = 25
     ) => {
-      if (reminderManager.getPermission() === 'default') {
-        reminderManager.requestPermission().catch(() => {});
-      }
-
       hasPlayedCompletionSoundRef.current = false;
       const totalSec = Math.max(1, durationMinutes) * 60;
 
@@ -263,15 +259,17 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         projectName,
       });
 
-      iosLockScreenTimer.start({
-        taskTitle,
-        projectName,
-        secondsRemaining: totalSec,
-        totalSeconds: totalSec,
-        onPause: () => pauseFocusTimer(),
-        onResume: () => resumeFocusTimer(),
-        onStop: () => stopFocusTimer(),
-      });
+      const storedToken = localStorage.getItem('shiori_token');
+      if (storedToken) {
+        fetch('/api/focus/session/start', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${storedToken}`,
+          },
+          body: JSON.stringify({ taskTitle, projectName, durationMinutes }),
+        }).catch(() => {});
+      }
 
       dispatchEvent('FOCUS_TIMER', { taskTitle, projectName });
     },
@@ -283,7 +281,6 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const deltaSec = deltaMinutes * 60;
       const newTotal = Math.max(60, prev.totalSeconds + deltaSec);
       const newRemaining = Math.max(1, prev.secondsRemaining + deltaSec);
-      iosLockScreenTimer.update(newRemaining, newTotal, prev.isPaused, prev.taskTitle, prev.projectName);
       return {
         ...prev,
         totalSeconds: newTotal,
@@ -295,7 +292,6 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setFocusTimerDuration = useCallback((durationMinutes: number) => {
     hasPlayedCompletionSoundRef.current = false;
     const totalSec = Math.max(1, durationMinutes) * 60;
-    iosLockScreenTimer.update(totalSec, totalSec, false, focusTimer.taskTitle, focusTimer.projectName);
     setFocusTimer((prev) => ({
       ...prev,
       totalSeconds: totalSec,
@@ -305,7 +301,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       isPaused: false,
       isCompleted: false,
     }));
-  }, [focusTimer.taskTitle, focusTimer.projectName]);
+  }, []);
 
   const pauseFocusTimer = useCallback(() => {
     setFocusTimer((prev) => {
@@ -313,7 +309,15 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const currentSegment = Math.max(0, Math.floor((Date.now() - prev.startTime) / 1000));
       const totalElapsed = prev.elapsedSeconds + currentSegment;
       const remaining = Math.max(0, prev.totalSeconds - totalElapsed);
-      iosLockScreenTimer.pause(remaining, prev.totalSeconds, prev.taskTitle, prev.projectName);
+
+      const storedToken = localStorage.getItem('shiori_token');
+      if (storedToken) {
+        fetch('/api/focus/session/pause', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${storedToken}` },
+        }).catch(() => {});
+      }
+
       return {
         ...prev,
         isPaused: true,
@@ -326,7 +330,15 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const resumeFocusTimer = useCallback(() => {
     setFocusTimer((prev) => {
       if (!prev.isActive || !prev.isPaused) return prev;
-      iosLockScreenTimer.resume(prev.secondsRemaining, prev.totalSeconds, prev.taskTitle, prev.projectName);
+
+      const storedToken = localStorage.getItem('shiori_token');
+      if (storedToken) {
+        fetch('/api/focus/session/resume', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${storedToken}` },
+        }).catch(() => {});
+      }
+
       return {
         ...prev,
         isPaused: false,
@@ -337,7 +349,14 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const stopFocusTimer = useCallback(() => {
     hasPlayedCompletionSoundRef.current = false;
-    iosLockScreenTimer.stop();
+    const storedToken = localStorage.getItem('shiori_token');
+    if (storedToken) {
+      fetch('/api/focus/session/stop', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${storedToken}` },
+      }).catch(() => {});
+    }
+
     setFocusTimer((prev) => ({
       ...prev,
       isActive: false,
