@@ -71,7 +71,15 @@ projectsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Respons
     WHERE pm.project_id = ?
   `, [project.id]);
 
-  // Get project TODOs
+  // Sync real GitHub commits and actions if repository is connected
+  if (project.github_repo_name) {
+    try {
+      const { syncRepoLiveFromGitHub } = await import('./github.routes.js');
+      await syncRepoLiveFromGitHub(req.user!.id, project.github_repo_name);
+    } catch {}
+  }
+
+  // Get project TODOs (with updated evidence and commit counts)
   const todos = await queryAll(`
     SELECT t.*, u.name as assignee_name, u2.name as creator_name
     FROM tasks t

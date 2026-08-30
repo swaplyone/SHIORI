@@ -358,7 +358,9 @@ export const ProjectDetailPage: React.FC = () => {
                             <span>{task.github_branch || 'main'}</span>
                           </span>
                           <span>•</span>
-                          <span>3 commits</span>
+                          <span>
+                            {task.dev_evidence_commits_count || (task.github_last_commit_hash ? 1 : 0)} commits
+                          </span>
                         </div>
                       </div>
                     </div>
