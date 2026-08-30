@@ -876,16 +876,25 @@ tasksRouter.post('/:id/accept', authMiddleware, async (req: AuthRequest, res: Re
     return;
   }
 
-  // Verify project or workspace membership
-  const member = await queryOne(`
-    SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?
-    UNION
-    SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?
-  `, [task.project_id, userId, task.workspace_id, userId]);
+  // Ensure user is in project_members and workspace_members upon accepting
+  if (task.project_id) {
+    const projectMember = await queryOne('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?', [task.project_id, userId]);
+    if (!projectMember) {
+      await runQuery(`
+        INSERT INTO project_members (id, project_id, user_id, role, joined_at)
+        VALUES (?, ?, ?, 'MEMBER', datetime('now'))
+      `, [uuidv4(), task.project_id, userId]);
+    }
+  }
 
-  if (!member) {
-    res.status(403).json({ error: 'You are not a member of this project or workspace.' });
-    return;
+  if (task.workspace_id) {
+    const workspaceMember = await queryOne('SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?', [task.workspace_id, userId]);
+    if (!workspaceMember) {
+      await runQuery(`
+        INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at)
+        VALUES (?, ?, ?, 'MEMBER', datetime('now'))
+      `, [uuidv4(), task.workspace_id, userId]);
+    }
   }
 
   // Idempotent check

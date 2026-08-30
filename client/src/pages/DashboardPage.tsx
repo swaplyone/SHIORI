@@ -143,10 +143,15 @@ export const DashboardPage: React.FC = () => {
   const handleAcceptTaskAssignment = async (taskId: string) => {
     if (!token) return;
     try {
-      const { ok } = await fetchJson(`/api/tasks/${taskId}/accept`, {
-        method: 'POST'
+      setPendingAssignments((prev) => prev.filter((t) => t.id !== taskId));
+      const res = await fetch(`/api/tasks/${taskId}/accept`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
       });
-      if (ok) {
+      if (res.ok) {
         triggerEInkRefresh();
         fetchHomeData();
       }
@@ -158,10 +163,15 @@ export const DashboardPage: React.FC = () => {
   const handleRejectTaskAssignment = async (taskId: string) => {
     if (!token) return;
     try {
-      const { ok } = await fetchJson(`/api/tasks/${taskId}/reject`, {
-        method: 'POST'
+      setPendingAssignments((prev) => prev.filter((t) => t.id !== taskId));
+      const res = await fetch(`/api/tasks/${taskId}/reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
       });
-      if (ok) {
+      if (res.ok) {
         triggerEInkRefresh();
         fetchHomeData();
       }
