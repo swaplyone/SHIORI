@@ -405,7 +405,17 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read INTEGER DEFAULT 0;`,
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read INTEGER DEFAULT 0;`,
       `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;`,
-      `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS branch_name TEXT DEFAULT 'main';`
+      `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS branch_name TEXT DEFAULT 'main';`,
+      `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS author_name TEXT;`,
+      `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS author_username TEXT;`,
+      `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS author_avatar TEXT;`,
+      `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS files_changed INTEGER DEFAULT 1;`,
+      `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS pushed_at TIMESTAMPTZ DEFAULT NOW();`,
+      `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS branch_name TEXT DEFAULT 'main';`,
+      `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS duration_seconds INTEGER DEFAULT 0;`,
+      `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS tests_total INTEGER DEFAULT 0;`,
+      `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS tests_passed INTEGER DEFAULT 0;`,
+      `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS tests_failed INTEGER DEFAULT 0;`
     ];
 
     for (const migration of migrations) {
