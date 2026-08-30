@@ -68,12 +68,20 @@ export function useShioriWelcomeSound({ prefersReducedMotion = false }: UseShior
     shioriAudio.playPageTurn(0.12);
   }, [soundEnabled]);
 
+  const stopWelcomeChime = useCallback((fadeMs = 150) => {
+    shioriAudio.stopWelcomeChime(fadeMs);
+  }, []);
+
+  const playWelcomeChime = useCallback((volume = 0.35) => {
+    shioriAudio.playWelcomeChime(volume);
+  }, []);
+
   return {
     soundEnabled,
     toggleSound,
     playStageSound,
     playEntranceSound,
-    stopWelcomeChime: (fadeMs = 150) => shioriAudio.stopWelcomeChime(fadeMs),
-    playWelcomeChime: () => shioriAudio.playWelcomeChime(0.35),
+    stopWelcomeChime,
+    playWelcomeChime,
   };
 }

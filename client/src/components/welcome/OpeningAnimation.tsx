@@ -21,6 +21,12 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
     prefersReducedMotion,
   });
 
+  const playStageSoundRef = React.useRef(playStageSound);
+  playStageSoundRef.current = playStageSound;
+
+  const stopWelcomeChimeRef = React.useRef(stopWelcomeChime);
+  stopWelcomeChimeRef.current = stopWelcomeChime;
+
   // Animation Timeline States:
   // 0: Initial blank e-ink paper
   // 1 (0.0s - 0.4s): E-ink power-on waveform activation
@@ -47,7 +53,7 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
       setStage(8);
       setShioriCharCount(6);
       return () => {
-        stopWelcomeChime(100);
+        stopWelcomeChimeRef.current(100);
         setIsBarVisible(true);
       };
     }
@@ -59,13 +65,13 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
     // 0.4s: Start progressive line-art ink drawing + soft paper rustle
     const tIllustration = setTimeout(() => {
       setStage(2);
-      playStageSound(2);
+      playStageSoundRef.current(2);
     }, 400);
 
     // 1.3s - 1.9s: Sequential letter reveal for SHIORI + delicate ink/pencil stroke
     const tShioriStart = setTimeout(() => {
       setStage(3);
-      playStageSound(3);
+      playStageSoundRef.current(3);
       for (let i = 1; i <= 6; i++) {
         setTimeout(() => {
           setShioriCharCount(i);
@@ -86,7 +92,7 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
     // 2.6s: Task transitions into verified state + tactile ink settle click
     const tTaskVerified = setTimeout(() => {
       setStage(6);
-      playStageSound(6);
+      playStageSoundRef.current(6);
       setInkFlash(true);
       setTimeout(() => setInkFlash(false), 90);
     }, 2600);
@@ -109,10 +115,10 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
       clearTimeout(tTaskVerified);
       clearTimeout(tOpen);
       clearTimeout(tFinal);
-      stopWelcomeChime(100);
+      stopWelcomeChimeRef.current(100);
       setIsBarVisible(true);
     };
-  }, [setIsBarVisible, prefersReducedMotion, playStageSound, stopWelcomeChime]);
+  }, [setIsBarVisible, prefersReducedMotion]);
 
   // Handle Entrance Transition: 350-450ms physical e-ink waveform refresh + ghosting + page turn sound
   const handleOpenShiori = () => {
