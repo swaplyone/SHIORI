@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useSocket } from './SocketContext';
+import { lockScreenTimer } from '../utils/lockScreenTimer';
 
 export type MorphBarStateType =
   | 'IDLE'
@@ -159,14 +160,26 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [eventQueue, dismissCurrentEvent, focusTimer.isActive]);
 
-  // Focus timer countdown tick
+  // Focus timer countdown tick with Live Lock-Screen Sync
   useEffect(() => {
-    if (!focusTimer.isActive || focusTimer.isPaused) return;
+    if (!focusTimer.isActive || focusTimer.isPaused) {
+      if (focusTimer.isPaused) {
+        lockScreenTimer.update(
+          focusTimer.secondsRemaining,
+          focusTimer.totalSeconds,
+          true,
+          focusTimer.taskTitle,
+          focusTimer.projectName
+        );
+      }
+      return;
+    }
 
     const interval = setInterval(() => {
       setFocusTimer((prev) => {
         if (prev.secondsRemaining <= 1) {
           clearInterval(interval);
+          lockScreenTimer.stop();
           dispatchEvent(
             'TASK_VERIFICATION',
             {
@@ -178,7 +191,10 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           );
           return { ...prev, isActive: false, secondsRemaining: prev.totalSeconds };
         }
-        return { ...prev, secondsRemaining: prev.secondsRemaining - 1 };
+
+        const nextRemaining = prev.secondsRemaining - 1;
+        lockScreenTimer.update(nextRemaining, prev.totalSeconds, false, prev.taskTitle, prev.projectName);
+        return { ...prev, secondsRemaining: nextRemaining };
       });
     }, 1000);
 
@@ -201,6 +217,17 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         taskTitle,
         projectName,
       });
+
+      lockScreenTimer.start({
+        taskTitle,
+        projectName,
+        secondsRemaining: totalSec,
+        totalSeconds: totalSec,
+        onPause: () => pauseFocusTimer(),
+        onResume: () => resumeFocusTimer(),
+        onStop: () => stopFocusTimer(),
+      });
+
       dispatchEvent('FOCUS_TIMER', { taskTitle, projectName });
     },
     [dispatchEvent]
@@ -210,6 +237,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setFocusTimer((prev) => {
       const newSec = Math.max(60, prev.secondsRemaining + deltaMinutes * 60);
       const newTotal = Math.max(newSec, prev.totalSeconds + deltaMinutes * 60);
+      lockScreenTimer.update(newSec, newTotal, prev.isPaused, prev.taskTitle, prev.projectName);
       return {
         ...prev,
         secondsRemaining: newSec,
@@ -220,23 +248,33 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const setFocusTimerDuration = useCallback((durationMinutes: number) => {
     const totalSec = Math.max(1, durationMinutes) * 60;
-    setFocusTimer((prev) => ({
-      ...prev,
-      secondsRemaining: totalSec,
-      totalSeconds: totalSec,
-      isPaused: false
-    }));
+    setFocusTimer((prev) => {
+      lockScreenTimer.update(totalSec, totalSec, false, prev.taskTitle, prev.projectName);
+      return {
+        ...prev,
+        secondsRemaining: totalSec,
+        totalSeconds: totalSec,
+        isPaused: false
+      };
+    });
   }, []);
 
   const pauseFocusTimer = useCallback(() => {
-    setFocusTimer((prev) => ({ ...prev, isPaused: true }));
+    setFocusTimer((prev) => {
+      lockScreenTimer.update(prev.secondsRemaining, prev.totalSeconds, true, prev.taskTitle, prev.projectName);
+      return { ...prev, isPaused: true };
+    });
   }, []);
 
   const resumeFocusTimer = useCallback(() => {
-    setFocusTimer((prev) => ({ ...prev, isPaused: false }));
+    setFocusTimer((prev) => {
+      lockScreenTimer.update(prev.secondsRemaining, prev.totalSeconds, false, prev.taskTitle, prev.projectName);
+      return { ...prev, isPaused: false };
+    });
   }, []);
 
   const stopFocusTimer = useCallback(() => {
+    lockScreenTimer.stop();
     setFocusTimer((prev) => ({ ...prev, isActive: false }));
     dismissCurrentEvent();
   }, [dismissCurrentEvent]);

@@ -4,6 +4,7 @@ import { Task, Subtask } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { shioriAudio } from '../../utils/shioriAudio';
 import { reminderManager } from '../../utils/reminderManager';
+import { lockScreenTimer } from '../../utils/lockScreenTimer';
 
 interface FocusModeModalProps {
   isOpen: boolean;
@@ -82,10 +83,30 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
 
   useEffect(() => {
     let interval: any = null;
-    if (isActive && secondsRemaining > 0) {
+    if (isActive && secondsRemaining > 0 && task) {
+      lockScreenTimer.start({
+        taskTitle: `${task.task_code}: ${task.title}`,
+        projectName: task.github_repo || 'SHIORI',
+        secondsRemaining,
+        totalSeconds: selectedMinutes * 60,
+        onPause: () => setIsActive(false),
+        onResume: () => setIsActive(true),
+        onStop: () => {
+          setIsActive(false);
+          setSecondsRemaining(selectedMinutes * 60);
+        },
+      });
+
       interval = setInterval(() => {
         setSecondsRemaining((prev) => {
           const nextSec = prev - 1;
+          lockScreenTimer.update(
+            nextSec,
+            selectedMinutes * 60,
+            false,
+            `${task.task_code}: ${task.title}`,
+            task.github_repo || 'SHIORI'
+          );
 
           // Warning alert when 1 minute (or 30s for 5m timer) is remaining
           const warnThreshold = selectedMinutes <= 5 ? 30 : 60;
@@ -110,9 +131,18 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
           return nextSec;
         });
       }, 1000);
+    } else if (!isActive && secondsRemaining > 0 && task) {
+      lockScreenTimer.update(
+        secondsRemaining,
+        selectedMinutes * 60,
+        true,
+        `${task.task_code}: ${task.title}`,
+        task.github_repo || 'SHIORI'
+      );
     } else if (secondsRemaining === 0 && isActive) {
       setIsActive(false);
       setIsFinished(true);
+      lockScreenTimer.stop();
 
       // 1. Play soothing Japanese focus chime
       shioriAudio.playFocusChime();
@@ -138,6 +168,13 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
     }
     return () => clearInterval(interval);
   }, [isActive, secondsRemaining, task, selectedMinutes, hasWarnedEnding]);
+
+  // Clean up lock screen timer when modal unmounts
+  useEffect(() => {
+    return () => {
+      lockScreenTimer.stop();
+    };
+  }, []);
 
   if (!isOpen || !task) return null;
 
