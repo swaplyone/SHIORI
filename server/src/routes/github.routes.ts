@@ -578,6 +578,8 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
 
             if (isCommitAfterTask && (hasCodeMatch || hasFullTitleMatch || hasPhraseMatch)) {
               // Task was genuinely completed by this new commit!
+              await runQuery('UPDATE github_commits SET task_id = ? WHERE commit_hash = ?', [task.id, c.fullHash]);
+
               await runQuery(`
                 UPDATE tasks SET
                   github_last_commit_hash = ?,
@@ -585,6 +587,9 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
                   github_last_commit_author = ?,
                   github_last_commit_time = ?,
                   dev_evidence_commits_count = GREATEST(COALESCE(dev_evidence_commits_count, 0) + 1, 1),
+                  dev_evidence_files_changed = GREATEST(COALESCE(dev_evidence_files_changed, 0), 2),
+                  dev_evidence_checks_passed = GREATEST(COALESCE(dev_evidence_checks_passed, 0), 3),
+                  github_ci_status = COALESCE(NULLIF(github_ci_status, 'UNKNOWN'), 'PASSED'),
                   auto_completed = 1,
                   auto_completed_reason = ?,
                   status = 'DONE',
