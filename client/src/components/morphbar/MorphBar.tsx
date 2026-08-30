@@ -67,8 +67,8 @@ export const MorphBar: React.FC = () => {
       case 'IDLE': {
         const isHome = location.pathname === '/';
         return isHome
-          ? 'w-[145px] h-[42px] rounded-full px-3.5 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer'
-          : 'w-[260px] sm:w-[285px] h-[42px] rounded-full px-3.5 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
+          ? 'w-[145px] h-[42px] rounded-full px-3.5 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer'
+          : 'w-[270px] sm:w-[295px] h-[42px] rounded-full px-3.5 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer';
       }
       case 'FOCUS_TIMER':
         return 'w-[240px] sm:w-[260px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
@@ -189,11 +189,11 @@ export const MorphBar: React.FC = () => {
         <div className="absolute inset-0 bg-paper-texture opacity-3 pointer-events-none rounded-[inherit]" />
 
         {isExpanded ? (
-          <div className="w-full space-y-3 font-island animate-in fade-in duration-200 ease-out">
+          <div className="w-full space-y-3 font-technical animate-in fade-in duration-200 ease-out">
             {/* Expanded Header */}
             <div className="flex items-center justify-between pb-2.5 border-b border-eink-border">
               <div className="flex items-center gap-2">
-                <span className="font-island font-bold text-sm uppercase tracking-wider text-eink-text">
+                <span className="font-technical font-bold text-sm uppercase tracking-wider text-eink-text">
                   {getHeaderTitle()}
                 </span>
               </div>
