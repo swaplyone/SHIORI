@@ -306,6 +306,37 @@ class ShioriAudioEngine {
       console.warn('[AUDIO] Failed to play welcome wind chime:', e);
     }
   }
+
+  public stopWelcomeChime(fadeMs = 250): void {
+    try {
+      if (this.welcomeAudioElement) {
+        const audio = this.welcomeAudioElement;
+        if (fadeMs > 0 && !audio.paused && audio.volume > 0) {
+          const startVol = audio.volume;
+          const step = startVol / (fadeMs / 30);
+          const interval = setInterval(() => {
+            try {
+              if (audio.volume - step > 0) {
+                audio.volume -= step;
+              } else {
+                clearInterval(interval);
+                audio.pause();
+                audio.currentTime = 0;
+              }
+            } catch {
+              clearInterval(interval);
+              audio.pause();
+            }
+          }, 30);
+        } else {
+          audio.pause();
+          audio.currentTime = 0;
+        }
+      }
+    } catch (e) {
+      console.warn('[AUDIO] Failed to stop welcome chime:', e);
+    }
+  }
 }
 
 export const shioriAudio = new ShioriAudioEngine();

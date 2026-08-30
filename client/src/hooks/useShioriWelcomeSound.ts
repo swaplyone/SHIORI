@@ -7,7 +7,6 @@ export interface UseShioriWelcomeSoundOptions {
 
 export function useShioriWelcomeSound({ prefersReducedMotion = false }: UseShioriWelcomeSoundOptions = {}) {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => shioriAudio.getSoundEnabled());
-  const hasTriggeredInitialSound = useRef(false);
 
   // Sync state with audio engine
   const toggleSound = useCallback(() => {
@@ -15,6 +14,8 @@ export function useShioriWelcomeSound({ prefersReducedMotion = false }: UseShior
     setSoundEnabled(next);
     if (next) {
       shioriAudio.playWelcomeChime(0.35);
+    } else {
+      shioriAudio.stopWelcomeChime(100);
     }
   }, []);
 
@@ -30,6 +31,8 @@ export function useShioriWelcomeSound({ prefersReducedMotion = false }: UseShior
     return () => {
       window.removeEventListener('pointerdown', handleGesture);
       window.removeEventListener('keydown', handleGesture);
+      // Ensure audio stops when leaving the welcome page
+      shioriAudio.stopWelcomeChime(100);
     };
   }, []);
 
@@ -59,8 +62,9 @@ export function useShioriWelcomeSound({ prefersReducedMotion = false }: UseShior
   }, [prefersReducedMotion, soundEnabled]);
 
   const playEntranceSound = useCallback(() => {
+    // Immediately stop wind chime upon pressing Open Shiori button
+    shioriAudio.stopWelcomeChime(150);
     if (!soundEnabled) return;
-    shioriAudio.playWelcomeChime(0.25);
     shioriAudio.playPageTurn(0.12);
   }, [soundEnabled]);
 
@@ -69,6 +73,7 @@ export function useShioriWelcomeSound({ prefersReducedMotion = false }: UseShior
     toggleSound,
     playStageSound,
     playEntranceSound,
+    stopWelcomeChime: (fadeMs = 150) => shioriAudio.stopWelcomeChime(fadeMs),
     playWelcomeChime: () => shioriAudio.playWelcomeChime(0.35),
   };
 }

@@ -17,7 +17,7 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }, []);
 
-  const { soundEnabled, toggleSound, playStageSound, playEntranceSound } = useShioriWelcomeSound({
+  const { soundEnabled, toggleSound, playStageSound, playEntranceSound, stopWelcomeChime } = useShioriWelcomeSound({
     prefersReducedMotion,
   });
 
@@ -46,7 +46,10 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
     if (prefersReducedMotion) {
       setStage(8);
       setShioriCharCount(6);
-      return () => setIsBarVisible(true);
+      return () => {
+        stopWelcomeChime(100);
+        setIsBarVisible(true);
+      };
     }
 
     // --- TIMELINE SEQUENCE ---
@@ -106,15 +109,17 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
       clearTimeout(tTaskVerified);
       clearTimeout(tOpen);
       clearTimeout(tFinal);
+      stopWelcomeChime(100);
       setIsBarVisible(true);
     };
-  }, [setIsBarVisible, prefersReducedMotion, playStageSound]);
+  }, [setIsBarVisible, prefersReducedMotion, playStageSound, stopWelcomeChime]);
 
   // Handle Entrance Transition: 350-450ms physical e-ink waveform refresh + ghosting + page turn sound
   const handleOpenShiori = () => {
     if (isEntering) return;
     setIsEntering(true);
     setEntryPhase('refreshing');
+    stopWelcomeChime(100);
     playEntranceSound();
 
     // 150ms: Refresh waveform
