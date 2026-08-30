@@ -9,10 +9,10 @@ export const simulatorRouter = Router();
 // Simulate a Git Commit Push
 simulatorRouter.post('/push-commit', async (req: Request, res: Response): Promise<void> => {
   const {
-    repoName = 'swaply-one-compiler',
-    branchName = 'feature/error-page',
+    repoName = 'SHIORI',
+    branchName = 'main',
     message = 'fix: parser AST token bounds validation',
-    authorName = 'Lijith',
+    authorName = 'ash',
     filesChanged = 4
   } = req.body;
 
@@ -44,8 +44,8 @@ simulatorRouter.post('/push-commit', async (req: Request, res: Response): Promis
 // Simulate CI Failure
 simulatorRouter.post('/ci-fail', async (req: Request, res: Response): Promise<void> => {
   const {
-    repoName = 'swaply-one-compiler',
-    branchName = 'feature/error-page',
+    repoName = 'SHIORI',
+    branchName = 'main',
     commitHash = 'a83f21c',
     testsFailed = 3
   } = req.body;
@@ -63,7 +63,7 @@ ${testsFailed} tests failed out of 48 total assertions.`;
   await processWorkflowRunEvent({
     repository: { name: repoName },
     workflow_run: {
-      name: 'CI / Rust & TypeScript Tests',
+      name: 'CI / Build Tests',
       head_branch: branchName,
       head_sha: commitHash,
       status: 'completed',
@@ -86,8 +86,8 @@ ${testsFailed} tests failed out of 48 total assertions.`;
 // Simulate CI Pass / Build Recovery
 simulatorRouter.post('/ci-pass', async (req: Request, res: Response): Promise<void> => {
   const {
-    repoName = 'swaply-one-compiler',
-    branchName = 'feature/error-page',
+    repoName = 'SHIORI',
+    branchName = 'main',
     commitHash = 'a91d203'
   } = req.body;
 

@@ -97,7 +97,7 @@ export const SimulatorDrawer: React.FC<SimulatorDrawerProps> = ({ isOpen, onClos
             <div className="grid grid-cols-2 gap-2 text-xs">
               <button
                 onClick={() => {
-                  startFocusTimer('Finish compiler error diagnostic', 'SWAPLYONE COMPILER', 25);
+                  startFocusTimer('Complete task implementation', 'SHIORI', 25);
                   setLastAction('✓ Morph Bar: Focus Session active (25m Pomodoro)');
                 }}
                 className="p-2 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border rounded-sm text-left flex items-center gap-2"
@@ -126,8 +126,8 @@ export const SimulatorDrawer: React.FC<SimulatorDrawerProps> = ({ isOpen, onClos
               <button
                 onClick={() => {
                   dispatchEvent('BUILD_ERROR', {
-                    projectName: 'swaply-one-compiler',
-                    branchName: 'feature/error-page',
+                    projectName: 'SHIORI',
+                    branchName: 'main',
                     errorsCount: 3,
                     errors: [
                       'Undefined reference in AST parser',

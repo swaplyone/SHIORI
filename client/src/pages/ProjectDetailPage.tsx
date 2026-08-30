@@ -756,7 +756,7 @@ export const ProjectDetailPage: React.FC = () => {
       <GitHistoryModal
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
-        repoName={project.github_repo_name || 'swaply-one-compiler'}
+        repoName={project.github_repo_name || 'SHIORI'}
         branchName={project.default_branch || 'main'}
       />
 
@@ -764,7 +764,7 @@ export const ProjectDetailPage: React.FC = () => {
       <CodeRecoveryModal
         isOpen={isRecoveryOpen}
         onClose={() => setIsRecoveryOpen(false)}
-        defaultRepo={project.github_repo_name || 'swaply-one-compiler'}
+        defaultRepo={project.github_repo_name || 'SHIORI'}
       />
 
       {/* AI Developer Handoff Modal */}

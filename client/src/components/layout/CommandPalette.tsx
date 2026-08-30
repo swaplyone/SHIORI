@@ -78,24 +78,29 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
           { number: 28, title: 'Setup GitHub webhooks & signature verification', state: 'MERGED', taskId: 'task-018-gh' }
         ].filter(pr => pr.title.toLowerCase().includes(q) || String(pr.number).includes(q));
 
-        const matchedProjects = [
-          { id: 'proj-compiler-01', name: 'SwaplyOne Compiler', repo: 'swaply-one-compiler' },
-          { id: 'proj-backend-02', name: 'Swaply Backend', repo: 'swaply-backend' },
-          { id: 'proj-marketplace-03', name: 'AI Artisan Marketplace', repo: 'ai-artisan-marketplace' }
-        ].filter(p => p.name.toLowerCase().includes(q) || p.repo.includes(q));
-
-        const matchedFriends = [
-          { name: 'Rahul', role: 'Core Backend Engineer', activeTask: 'Compiler error handling' },
-          { name: 'Tejas', role: 'Compiler Optimizations', activeTask: 'AST Memory profiling' },
-          { name: 'Arjun', role: 'Verification Engineer', activeTask: 'Test suite automation' }
-        ].filter(f => f.name.toLowerCase().includes(q) || f.role.toLowerCase().includes(q));
+        // Fetch real projects
+        let matchedProjects: any[] = [];
+        try {
+          const resProj = await fetch('/api/projects', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (resProj.ok) {
+            const dataProj = await resProj.json();
+            const projs = dataProj.projects || [];
+            matchedProjects = projs
+              .map((p: any) => ({ id: p.id, name: p.name, repo: p.github_repo_name || p.name }))
+              .filter((p: any) => p.name.toLowerCase().includes(q) || p.repo.toLowerCase().includes(q));
+          }
+        } catch {
+          // ignore
+        }
 
         setResults({
           tasks: dataTasks.tasks || [],
           commits: matchedCommits,
           prs: matchedPRs,
           projects: matchedProjects,
-          friends: matchedFriends
+          friends: []
         });
       } catch (err) {
         console.error('Search error:', err);

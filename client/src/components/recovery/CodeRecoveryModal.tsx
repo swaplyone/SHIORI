@@ -35,8 +35,8 @@ interface FileVersion {
 export const CodeRecoveryModal: React.FC<CodeRecoveryModalProps> = ({
   isOpen,
   onClose,
-  defaultRepo = 'swaply-one-compiler',
-  defaultFilePath = 'src/auth/login.ts',
+  defaultRepo = 'SHIORI',
+  defaultFilePath = 'client/src/App.tsx',
   taskId
 }) => {
   const { token } = useAuth();

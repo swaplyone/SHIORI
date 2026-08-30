@@ -134,7 +134,7 @@ recoveryRouter.get('/files', authMiddleware, async (req: AuthRequest, res: Respo
 // GET File Version History
 recoveryRouter.get('/file-history', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const filePath = (req.query.filePath as string) || 'src/auth/login.ts';
-  const repo = (req.query.repo as string) || 'swaply-one-compiler';
+  const repo = (req.query.repo as string) || 'SHIORI';
 
   const snapshots = FILE_SNAPSHOTS[filePath] || FILE_SNAPSHOTS['src/auth/login.ts'];
   const versionKeys = Object.keys(snapshots);
@@ -162,7 +162,7 @@ recoveryRouter.get('/file-history', authMiddleware, async (req: AuthRequest, res
 
 // POST Safe Code Restoration
 recoveryRouter.post('/restore', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { repo = 'swaply-one-compiler', filePath = 'src/auth/login.ts', commitSha = 'a82f31c', taskId } = req.body;
+  const { repo = 'SHIORI', filePath = 'src/auth/login.ts', commitSha = 'a82f31c', taskId } = req.body;
 
   const recoveryBranch = `recovery/${commitSha}-${Date.now().toString(36)}`;
 

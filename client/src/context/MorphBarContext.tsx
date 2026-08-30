@@ -231,8 +231,8 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         dispatchEvent(
           'BUILD_ERROR',
           {
-            projectName: data.repoName || 'swaply-one-compiler',
-            branchName: data.branchName || 'feature/error-page',
+            projectName: data.repoName || 'SHIORI',
+            branchName: data.branchName || 'main',
             errorsCount: data.testsFailed || 3,
             errors: [
               'Undefined reference in AST parser',

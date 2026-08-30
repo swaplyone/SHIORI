@@ -897,14 +897,14 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
         <GitHistoryModal
           isOpen={isHistoryOpen}
           onClose={() => setIsHistoryOpen(false)}
-          repoName={task?.github_repo || 'swaply-one-compiler'}
+          repoName={task?.github_repo || 'SHIORI'}
           branchName={task?.github_branch || 'main'}
         />
 
         <CodeRecoveryModal
           isOpen={isRecoveryOpen}
           onClose={() => setIsRecoveryOpen(false)}
-          defaultRepo={task?.github_repo || 'swaply-one-compiler'}
+          defaultRepo={task?.github_repo || 'SHIORI'}
           taskId={task?.id}
         />
 

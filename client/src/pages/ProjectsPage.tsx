@@ -229,7 +229,7 @@ export const ProjectsPage: React.FC = () => {
                   type="text"
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
-                  placeholder="e.g. SwaplyOne Compiler"
+                  placeholder="e.g. SHIORI"
                   className="w-full px-3 py-2 bg-eink-surface border border-eink-border rounded-sm text-xs outline-none"
                   required
                 />
@@ -256,7 +256,7 @@ export const ProjectsPage: React.FC = () => {
                   type="text"
                   value={newProjectRepo}
                   onChange={(e) => setNewProjectRepo(e.target.value)}
-                  placeholder="e.g. swaply-one-compiler"
+                  placeholder="e.g. SHIORI"
                   className="w-full px-3 py-2 bg-eink-surface border border-eink-border rounded-sm text-xs font-technical outline-none"
                 />
               </div>

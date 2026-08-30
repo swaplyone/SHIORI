@@ -31,10 +31,10 @@ export const BuildErrorExpandedView: React.FC<{ data?: any; onClose: () => void 
       <div className="p-3 bg-eink-surface border-2 border-eink-text rounded-sm space-y-1">
         <div className="flex items-center justify-between">
           <span className="font-bold text-xs uppercase text-eink-text">
-            {data?.projectName || 'swaply-one-compiler'}
+            {data?.projectName || 'SHIORI'}
           </span>
           <span className="bg-eink-bg border border-eink-border px-1.5 py-0.2 rounded text-[10px] font-mono">
-            {data?.branchName || 'feature/error-page'}
+            {data?.branchName || 'main'}
           </span>
         </div>
         <p className="text-[11px] text-eink-textSecondary">

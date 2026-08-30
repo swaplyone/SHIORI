@@ -23,7 +23,7 @@ interface GitHistoryModalProps {
 export const GitHistoryModal: React.FC<GitHistoryModalProps> = ({
   isOpen,
   onClose,
-  repoName = 'swaply-one-compiler',
+  repoName = 'SHIORI',
   branchName = 'main'
 }) => {
   const { token } = useAuth();
