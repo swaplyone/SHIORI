@@ -137,7 +137,7 @@ export const RegisterPage: React.FC = () => {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Rahul Sharma"
+                placeholder="e.g. Alex Miller"
                 className="w-full px-3 py-2 bg-eink-bg border border-eink-border rounded-sm outline-none text-eink-text font-sans"
                 required
               />
@@ -149,7 +149,7 @@ export const RegisterPage: React.FC = () => {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
-                placeholder="e.g. rahul-dev"
+                placeholder="e.g. alex-dev"
                 className="w-full px-3 py-2 bg-eink-bg border border-eink-border rounded-sm outline-none text-eink-text font-mono"
                 required
               />
@@ -161,7 +161,7 @@ export const RegisterPage: React.FC = () => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. rahul@company.com"
+                placeholder="e.g. alex@example.com"
                 className="w-full px-3 py-2 bg-eink-bg border border-eink-border rounded-sm outline-none text-eink-text font-sans"
                 required
               />

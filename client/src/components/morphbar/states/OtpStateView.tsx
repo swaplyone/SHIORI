@@ -160,9 +160,11 @@ export const OtpExpandedView: React.FC<{ data?: any; onClose: () => void }> = ({
         <span className="font-bold text-xs uppercase text-eink-text">
           TWO-SIDED CONNECTION VERIFICATION
         </span>
-        <span className="text-[10px] bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
-          {data?.otherUserName || 'Partner'} ({data?.otherShioriId || 'SHI-8F42K'})
-        </span>
+        {data?.otherUserName && (
+          <span className="text-[10px] bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
+            {data.otherUserName} ({data?.otherShioriId || 'SHI-COLLAB'})
+          </span>
+        )}
       </div>
 
       {verified ? (
@@ -176,13 +178,19 @@ export const OtpExpandedView: React.FC<{ data?: any; onClose: () => void }> = ({
         <>
           <div className="p-3 bg-eink-surface border border-eink-border rounded-sm text-center space-y-1">
             <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-widest block">
-              YOUR SECRET ONE-TIME CODE
+              COLLABORATOR HANDSHAKE CODE
             </span>
             <div className="text-2xl sm:text-3xl font-bold tracking-[0.25em] text-eink-text font-mono py-0.5">
-              {data?.myCodeFormatted || '482 631'}
+              {data?.myCodeFormatted || data?.otp || '••••••'}
             </div>
-            <p className="text-[10px] text-eink-textMuted font-mono">Expires in {timeStr} • Single use only</p>
+            <p className="text-[10px] text-eink-textMuted font-mono">
+              Share this code with your peer to link workspaces • Expires in {timeStr}
+            </p>
           </div>
+
+          <p className="text-[10px] text-eink-textMuted font-sans text-center">
+            (Note: For account signup, enter the code from your email inbox on the registration page.)
+          </p>
 
           {error && (
             <div className="p-2.5 bg-eink-surface border-2 border-eink-text text-[11px] font-bold text-eink-text text-center">

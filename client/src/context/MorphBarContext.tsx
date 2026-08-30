@@ -299,8 +299,8 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         'CONNECTION_REQUEST',
         {
           requestId: data.requestId,
-          senderName: data.senderName || 'Rahul',
-          senderShioriId: data.senderShioriId || 'SHI-8F42K',
+          senderName: data.senderName || 'Team Member',
+          senderShioriId: data.senderShioriId || 'SHI-COLLAB',
         },
         0
       );
@@ -312,8 +312,9 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         {
           sessionId: data.sessionId,
           requestId: data.requestId,
-          otherUserName: data.otherUserName || 'Rahul',
-          otherShioriId: data.otherShioriId || 'SHI-8F42K',
+          otherUserName: data.otherUserName || 'Collaborator',
+          otherShioriId: data.otherShioriId || 'SHI-COLLAB',
+          myCodeFormatted: data.myCodeFormatted,
         },
         0
       );
@@ -324,8 +325,8 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         'WORKSPACE_INVITATION',
         {
           inviteId: data.inviteId,
-          workspaceName: data.workspaceName || 'SHIORI COMPILER',
-          inviterName: data.inviterName || 'Lijith',
+          workspaceName: data.workspaceName || 'SHIORI Workspace',
+          inviterName: data.inviterName || 'Workspace Owner',
         },
         0
       );

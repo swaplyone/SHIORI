@@ -11,11 +11,11 @@ export const ConnectionCollapsedView: React.FC<{ data?: any }> = ({ data }) => {
         <Users className="w-3.5 h-3.5 shrink-0" />
         <span className="font-bold uppercase text-[11px] shrink-0">● CONNECTION REQ</span>
         <span className="text-eink-textSecondary truncate text-[11px]">
-          {data?.senderName || 'Rahul'}
+          {data?.senderName || 'Collaborator'}
         </span>
       </div>
       <span className="text-[10px] bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-bold ml-2 shrink-0">
-        {data?.senderShioriId || 'SHI-8F42K'}
+        {data?.senderShioriId || 'SHI-USER'}
       </span>
     </div>
   );
@@ -59,9 +59,9 @@ export const ConnectionExpandedView: React.FC<{ data?: any; onClose: () => void 
           INCOMING INTENTIONAL CONNECTION
         </span>
         <div className="flex items-center justify-between">
-          <h4 className="font-bold text-base text-eink-text">{data?.senderName || 'Rahul'}</h4>
+          <h4 className="font-bold text-base text-eink-text">{data?.senderName || 'Collaborator'}</h4>
           <span className="bg-eink-bg border border-eink-border px-2 py-0.5 rounded text-xs font-bold">
-            {data?.senderShioriId || 'SHI-8F42K'}
+            {data?.senderShioriId || 'SHI-USER'}
           </span>
         </div>
         <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
