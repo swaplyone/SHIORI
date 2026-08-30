@@ -29,37 +29,42 @@ projectsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response):
     ORDER BY p.created_at DESC
   `, [req.user!.id, req.user!.id]);
 
-  // Enrich with members and commit activity
-  const enriched = await Promise.all(
-    projects.map(async (p) => {
-      const members = await queryAll(`
-        SELECT u.id, u.name, u.email, u.shiori_id, pm.role, pm.joined_at
-        FROM project_members pm
-        JOIN users u ON pm.user_id = u.id
-        WHERE pm.project_id = ?
-      `, [p.id]);
+  if (projects.length === 0) {
+    res.json({ projects: [] });
+    return;
+  }
 
-      const lastCommit = await queryOne(`
-        SELECT * FROM github_commits WHERE repo_name = ? OR repo_name LIKE ? ORDER BY pushed_at DESC LIMIT 1
-      `, [p.github_repo_name, `%${p.github_repo_name}%`]);
+  const projectIds = projects.map((p) => p.id);
+  const placeholders = projectIds.map(() => '?').join(',');
 
-      const commitsCountRow = await queryOne(`
-        SELECT COUNT(*) as cnt FROM github_commits 
-        WHERE repo_name = ? OR repo_name LIKE ?
-      `, [p.github_repo_name, `%${p.github_repo_name}%`]);
+  const allMembers = await queryAll(`
+    SELECT pm.project_id, u.id, u.name, u.email, u.shiori_id, pm.role, pm.joined_at
+    FROM project_members pm
+    JOIN users u ON pm.user_id = u.id
+    WHERE pm.project_id IN (${placeholders})
+  `, projectIds);
 
-      return {
-        ...p,
-        active_todos: Number(p.active_todos || 0),
-        completed_tasks: Number(p.completed_tasks || 0),
-        total_tasks: Number(p.total_tasks || 0),
-        membersCount: members.length,
-        members,
-        commitsTodayCount: Number(commitsCountRow?.cnt || 0),
-        lastCommitMessage: lastCommit?.message || 'Workspace repository initialized'
-      };
-    })
-  );
+  const membersByProj = new Map<string, any[]>();
+  for (const m of allMembers) {
+    if (!membersByProj.has(m.project_id)) {
+      membersByProj.set(m.project_id, []);
+    }
+    membersByProj.get(m.project_id)!.push(m);
+  }
+
+  const enriched = projects.map((p) => {
+    const members = membersByProj.get(p.id) || [];
+    return {
+      ...p,
+      active_todos: Number(p.active_todos || 0),
+      completed_tasks: Number(p.completed_tasks || 0),
+      total_tasks: Number(p.total_tasks || 0),
+      membersCount: Number(p.members_count || members.length || 1),
+      members,
+      commitsTodayCount: 0,
+      lastCommitMessage: 'Workspace repository active'
+    };
+  });
 
   res.json({ projects: enriched });
 });

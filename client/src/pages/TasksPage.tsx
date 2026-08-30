@@ -81,10 +81,12 @@ export const TasksPage: React.FC = () => {
     }
   };
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (showSkeleton = false) => {
     if (!token) return;
     try {
-      setLoading(true);
+      if (showSkeleton || tasks.length === 0) {
+        setLoading(true);
+      }
       let url = '/api/tasks?';
       if (tabFilter === 'archived') {
         url += 'archived=true&';

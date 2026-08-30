@@ -22,31 +22,46 @@ export const DashboardPage: React.FC = () => {
   const { triggerEInkRefresh } = useNotifications();
   const navigate = useNavigate();
 
-  const [projects, setProjects] = useState<any[]>([]);
-  const [availableRepos, setAvailableRepos] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>(() => {
+    try {
+      const cached = sessionStorage.getItem('shiori_cached_projects');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [availableRepos, setAvailableRepos] = useState<any[]>(() => {
+    try {
+      const cached = sessionStorage.getItem('shiori_cached_repos');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [selectedRepoName, setSelectedRepoName] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => !sessionStorage.getItem('shiori_cached_projects'));
   const [submitting, setSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
   const fetchHomeData = async () => {
     if (!token) return;
     try {
-      setLoading(true);
       const [projRes, repoRes] = await Promise.all([
         fetchJson('/api/projects'),
         fetchJson('/api/github/available-repositories')
       ]);
 
-      if (projRes.ok) {
-        setProjects(projRes.data?.projects || []);
+      if (projRes.ok && projRes.data?.projects) {
+        setProjects(projRes.data.projects);
+        sessionStorage.setItem('shiori_cached_projects', JSON.stringify(projRes.data.projects));
       }
 
-      if (repoRes.ok) {
-        const repos = repoRes.data?.repositories || [];
+      if (repoRes.ok && repoRes.data?.repositories) {
+        const repos = repoRes.data.repositories;
         setAvailableRepos(repos);
-        if (repos.length > 0) {
+        sessionStorage.setItem('shiori_cached_repos', JSON.stringify(repos));
+        if (repos.length > 0 && !selectedRepoName) {
           setSelectedRepoName(repos[0].name);
         }
       }
