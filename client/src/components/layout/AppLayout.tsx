@@ -64,6 +64,17 @@ export const AppLayout: React.FC = () => {
         <main className="flex-1 p-3 sm:p-6 md:p-8 max-w-7xl w-full mx-auto font-sans animate-fade-in">
           <Outlet context={{ openTaskModal: (id: string) => setSelectedTaskId(id) }} />
         </main>
+
+        {/* Subtle Watermark Footer */}
+        <footer className="w-full pt-8 pb-4 text-center select-none pointer-events-none opacity-40 hover:opacity-80 transition-opacity">
+          <div className="flex items-center justify-center gap-2 text-[10px] tracking-[0.28em] text-eink-textMuted uppercase font-technical">
+            <span>SHIORI</span>
+            <span>•</span>
+            <span className="font-bold tracking-[0.32em] text-eink-text">SWAPLYONE</span>
+            <span>•</span>
+            <span>QUIET WORKSPACE</span>
+          </div>
+        </footer>
       </div>
 
       {/* Interactive Global Modals */}

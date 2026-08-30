@@ -191,9 +191,9 @@ export const InstallPage: React.FC = () => {
       </main>
 
       {/* BOTTOM: Minimal Editorial Footer */}
-      <footer className="relative z-10 w-full flex items-center justify-between text-[10px] font-mono text-[#999990] tracking-widest uppercase">
-        <span>Quiet Workspace</span>
-        <span>Installed App Experience</span>
+      <footer className="relative z-10 w-full flex flex-col sm:flex-row items-center justify-between gap-1 text-[10px] font-mono text-[#999990] tracking-widest uppercase">
+        <span className="font-semibold text-eink-text/50">A SWAPLYONE PRODUCT</span>
+        <span>ELECTRONIC PAPER · QUIET WORKSPACE</span>
       </footer>
     </div>
   );
