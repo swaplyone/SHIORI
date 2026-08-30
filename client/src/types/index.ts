@@ -2,6 +2,82 @@ export type EInkTheme = 'light' | 'dark' | 'monochrome';
 export type UIMode = 'eink_matte' | 'color_matte';
 export type FontOption = 'geist' | 'inter' | 'plex_sans' | 'plex_mono' | 'serif' | 'abask' | 'qualli' | 'archela';
 
+export interface JapaneseMattePreset {
+  id: string;
+  name: string;
+  kanji: string;
+  fullName: string;
+  primary: string;
+  secondary: string;
+  paper: string;
+  ink: string;
+  muted: string;
+  description: string;
+}
+
+export const JAPANESE_MATTE_PRESETS: JapaneseMattePreset[] = [
+  {
+    id: 'shu',
+    name: 'SHU',
+    kanji: '朱',
+    fullName: 'SHU · 朱',
+    primary: '#A64032',
+    secondary: '#D8CDBB',
+    paper: '#EEE9DE',
+    ink: '#20201E',
+    muted: '#777269',
+    description: 'Japanese vermilion seal / traditional red ink.',
+  },
+  {
+    id: 'ai',
+    name: 'AI',
+    kanji: '藍',
+    fullName: 'AI · 藍',
+    primary: '#264348',
+    secondary: '#D6D0C1',
+    paper: '#ECE9E0',
+    ink: '#1E2020',
+    muted: '#717575',
+    description: 'Deep Japanese indigo / calm developer workspace.',
+  },
+  {
+    id: 'matsu',
+    name: 'MATSU',
+    kanji: '松',
+    fullName: 'MATSU · 松',
+    primary: '#45513F',
+    secondary: '#D5D0BF',
+    paper: '#ECE9DE',
+    ink: '#22231F',
+    muted: '#77766D',
+    description: 'Pine green / quiet Japanese garden.',
+  },
+  {
+    id: 'kocha',
+    name: 'KŌCHA',
+    kanji: '紅茶',
+    fullName: 'KŌCHA · 紅茶',
+    primary: '#76523E',
+    secondary: '#D8CCBA',
+    paper: '#EFE8DB',
+    ink: '#292521',
+    muted: '#7B7065',
+    description: 'Warm tea / wooden desk / aged notebook.',
+  },
+  {
+    id: 'kobai',
+    name: 'KŌBAI',
+    kanji: '紅梅',
+    fullName: 'KŌBAI · 紅梅',
+    primary: '#92505A',
+    secondary: '#DDD0C8',
+    paper: '#F0E9E2',
+    ink: '#272322',
+    muted: '#7D7370',
+    description: 'Muted Japanese plum blossom ink.',
+  },
+];
+
 export type TaskStatus = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 export type CIStatus = 'UNKNOWN' | 'RUNNING' | 'PASSED' | 'FAILED';

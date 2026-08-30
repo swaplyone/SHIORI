@@ -24,17 +24,10 @@ import {
   Eye
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { EInkTheme, UIMode, FontOption } from '../types';
+import { EInkTheme, UIMode, FontOption, JAPANESE_MATTE_PRESETS, JapaneseMattePreset } from '../types';
 import { fetchJson } from '../utils/api';
 
-const ACCENT_PRESETS = [
-  { id: 'forest', name: 'Forest Green', hex: '#2E5A36' },
-  { id: 'teal', name: 'Teal', hex: '#1D5C60' },
-  { id: 'blue', name: 'Blue', hex: '#244E7A' },
-  { id: 'brown', name: 'Brown', hex: '#66442A' },
-  { id: 'purple', name: 'Purple', hex: '#563666' },
-  { id: 'orange', name: 'Orange', hex: '#8C4318' },
-];
+
 
 const FONT_OPTIONS: { id: FontOption; name: string; category: string; description: string; sample: string; cssFont: string }[] = [
   {
@@ -322,83 +315,142 @@ export const SettingsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. ACCENT COLOR SELECTION */}
+          {/* 2. JAPANESE MATTE PRESETS */}
           <div className="p-5 sm:p-6 bg-eink-surface border border-eink-border rounded-sm space-y-4 shadow-eink-sm">
-            <div className="flex items-center justify-between border-b border-eink-border pb-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-eink-border pb-2.5 gap-2">
               <div>
                 <h3 className="font-bold text-sm text-eink-text uppercase flex items-center gap-2">
                   <Palette className="w-4 h-4 text-eink-text" />
-                  <span>ACCENT COLOR</span>
+                  <span>JAPANESE MATTE PRESETS · 和風マット</span>
                 </h3>
                 <p className="text-[11px] text-eink-textSecondary font-sans mt-0.5">
-                  Applied cleanly through CSS design tokens. In E-ink Matte, monochrome takes priority. In Color Matte, your accent comes to life.
+                  Muted physical ink tones on matte paper: seal vermilion, deep indigo, pine green, warm tea, and plum blossom.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <span
-                  className="w-4 h-4 rounded-xs border border-eink-border inline-block shadow-xs"
+                  className="w-3.5 h-3.5 rounded-xs border border-eink-border inline-block shadow-xs"
                   style={{ backgroundColor: accentColor }}
                 />
-                <span className="font-mono text-[11px] font-bold text-eink-text uppercase">
-                  {accentColor}
+                <span className="text-[10px] font-mono px-2 py-0.5 bg-eink-bg border border-eink-border rounded font-bold uppercase">
+                  {uiMode === 'color_matte' ? `ACTIVE: ${accentColor}` : 'E-INK MONOCHROME'}
                 </span>
               </div>
             </div>
 
             {/* Presets Grid */}
             <div className="space-y-2">
-              <span className="text-[10px] uppercase font-bold text-eink-textMuted tracking-wider block">
-                CURATED MATTE PALETTES
+              <span className="text-[10px] uppercase font-bold text-eink-textMuted tracking-wider block font-technical">
+                TRADITIONAL INK PRESETS (5)
               </span>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
-                {ACCENT_PRESETS.map((preset) => {
-                  const isSelected = accentColor?.toLowerCase() === preset.hex.toLowerCase();
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                {JAPANESE_MATTE_PRESETS.map((preset) => {
+                  const isSelected = accentColor?.toLowerCase() === preset.primary.toLowerCase();
                   return (
-                    <button
+                    <div
                       key={preset.id}
-                      type="button"
                       onClick={() => {
-                        setAccentColor(preset.hex);
-                        setCustomHex(preset.hex);
+                        setAccentColor(preset.primary);
+                        setCustomHex(preset.primary);
+                        if (uiMode !== 'color_matte') {
+                          setUIMode('color_matte');
+                        }
                       }}
-                      className={`p-2.5 border rounded-sm flex flex-col items-center gap-2 transition-all cursor-pointer text-center ${
-                        isSelected
-                          ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm font-bold'
+                      className={`p-3.5 border rounded-sm cursor-pointer space-y-2.5 transition-all flex flex-col justify-between ${
+                        isSelected && uiMode === 'color_matte'
+                          ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
                           : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
                       }`}
                     >
-                      <span
-                        className="w-7 h-7 rounded-sm border border-black/20 flex items-center justify-center text-white shadow-xs"
-                        style={{ backgroundColor: preset.hex }}
-                      >
-                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                      </span>
-                      <div className="min-w-0">
-                        <span className="text-[11px] block truncate">{preset.name}</span>
-                        <span className="text-[9px] text-eink-textMuted font-mono block">{preset.hex}</span>
+                      <div className="space-y-2">
+                        {/* Swatches & Status */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="w-4 h-4 rounded-xs border border-black/20 shadow-xs inline-block"
+                              style={{ backgroundColor: preset.primary }}
+                              title={`Primary: ${preset.primary}`}
+                            />
+                            <span
+                              className="w-4 h-4 rounded-xs border border-black/20 shadow-xs inline-block"
+                              style={{ backgroundColor: preset.secondary }}
+                              title={`Secondary: ${preset.secondary}`}
+                            />
+                          </div>
+                          {isSelected && uiMode === 'color_matte' ? (
+                            <span className="text-[10px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded flex items-center gap-1">
+                              <Check className="w-3 h-3 stroke-[3]" />
+                              <span>ACTIVE</span>
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-mono text-eink-textMuted uppercase">
+                              {preset.primary}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Title & Description */}
+                        <div>
+                          <div className="font-bold text-xs text-eink-text flex items-center gap-1.5">
+                            <span>{preset.fullName}</span>
+                          </div>
+                          <p className="text-[11px] text-eink-textSecondary font-sans leading-snug mt-1">
+                            {preset.description}
+                          </p>
+                        </div>
                       </div>
-                    </button>
+
+                      {/* Action Row */}
+                      <div className="pt-2 border-t border-eink-border/50 flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-eink-textMuted">
+                          Primary: <strong className="text-eink-text">{preset.primary}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAccentColor(preset.primary);
+                            setCustomHex(preset.primary);
+                            if (uiMode !== 'color_matte') {
+                              setUIMode('color_matte');
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-sm text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                            isSelected && uiMode === 'color_matte'
+                              ? 'bg-eink-text text-eink-bg'
+                              : 'border border-eink-border hover:bg-eink-surface text-eink-text'
+                          }`}
+                        >
+                          {isSelected && uiMode === 'color_matte' ? 'SELECTED' : 'APPLY'}
+                        </button>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Custom Hex Color Picker */}
-            <div className="pt-2 border-t border-eink-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {/* Custom Hex Color Option */}
+            <div className="pt-3 border-t border-eink-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <span className="text-[11px] font-bold text-eink-text uppercase block">CUSTOM ACCENT COLOR</span>
+                <span className="text-[11px] font-bold text-eink-text uppercase block">
+                  CUSTOM MATTE COLOR
+                </span>
                 <span className="text-[10px] text-eink-textSecondary font-sans">
-                  Pick any custom hex tone. Sufficient contrast is automatically maintained.
+                  Pick any custom hex code. Sufficient contrast and matte ink texture are automatically calculated.
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
                 <input
                   type="color"
-                  value={accentColor.startsWith('#') ? accentColor : '#2E5A36'}
+                  value={accentColor.startsWith('#') ? accentColor : '#A64032'}
                   onChange={(e) => {
                     setAccentColor(e.target.value);
                     setCustomHex(e.target.value);
+                    if (uiMode !== 'color_matte') {
+                      setUIMode('color_matte');
+                    }
                   }}
                   className="w-8 h-8 rounded-sm border border-eink-border cursor-pointer bg-transparent p-0.5"
                   title="Pick custom color"
@@ -406,8 +458,13 @@ export const SettingsPage: React.FC = () => {
                 <input
                   type="text"
                   value={customHex}
-                  onChange={(e) => handleCustomHexChange(e.target.value)}
-                  placeholder="#2E5A36"
+                  onChange={(e) => {
+                    handleCustomHexChange(e.target.value);
+                    if (uiMode !== 'color_matte' && /^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                      setUIMode('color_matte');
+                    }
+                  }}
+                  placeholder="#A64032"
                   maxLength={7}
                   className="w-24 px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded-sm text-xs font-mono text-eink-text uppercase outline-none"
                 />

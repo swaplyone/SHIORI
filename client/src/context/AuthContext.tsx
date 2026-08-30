@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserSettings, EInkTheme, UIMode, FontOption } from '../types';
+import { User, UserSettings, EInkTheme, UIMode, FontOption, JAPANESE_MATTE_PRESETS } from '../types';
 import { fetchJson } from '../utils/api';
 
 interface AuthContextType {
@@ -105,6 +105,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     doc.setAttribute('data-font', font);
     doc.style.setProperty('--eink-accent', accent);
     doc.style.setProperty('--eink-accent-soft', `${accent}22`);
+
+    // Match Japanese preset for secondary accent & subtle wash
+    const matchingPreset = JAPANESE_MATTE_PRESETS.find(
+      (p) => p.primary.toLowerCase() === accent.toLowerCase()
+    );
+    if (matchingPreset) {
+      doc.style.setProperty('--eink-secondary', matchingPreset.secondary);
+      doc.style.setProperty('--eink-preset-paper', matchingPreset.paper);
+      doc.style.setProperty('--eink-preset-ink', matchingPreset.ink);
+      doc.style.setProperty('--eink-preset-muted', matchingPreset.muted);
+    } else {
+      doc.style.removeProperty('--eink-secondary');
+      doc.style.removeProperty('--eink-preset-paper');
+      doc.style.removeProperty('--eink-preset-ink');
+      doc.style.removeProperty('--eink-preset-muted');
+    }
 
     // Contrast calculation for primary button text
     let contrast = '#FFFFFF';
