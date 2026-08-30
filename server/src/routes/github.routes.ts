@@ -479,22 +479,44 @@ githubRouter.get('/repositories', authMiddleware, async (req: AuthRequest, res: 
 export async function syncRepoLiveFromGitHub(userId: string, repoName: string): Promise<any[]> {
   try {
     const ghAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
-    if (!ghAccount || !ghAccount.access_token) return [];
 
     let fullName = repoName;
     if (!fullName.includes('/')) {
       const userRepo = await queryOne('SELECT full_name FROM user_repositories WHERE user_id = ? AND repo_name = ?', [userId, repoName]);
-      fullName = userRepo?.full_name || `${ghAccount.username}/${repoName}`;
+      if (userRepo?.full_name) {
+        fullName = userRepo.full_name;
+      } else {
+        const project = await queryOne('SELECT github_repo_name, github_repo_url FROM projects WHERE github_repo_name = ? OR name = ?', [repoName, repoName]);
+        if (project?.github_repo_url && project.github_repo_url.includes('github.com/')) {
+          fullName = project.github_repo_url.split('github.com/')[1].replace(/\.git$/, '');
+        } else if (ghAccount?.username) {
+          fullName = `${ghAccount.username}/${repoName}`;
+        } else {
+          fullName = `swaplyone/${repoName}`;
+        }
+      }
     }
 
-    // Fetch real commits from GitHub API
-    const headers = {
-      Authorization: `Bearer ${ghAccount.access_token}`,
+    // Build headers
+    const headers: Record<string, string> = {
       'User-Agent': 'SHIORI-App',
       Accept: 'application/vnd.github.v3+json'
     };
+    if (ghAccount?.access_token) {
+      headers.Authorization = `Bearer ${ghAccount.access_token}`;
+    }
 
-    const commitsRes = await fetch(`https://api.github.com/repos/${fullName}/commits?per_page=30`, { headers });
+    let commitsRes = await fetch(`https://api.github.com/repos/${fullName}/commits?per_page=30`, { headers });
+    if (!commitsRes.ok && fullName.includes('/') && !fullName.startsWith('swaplyone/')) {
+      // Fallback try swaplyone org
+      const altName = `swaplyone/${repoName.replace(/^.*\//, '')}`;
+      const altRes = await fetch(`https://api.github.com/repos/${altName}/commits?per_page=30`, { headers });
+      if (altRes.ok) {
+        commitsRes = altRes;
+        fullName = altName;
+      }
+    }
+
     let liveCommits: any[] = [];
 
     if (commitsRes.ok) {
@@ -504,7 +526,7 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
           hash: c.sha?.substring(0, 7) || '',
           fullHash: c.sha || '',
           message: c.commit?.message || '',
-          author: c.commit?.author?.name || c.author?.login || ghAccount.username,
+          author: c.commit?.author?.name || c.author?.login || ghAccount?.username || 'Developer',
           authorUsername: c.author?.login || '',
           authorAvatar: c.author?.avatar_url || '',
           date: c.commit?.author?.date || new Date().toISOString(),
@@ -531,15 +553,24 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
             SELECT t.id, t.task_code, t.title, t.dev_evidence_commits_count 
             FROM tasks t
             LEFT JOIN projects p ON t.project_id = p.id
-            WHERE (p.github_repo_name = ? OR t.github_repo = ?)
-          `, [repoName, repoName]);
+            WHERE (p.github_repo_name = ? OR t.github_repo = ? OR p.name = ? OR p.name ILIKE ?)
+          `, [repoName, repoName, repoName, `%${repoName}%`]);
 
           for (const task of matchingTasks) {
-            const taskCodeLower = task.task_code.toLowerCase();
-            const taskTitleLower = task.title.toLowerCase();
-            const msgLower = c.message.toLowerCase();
+            const taskCodeLower = (task.task_code || '').toLowerCase();
+            const taskTitleLower = (task.title || '').toLowerCase();
+            const msgLower = (c.message || '').toLowerCase();
 
-            if (msgLower.includes(taskCodeLower) || msgLower.includes(taskTitleLower) || (taskTitleLower.length > 5 && msgLower.includes(taskTitleLower.substring(0, 8)))) {
+            // Extract meaningful words from task title
+            const taskWords = taskTitleLower
+              .split(/[\s,_\-:]+/)
+              .filter((w: string) => w.length >= 4);
+
+            const hasCodeMatch = taskCodeLower && msgLower.includes(taskCodeLower);
+            const hasTitleMatch = taskTitleLower && msgLower.includes(taskTitleLower);
+            const hasWordMatch = taskWords.length > 0 && taskWords.some((w: string) => msgLower.includes(w));
+
+            if (hasCodeMatch || hasTitleMatch || hasWordMatch) {
               // Task was touched by this real commit!
               await runQuery(`
                 UPDATE tasks SET
@@ -547,7 +578,7 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
                   github_last_commit_msg = ?,
                   github_last_commit_author = ?,
                   github_last_commit_time = ?,
-                  dev_evidence_commits_count = COALESCE(dev_evidence_commits_count, 0) + 1,
+                  dev_evidence_commits_count = GREATEST(COALESCE(dev_evidence_commits_count, 0) + 1, 1),
                   auto_completed = 1,
                   auto_completed_reason = ?,
                   status = 'DONE',
@@ -589,15 +620,15 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
                 github_ci_status = 'PASSED',
                 dev_evidence_checks_passed = 1,
                 dev_evidence_checks_failed = 0
-              WHERE (github_repo = ? OR project_id IN (SELECT id FROM projects WHERE github_repo_name = ?))
-            `, [repoName, repoName]);
+              WHERE (github_repo = ? OR project_id IN (SELECT id FROM projects WHERE github_repo_name = ? OR name = ?))
+            `, [repoName, repoName, repoName]);
           } else if (runStatus === 'FAILED') {
             await runQuery(`
               UPDATE tasks SET
                 github_ci_status = 'FAILED',
                 dev_evidence_checks_failed = 1
-              WHERE (github_repo = ? OR project_id IN (SELECT id FROM projects WHERE github_repo_name = ?))
-            `, [repoName, repoName]);
+              WHERE (github_repo = ? OR project_id IN (SELECT id FROM projects WHERE github_repo_name = ? OR name = ?))
+            `, [repoName, repoName, repoName]);
           }
         }
       }
