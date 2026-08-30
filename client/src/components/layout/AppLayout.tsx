@@ -65,14 +65,28 @@ export const AppLayout: React.FC = () => {
           <Outlet context={{ openTaskModal: (id: string) => setSelectedTaskId(id) }} />
         </main>
 
-        {/* Subtle Watermark Footer */}
-        <footer className="w-full pt-8 pb-4 text-center select-none pointer-events-none opacity-40 hover:opacity-80 transition-opacity">
-          <div className="flex items-center justify-center gap-2 text-[10px] tracking-[0.28em] text-eink-textMuted uppercase font-technical">
-            <span>SHIORI</span>
-            <span>•</span>
-            <span className="font-bold tracking-[0.32em] text-eink-text">SWAPLYONE</span>
-            <span>•</span>
-            <span>QUIET WORKSPACE</span>
+        {/* Editorial Watermark Footer */}
+        <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 mt-14 pb-8 select-none">
+          <div className="border-t border-eink-border/40 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            {/* Left: Brand Seal & Origin */}
+            <div className="flex items-center gap-2.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-eink-text/40 shrink-0" />
+              <span className="font-abask tracking-[0.22em] text-[11px] text-eink-text/70 font-semibold uppercase">
+                A PRODUCT OF SWAPLYONE
+              </span>
+            </div>
+
+            {/* Center: Kanji Watermark & Purpose */}
+            <div className="flex items-center gap-2 font-mono text-[10px] text-eink-textMuted/80 tracking-widest uppercase">
+              <span>栞 SHIORI</span>
+              <span>—</span>
+              <span>ELECTRONIC PAPER WORKSPACE</span>
+            </div>
+
+            {/* Right: Craft & Version */}
+            <div className="flex items-center gap-2 text-[10px] font-mono text-eink-textMuted/60 uppercase">
+              <span>PLAN · BUILD · VERIFY</span>
+            </div>
           </div>
         </footer>
       </div>
