@@ -275,13 +275,36 @@ class ShioriAudioEngine {
         gain.gain.linearRampToValueAtTime((volume / (idx + 1)), now + 0.05);
         gain.gain.exponentialRampToValueAtTime(0.00001, now + duration);
 
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
         osc.start(now);
         osc.stop(now + duration);
       });
     } catch {}
+  }
+
+  /**
+   * 6. WELCOME WIND CHIME: Real Japanese wind chime resonance from freesound_community
+   */
+  private welcomeAudioElement: HTMLAudioElement | null = null;
+
+  public playWelcomeChime(volume = 0.35): void {
+    if (this.isMuted) return;
+    try {
+      if (typeof window === 'undefined') return;
+      if (!this.welcomeAudioElement) {
+        this.welcomeAudioElement = new Audio('/sounds/welcome-wind-chime.mp3');
+        this.welcomeAudioElement.preload = 'auto';
+      }
+      this.welcomeAudioElement.volume = Math.min(1, Math.max(0, volume));
+      this.welcomeAudioElement.currentTime = 0;
+      const playPromise = this.welcomeAudioElement.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('[AUDIO] Welcome wind chime autoplay note:', err);
+        });
+      }
+    } catch (e) {
+      console.warn('[AUDIO] Failed to play welcome wind chime:', e);
+    }
   }
 }
 
