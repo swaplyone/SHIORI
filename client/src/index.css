@@ -10,10 +10,23 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Abask';
+  src: url('/fonts/abask-regular.ttf') format('truetype'),
+       url('/fonts/abask-regular.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 .font-island,
 .font-navbar,
 .font-brashkick {
   font-family: 'Brashkick', 'IBM Plex Mono', monospace;
+}
+
+.font-abask {
+  font-family: 'Abask', serif;
 }
 
 :root {

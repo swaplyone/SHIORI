@@ -24,6 +24,7 @@ export default {
       },
       fontFamily: {
         island: ['Brashkick', 'IBM Plex Mono', 'monospace'],
+        abask: ['Abask', 'serif'],
         sans: ['Geist', 'Inter', 'IBM Plex Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['IBM Plex Mono', 'JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
         serif: ['Instrument Serif', 'Newsreader', 'Georgia', 'serif'],
