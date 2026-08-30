@@ -507,7 +507,11 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
     `, [uuidv4(), id, req.user!.id, `Status changed from ${current.status} to ${status}`, `${req.user!.name} updated status`]);
   }
 
-  const completedAtValue = status === 'DONE' ? new Date().toISOString() : (status === 'IN_PROGRESS' || status === 'TODO' ? null : current.completed_at);
+  const isDone = status === 'DONE' || userStatus === 'COMPLETED' || req.body.user_status === 'COMPLETED';
+  const isReopened = (status && status !== 'DONE') || (userStatus && userStatus !== 'COMPLETED') || (req.body.user_status && req.body.user_status !== 'COMPLETED');
+  const completedAtValue = isDone
+    ? (current.completed_at || new Date().toISOString())
+    : (isReopened ? null : current.completed_at);
 
   await runQuery(`
     UPDATE tasks SET

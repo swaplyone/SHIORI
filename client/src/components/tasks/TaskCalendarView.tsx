@@ -48,28 +48,90 @@ export const TaskCalendarView: React.FC<TaskCalendarViewProps> = ({
   const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 is Sunday
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  // Helper to extract or match date for a task
+  const formatDateKey = (date: Date): string => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
+  // Helper to extract or match date for a task:
+  // - Completed tasks -> calendar date is actual completion date (completed_at)
+  // - Incomplete tasks -> calendar date is planned due date (due_at / due_date)
   const getTaskDateKey = (task: Task): string | null => {
+    const isCompleted = task.status === 'DONE' || task.user_status === 'COMPLETED';
+
+    if (isCompleted) {
+      if (task.completed_at) {
+        try {
+          const d = new Date(task.completed_at);
+          if (!isNaN(d.getTime())) {
+            return formatDateKey(d);
+          }
+        } catch {}
+      }
+      // Fallback for completed task without explicit completed_at timestamp
+      if (task.updated_at) {
+        try {
+          const d = new Date(task.updated_at);
+          if (!isNaN(d.getTime())) {
+            return formatDateKey(d);
+          }
+        } catch {}
+      }
+    }
+
+    // Planned / Incomplete task -> use due_at or due_date
     if (task.due_at) {
       try {
         const d = new Date(task.due_at);
         if (!isNaN(d.getTime())) {
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          return formatDateKey(d);
         }
       } catch {}
     }
+
     if (task.due_date) {
-      const lower = task.due_date.toLowerCase();
+      const lower = task.due_date.toLowerCase().trim();
       const today = new Date();
+
       if (lower.includes('today')) {
-        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        return formatDateKey(today);
       }
       if (lower.includes('tomorrow')) {
-        const tmrw = new Date();
-        tmrw.setDate(tmrw.getDate() + 1);
-        return `${tmrw.getFullYear()}-${String(tmrw.getMonth() + 1).padStart(2, '0')}-${String(tmrw.getDate()).padStart(2, '0')}`;
+        const tmrw = new Date(today);
+        tmrw.setDate(today.getDate() + 1);
+        return formatDateKey(tmrw);
       }
+      if (lower.includes('yesterday')) {
+        const yest = new Date(today);
+        yest.setDate(today.getDate() - 1);
+        return formatDateKey(yest);
+      }
+      if (lower.includes('this friday') || lower.includes('friday')) {
+        const d = new Date(today);
+        const day = d.getDay();
+        const diff = (5 - day + 7) % 7;
+        d.setDate(d.getDate() + (diff === 0 ? 7 : diff));
+        return formatDateKey(d);
+      }
+      if (lower.includes('next week')) {
+        const d = new Date(today);
+        d.setDate(d.getDate() + 7);
+        return formatDateKey(d);
+      }
+
+      // Check if it's already YYYY-MM-DD
+      if (/^\d{4}-\d{2}-\d{2}$/.test(task.due_date)) {
+        return task.due_date;
+      }
+
+      // Try generic Date.parse
+      try {
+        const d = new Date(task.due_date);
+        if (!isNaN(d.getTime())) {
+          return formatDateKey(d);
+        }
+      } catch {}
     }
+
     return null;
   };
 
