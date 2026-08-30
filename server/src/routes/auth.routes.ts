@@ -345,6 +345,7 @@ authRouter.patch('/settings', authMiddleware, async (req: AuthRequest, res: Resp
   const userId = req.user!.id;
   const {
     ui_mode,
+    matte_level,
     accent_color,
     font_family,
     privacy_tasks,
@@ -364,12 +365,13 @@ authRouter.patch('/settings', authMiddleware, async (req: AuthRequest, res: Resp
   if (!existing) {
     await runQuery(`
       INSERT INTO user_settings (
-        user_id, ui_mode, accent_color, font_family,
+        user_id, ui_mode, matte_level, accent_color, font_family,
         privacy_tasks, privacy_github, privacy_stats
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       userId,
       ui_mode || 'eink_matte',
+      matte_level || 'natural',
       accent_color || '#2E5A36',
       font_family || 'geist',
       privacy_tasks || 'friends',
@@ -380,6 +382,7 @@ authRouter.patch('/settings', authMiddleware, async (req: AuthRequest, res: Resp
     await runQuery(`
       UPDATE user_settings SET
         ui_mode = COALESCE(?, ui_mode),
+        matte_level = COALESCE(?, matte_level),
         accent_color = COALESCE(?, accent_color),
         font_family = COALESCE(?, font_family),
         privacy_tasks = COALESCE(?, privacy_tasks),
@@ -393,6 +396,7 @@ authRouter.patch('/settings', authMiddleware, async (req: AuthRequest, res: Resp
       WHERE user_id = ?
     `, [
       ui_mode ?? null,
+      matte_level ?? null,
       accent_color ?? null,
       font_family ?? null,
       privacy_tasks ?? null,

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserSettings, EInkTheme, UIMode, FontOption, JAPANESE_MATTE_PRESETS } from '../types';
+import { User, UserSettings, EInkTheme, UIMode, MatteLevel, FontOption, JAPANESE_MATTE_PRESETS } from '../types';
 import { fetchJson } from '../utils/api';
 
 interface AuthContextType {
@@ -9,6 +9,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   uiMode: UIMode;
+  matteLevel: MatteLevel;
   accentColor: string;
   fontFamily: FontOption;
   login: (token: string, user: User) => void;
@@ -17,6 +18,7 @@ interface AuthContextType {
   updateSettings: (settings: Partial<UserSettings>) => void;
   setTheme: (theme: EInkTheme) => void;
   setUIMode: (mode: UIMode) => void;
+  setMatteLevel: (level: MatteLevel) => void;
   setAccentColor: (color: string) => void;
   setFontFamily: (font: FontOption) => void;
   demoLogin: () => Promise<void>;
@@ -60,6 +62,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
+  const [matteLevel, setMatteLevelState] = useState<MatteLevel>(() => {
+    try {
+      const cached = localStorage.getItem('shiori_settings');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.matte_level) return parsed.matte_level;
+      }
+      return (localStorage.getItem('shiori_matte_level') as MatteLevel) || 'natural';
+    } catch {
+      return 'natural';
+    }
+  });
+
   const [accentColor, setAccentColorState] = useState<string>(() => {
     try {
       const cached = localStorage.getItem('shiori_settings');
@@ -98,11 +113,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Apply appearance (UI Mode, Accent Color, Font) on DOM
-  const applyAppearance = (mode: UIMode, accent: string, font: FontOption) => {
+  // Apply appearance (UI Mode, Accent Color, Font, Matte Level) on DOM
+  const applyAppearance = (mode: UIMode, accent: string, font: FontOption, matte: MatteLevel) => {
     const doc = document.documentElement;
     doc.setAttribute('data-ui-mode', mode);
     doc.setAttribute('data-font', font);
+    doc.setAttribute('data-matte-level', matte);
     doc.style.setProperty('--eink-accent', accent);
     doc.style.setProperty('--eink-accent-soft', `${accent}22`);
 
@@ -155,7 +171,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Initial startup: apply cached preferences immediately to prevent flash
   useEffect(() => {
-    applyAppearance(uiMode, accentColor, fontFamily);
+    applyAppearance(uiMode, accentColor, fontFamily, matteLevel);
   }, []);
 
   useEffect(() => {
@@ -175,13 +191,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               localStorage.setItem('shiori_settings', JSON.stringify(data.settings));
               
               const sMode = data.settings.ui_mode || 'eink_matte';
+              const sMatte = data.settings.matte_level || 'natural';
               const sAccent = data.settings.accent_color || '#2E5A36';
               const sFont = data.settings.font_family || 'geist';
               
               setUiModeState(sMode);
+              setMatteLevelState(sMatte);
               setAccentColorState(sAccent);
               setFontFamilyState(sFont);
-              applyAppearance(sMode, sAccent, sFont);
+              applyAppearance(sMode, sAccent, sFont, sMatte);
             }
           } else if (status === 401) {
             localStorage.removeItem('shiori_token');
@@ -219,7 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setSettings(null);
     applyTheme('light');
-    applyAppearance('eink_matte', '#2E5A36', 'geist');
+    applyAppearance('eink_matte', '#2E5A36', 'geist', 'natural');
   };
 
   const demoLogin = async () => {
@@ -298,21 +316,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const setUIMode = (mode: UIMode) => {
     setUiModeState(mode);
     localStorage.setItem('shiori_ui_mode', mode);
-    applyAppearance(mode, accentColor, fontFamily);
+    applyAppearance(mode, accentColor, fontFamily, matteLevel);
     updateSettings({ ui_mode: mode });
+  };
+
+  const setMatteLevel = (level: MatteLevel) => {
+    setMatteLevelState(level);
+    localStorage.setItem('shiori_matte_level', level);
+    applyAppearance(uiMode, accentColor, fontFamily, level);
+    updateSettings({ matte_level: level });
   };
 
   const setAccentColor = (color: string) => {
     setAccentColorState(color);
     localStorage.setItem('shiori_accent_color', color);
-    applyAppearance(uiMode, color, fontFamily);
+    applyAppearance(uiMode, color, fontFamily, matteLevel);
     updateSettings({ accent_color: color });
   };
 
   const setFontFamily = (font: FontOption) => {
     setFontFamilyState(font);
     localStorage.setItem('shiori_font_family', font);
-    applyAppearance(uiMode, accentColor, font);
+    applyAppearance(uiMode, accentColor, font, matteLevel);
     updateSettings({ font_family: font });
   };
 
@@ -325,6 +350,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: !!user,
         isLoading,
         uiMode,
+        matteLevel,
         accentColor,
         fontFamily,
         login,
@@ -333,6 +359,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateSettings,
         setTheme,
         setUIMode,
+        setMatteLevel,
         setAccentColor,
         setFontFamily,
         demoLogin,

@@ -21,10 +21,11 @@ import {
   Calendar,
   Tag,
   Sliders,
-  Eye
+  Eye,
+  Layers
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { EInkTheme, UIMode, FontOption, JAPANESE_MATTE_PRESETS, JapaneseMattePreset } from '../types';
+import { EInkTheme, UIMode, MatteLevel, FontOption, JAPANESE_MATTE_PRESETS, JapaneseMattePreset } from '../types';
 import { fetchJson } from '../utils/api';
 
 
@@ -102,9 +103,11 @@ export const SettingsPage: React.FC = () => {
     settings,
     setTheme,
     uiMode,
+    matteLevel,
     accentColor,
     fontFamily,
     setUIMode,
+    setMatteLevel,
     setAccentColor,
     setFontFamily,
     updateSettings,
@@ -163,6 +166,7 @@ export const SettingsPage: React.FC = () => {
         },
         body: JSON.stringify({
           ui_mode: uiMode,
+          matte_level: matteLevel,
           accent_color: accentColor,
           font_family: fontFamily,
           privacy_tasks: privacyTasks,
@@ -182,6 +186,7 @@ export const SettingsPage: React.FC = () => {
 
       updateSettings({
         ui_mode: uiMode,
+        matte_level: matteLevel,
         accent_color: accentColor,
         font_family: fontFamily,
         privacy_tasks: privacyTasks as any,
@@ -315,7 +320,117 @@ export const SettingsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. JAPANESE MATTE PRESETS */}
+          {/* 2. MATTE LEVEL SELECTION */}
+          <div className="p-5 sm:p-6 bg-eink-surface border border-eink-border rounded-sm space-y-4 shadow-eink-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-eink-border pb-2.5 gap-2">
+              <div>
+                <h3 className="font-bold text-sm text-eink-text uppercase flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-eink-text" />
+                  <span>MATTE LEVEL · マットレベル</span>
+                </h3>
+                <p className="text-[11px] text-eink-textSecondary font-sans mt-0.5">
+                  Adjust tactile paper tone and surface intensity across your workspace.
+                </p>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 bg-eink-bg border border-eink-border rounded font-bold uppercase">
+                ACTIVE: {matteLevel.toUpperCase()}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+              {/* SOFT */}
+              <div
+                onClick={() => setMatteLevel('soft')}
+                className={`p-3.5 border rounded-sm cursor-pointer space-y-2.5 transition-all flex flex-col justify-between ${
+                  matteLevel === 'soft'
+                    ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
+                    : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                }`}
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs">SOFT</span>
+                    {matteLevel === 'soft' && (
+                      <span className="text-[10px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded flex items-center gap-1">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                        <span>ACTIVE</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
+                    Very subtle matte effect. Slightly warm off-white paper with minimal texture and clean surfaces.
+                  </p>
+                </div>
+                <div className="pt-2 border-t border-eink-border/50 text-[10px] font-mono text-eink-textMuted flex items-center justify-between">
+                  <span>Subtle Paper</span>
+                  <span className="font-bold">{matteLevel === 'soft' ? 'SELECTED' : 'APPLY'}</span>
+                </div>
+              </div>
+
+              {/* NATURAL */}
+              <div
+                onClick={() => setMatteLevel('natural')}
+                className={`p-3.5 border rounded-sm cursor-pointer space-y-2.5 transition-all flex flex-col justify-between ${
+                  matteLevel === 'natural'
+                    ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
+                    : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                }`}
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-xs">NATURAL</span>
+                      <span className="text-[9px] bg-eink-text text-eink-bg px-1.5 py-0.2 rounded font-mono">RECOMMENDED</span>
+                    </div>
+                    {matteLevel === 'natural' && (
+                      <span className="text-[10px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded flex items-center gap-1">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                        <span>ACTIVE</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
+                    Authentic uncoated Japanese paper / washi. Warmer tone with subtle paper grain and glare-free finish.
+                  </p>
+                </div>
+                <div className="pt-2 border-t border-eink-border/50 text-[10px] font-mono text-eink-textMuted flex items-center justify-between">
+                  <span>Japanese Washi</span>
+                  <span className="font-bold">{matteLevel === 'natural' ? 'SELECTED' : 'APPLY'}</span>
+                </div>
+              </div>
+
+              {/* DEEP */}
+              <div
+                onClick={() => setMatteLevel('deep')}
+                className={`p-3.5 border rounded-sm cursor-pointer space-y-2.5 transition-all flex flex-col justify-between ${
+                  matteLevel === 'deep'
+                    ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
+                    : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                }`}
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs">DEEP</span>
+                    {matteLevel === 'deep' && (
+                      <span className="text-[10px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded flex items-center gap-1">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                        <span>ACTIVE</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
+                    Strongest physical matte appearance. Rich warm paper tone with visible texture while keeping dark ink contrast.
+                  </p>
+                </div>
+                <div className="pt-2 border-t border-eink-border/50 text-[10px] font-mono text-eink-textMuted flex items-center justify-between">
+                  <span>Heavy Physical Matte</span>
+                  <span className="font-bold">{matteLevel === 'deep' ? 'SELECTED' : 'APPLY'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. JAPANESE MATTE PRESETS */}
           <div className="p-5 sm:p-6 bg-eink-surface border border-eink-border rounded-sm space-y-4 shadow-eink-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-eink-border pb-2.5 gap-2">
               <div>
@@ -679,7 +794,7 @@ export const SettingsPage: React.FC = () => {
               </div>
 
               <span className="text-[11px] text-eink-textSecondary font-mono">
-                Mode: <strong>{uiMode === 'color_matte' ? 'Color Matte' : 'E-ink Matte'}</strong> · Font: <strong>{fontFamily}</strong>
+                Mode: <strong>{uiMode === 'color_matte' ? 'Color Matte' : 'E-ink Matte'}</strong> · Matte: <strong className="uppercase">{matteLevel}</strong> · Font: <strong>{fontFamily}</strong>
               </span>
             </div>
           </div>

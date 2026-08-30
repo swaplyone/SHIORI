@@ -1,5 +1,6 @@
 export type EInkTheme = 'light' | 'dark' | 'monochrome';
 export type UIMode = 'eink_matte' | 'color_matte';
+export type MatteLevel = 'soft' | 'natural' | 'deep';
 export type FontOption = 'geist' | 'inter' | 'plex_sans' | 'plex_mono' | 'serif' | 'abask' | 'qualli' | 'archela';
 
 export interface JapaneseMattePreset {
@@ -99,6 +100,7 @@ export interface User {
 export interface UserSettings {
   user_id: string;
   ui_mode?: UIMode;
+  matte_level?: MatteLevel;
   accent_color?: string;
   font_family?: FontOption;
   eink_refresh_effect?: number;

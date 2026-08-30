@@ -108,6 +108,63 @@
   --eink-accent-contrast: #FFFFFF;
 }
 
+/* MATTE LEVEL DESIGN TOKENS */
+html[data-matte-level="soft"] {
+  --eink-bg: #F5F3ED;
+  --eink-surface: #EAE7DF;
+  --eink-surface-hover: #DFDCD3;
+  --eink-border: #BCBAB0;
+  --eink-border-dark: #7A786F;
+  --eink-grain-opacity: 0.02;
+}
+
+html[data-matte-level="natural"],
+html:not([data-matte-level]) {
+  --eink-bg: #EBE9E1;
+  --eink-surface: #DFDDD3;
+  --eink-surface-hover: #D5D3C8;
+  --eink-border: #AFAEA4;
+  --eink-border-dark: #74726A;
+  --eink-grain-opacity: 0.035;
+}
+
+html[data-matte-level="deep"] {
+  --eink-bg: #E2DFD5;
+  --eink-surface: #D5D1C5;
+  --eink-surface-hover: #CAC5B7;
+  --eink-border: #9D9A8F;
+  --eink-border-dark: #65635B;
+  --eink-grain-opacity: 0.055;
+}
+
+/* Dark mode matte levels */
+html[data-theme="dark"][data-matte-level="soft"],
+.dark[data-matte-level="soft"] {
+  --eink-bg: #1A1A1A;
+  --eink-surface: #242424;
+  --eink-surface-hover: #2E2E2E;
+  --eink-border: #42423E;
+  --eink-grain-opacity: 0.02;
+}
+
+html[data-theme="dark"][data-matte-level="natural"],
+.dark[data-matte-level="natural"] {
+  --eink-bg: #141414;
+  --eink-surface: #1F1F1F;
+  --eink-surface-hover: #2A2A2A;
+  --eink-border: #383835;
+  --eink-grain-opacity: 0.035;
+}
+
+html[data-theme="dark"][data-matte-level="deep"],
+.dark[data-matte-level="deep"] {
+  --eink-bg: #0F0F0F;
+  --eink-surface: #191919;
+  --eink-surface-hover: #232323;
+  --eink-border: #30302D;
+  --eink-grain-opacity: 0.055;
+}
+
 /* Dynamic Font Configurations */
 html[data-font="geist"], [data-font="geist"] {
   --font-app: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -239,7 +296,7 @@ body {
 /* Subtle E-Ink Paper Texture Effect */
 .eink-paper {
   background-color: var(--eink-bg);
-  background-image: radial-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 0);
+  background-image: radial-gradient(rgba(0, 0, 0, var(--eink-grain-opacity, 0.035)) 1px, transparent 0);
   background-size: 16px 16px;
 }
 
