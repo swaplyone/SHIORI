@@ -76,7 +76,9 @@ export const IdleCollapsedView: React.FC = () => {
           <img
             src="/favicon-shiori.png"
             alt="SHIORI"
-            className="w-6.5 h-6.5 object-contain shrink-0"
+            width={24}
+            height={24}
+            className="w-6 h-6 max-w-[24px] max-h-[24px] object-contain shrink-0"
           />
           <span className="font-mono font-bold text-xs tracking-[0.18em] text-eink-text uppercase leading-none">
             SHIORI
