@@ -124,15 +124,10 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
             <img
               src="/exact-desk-light.png"
               alt="SHIORI Quiet Workspace Illustration"
-              className={`w-full h-full object-contain filter contrast-125 select-none pointer-events-none transition-all duration-500 ${
-                animStage === 2 ? 'filter blur-[0.4px] opacity-80' : 'filter blur-0 opacity-100'
+              className={`w-full h-full object-contain mix-blend-multiply select-none pointer-events-none transition-all duration-500 ${
+                animStage === 2 ? 'opacity-80' : 'opacity-100'
               }`}
             />
-
-            {/* Subtle E-Ink Scanline refresh effect during drawing phase */}
-            {animStage === 2 && (
-              <div className="absolute inset-0 pointer-events-none bg-linear-to-b from-transparent via-[#F5F4EE]/40 to-transparent animate-pulse" />
-            )}
           </div>
         </div>
 
