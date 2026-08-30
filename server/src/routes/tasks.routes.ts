@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, runQuery } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { recalculateTaskEvidence } from '../services/evidence.service.js';
-import { emitToWorkspace, emitToTask } from '../services/socket.service.js';
+import { emitToWorkspace, emitToTask, emitToUser } from '../services/socket.service.js';
 
 export const tasksRouter = Router();
 
@@ -243,6 +243,36 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
 
   const createdTask = await queryOne('SELECT * FROM tasks WHERE id = ?', [taskId]);
   emitToWorkspace(finalWorkspaceId, 'task:created', { task: createdTask });
+
+  // Notify assignee if assigned to someone else
+  if (assigneeId && assigneeId !== req.user!.id) {
+    const notifId = uuidv4();
+    await runQuery(`
+      INSERT INTO notifications (id, user_id, task_id, title, message, type, is_read, read, created_at)
+      VALUES (?, ?, ?, ?, ?, 'TASK_ASSIGNMENT', 0, 0, datetime('now'))
+    `, [
+      notifId,
+      assigneeId,
+      taskId,
+      `New Task Assigned: ${taskCode}`,
+      `${req.user!.name} assigned task "${title}" (${taskCode}) to you.`
+    ]);
+
+    emitToUser(assigneeId, 'notification:new', {
+      id: notifId,
+      title: `New Task Assigned: ${taskCode}`,
+      message: `${req.user!.name} assigned task "${title}" (${taskCode}) to you.`,
+      type: 'TASK_ASSIGNMENT',
+      task_id: taskId
+    });
+
+    emitToUser(assigneeId, 'task:assigned', {
+      taskId,
+      taskCode,
+      title,
+      assignerName: req.user!.name
+    });
+  }
 
   res.status(201).json({ task: createdTask });
 });
@@ -515,6 +545,36 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
 
   const evidence = await recalculateTaskEvidence(id);
   const updated = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+
+  // Notify assignee if reassigned to someone new
+  if (assigneeId && assigneeId !== current.assignee_id && assigneeId !== req.user!.id) {
+    const notifId = uuidv4();
+    await runQuery(`
+      INSERT INTO notifications (id, user_id, task_id, title, message, type, is_read, read, created_at)
+      VALUES (?, ?, ?, ?, ?, 'TASK_ASSIGNMENT', 0, 0, datetime('now'))
+    `, [
+      notifId,
+      assigneeId,
+      id,
+      `New Task Assigned: ${current.task_code}`,
+      `${req.user!.name} assigned task "${current.title}" (${current.task_code}) to you.`
+    ]);
+
+    emitToUser(assigneeId, 'notification:new', {
+      id: notifId,
+      title: `New Task Assigned: ${current.task_code}`,
+      message: `${req.user!.name} assigned task "${current.title}" (${current.task_code}) to you.`,
+      type: 'TASK_ASSIGNMENT',
+      task_id: id
+    });
+
+    emitToUser(assigneeId, 'task:assigned', {
+      taskId: id,
+      taskCode: current.task_code,
+      title: current.title,
+      assignerName: req.user!.name
+    });
+  }
 
   emitToTask(id, 'task:updated', { task: updated, evidence });
   emitToWorkspace(current.workspace_id, 'task:updated', { task: updated });

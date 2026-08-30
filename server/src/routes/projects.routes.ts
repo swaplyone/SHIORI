@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, runQuery } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+import { emitToUser } from '../services/socket.service.js';
 
 export const projectsRouter = Router();
 
@@ -176,60 +177,253 @@ projectsRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response)
   res.status(201).json({ project: created });
 });
 
-// GET Project members
+// GET Pending project invitations for logged-in user
+projectsRouter.get('/invitations/pending', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const invitations = await queryAll(`
+      SELECT pi.*, 
+             p.name as project_name, p.slug as project_slug, p.description as project_description,
+             p.github_repo_name,
+             u.name as inviter_name, u.email as inviter_email, u.shiori_id as inviter_shiori_id
+      FROM project_invitations pi
+      JOIN projects p ON pi.project_id = p.id
+      JOIN users u ON pi.inviter_id = u.id
+      WHERE pi.invitee_id = ? AND pi.status = 'PENDING'
+      ORDER BY pi.created_at DESC
+    `, [req.user!.id]);
+
+    res.json({ invitations: invitations || [] });
+  } catch (err: any) {
+    console.error('[PROJECT INVITATIONS GET ERROR]', err);
+    res.status(500).json({ error: 'Failed to fetch project invitations', invitations: [] });
+  }
+});
+
+// POST Respond to project invitation (ACCEPT or DECLINE)
+projectsRouter.post('/invitations/:inviteId/respond', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { inviteId } = req.params;
+    const { action } = req.body; // 'ACCEPT' | 'DECLINE'
+
+    if (!['ACCEPT', 'DECLINE'].includes(action)) {
+      res.status(400).json({ error: 'Invalid action. Must be ACCEPT or DECLINE.' });
+      return;
+    }
+
+    const invitation = await queryOne(`
+      SELECT pi.*, p.name as project_name, p.workspace_id, u.name as inviter_name
+      FROM project_invitations pi
+      JOIN projects p ON pi.project_id = p.id
+      JOIN users u ON pi.inviter_id = u.id
+      WHERE pi.id = ? AND pi.invitee_id = ?
+    `, [inviteId, req.user!.id]);
+
+    if (!invitation) {
+      res.status(404).json({ error: 'Invitation not found or not authorized.' });
+      return;
+    }
+
+    if (action === 'ACCEPT') {
+      // 1. Update invitation status
+      await runQuery(`
+        UPDATE project_invitations 
+        SET status = 'ACCEPTED', updated_at = datetime('now') 
+        WHERE id = ?
+      `, [inviteId]);
+
+      // 2. Add to project_members
+      const existingMember = await queryOne('SELECT id FROM project_members WHERE project_id = ? AND user_id = ?', [invitation.project_id, req.user!.id]);
+      if (!existingMember) {
+        await runQuery(`
+          INSERT INTO project_members (id, project_id, user_id, role, joined_at)
+          VALUES (?, ?, ?, ?, datetime('now'))
+        `, [uuidv4(), invitation.project_id, req.user!.id, invitation.role || 'member']);
+      }
+
+      // 3. Notify inviter
+      const notifId = uuidv4();
+      await runQuery(`
+        INSERT INTO notifications (id, user_id, title, message, type, is_read, read, created_at)
+        VALUES (?, ?, ?, ?, 'PROJECT_INVITATION_ACCEPTED', 0, 0, datetime('now'))
+      `, [
+        notifId,
+        invitation.inviter_id,
+        `Project Invitation Accepted ✓`,
+        `${req.user!.name} accepted your invitation and joined "${invitation.project_name}".`
+      ]);
+
+      emitToUser(invitation.inviter_id, 'notification:new', {
+        id: notifId,
+        title: `Project Invitation Accepted ✓`,
+        message: `${req.user!.name} accepted your invitation and joined "${invitation.project_name}".`,
+        type: 'PROJECT_INVITATION_ACCEPTED'
+      });
+
+      res.json({
+        success: true,
+        message: `Accepted! You are now a member of ${invitation.project_name}.`
+      });
+    } else {
+      // DECLINE
+      await runQuery(`
+        UPDATE project_invitations 
+        SET status = 'DECLINED', updated_at = datetime('now') 
+        WHERE id = ?
+      `, [inviteId]);
+
+      // Notify inviter of decline
+      const notifId = uuidv4();
+      await runQuery(`
+        INSERT INTO notifications (id, user_id, title, message, type, is_read, read, created_at)
+        VALUES (?, ?, ?, ?, 'PROJECT_INVITATION_DECLINED', 0, 0, datetime('now'))
+      `, [
+        notifId,
+        invitation.inviter_id,
+        `Project Invitation Declined`,
+        `${req.user!.name} declined the invitation to join "${invitation.project_name}".`
+      ]);
+
+      emitToUser(invitation.inviter_id, 'notification:new', {
+        id: notifId,
+        title: `Project Invitation Declined`,
+        message: `${req.user!.name} declined the invitation to join "${invitation.project_name}".`,
+        type: 'PROJECT_INVITATION_DECLINED'
+      });
+
+      res.json({
+        success: true,
+        message: `Invitation to join ${invitation.project_name} declined.`
+      });
+    }
+  } catch (err: any) {
+    console.error('[PROJECT INVITATION RESPOND ERROR]', err);
+    res.status(500).json({ error: 'Failed to process invitation response' });
+  }
+});
+
+// GET Project members and pending invites
 projectsRouter.get('/:id/members', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   const members = await queryAll(`
-    SELECT u.id, u.name, u.email, u.shiori_id, pm.role, pm.joined_at
+    SELECT u.id, u.name, u.email, u.shiori_id, pm.role, pm.joined_at, 'ACTIVE' as member_status
     FROM project_members pm
     JOIN users u ON pm.user_id = u.id
     WHERE pm.project_id = ?
   `, [id]);
 
-  res.json({ members });
-});
+  const pendingInvitations = await queryAll(`
+    SELECT pi.id as invitation_id, u.id, u.name, u.email, u.shiori_id, pi.role, pi.created_at, 'PENDING' as member_status
+    FROM project_invitations pi
+    JOIN users u ON pi.invitee_id = u.id
+    WHERE pi.project_id = ? AND pi.status = 'PENDING'
+  `, [id]);
 
-// POST Add Member to project by SHIORI ID
-projectsRouter.post('/:id/members', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const { shioriId, userId } = req.body;
-
-  let targetUser = null;
-  if (shioriId) {
-    targetUser = await queryOne('SELECT id, name, email, shiori_id FROM users WHERE UPPER(shiori_id) = UPPER(?)', [shioriId.trim()]);
-  } else if (userId) {
-    targetUser = await queryOne('SELECT id, name, email, shiori_id FROM users WHERE id = ?', [userId]);
-  }
-
-  if (!targetUser) {
-    res.status(404).json({ error: 'User with the specified SHIORI ID was not found.' });
-    return;
-  }
-
-  // Check if already a member
-  const existing = await queryOne('SELECT id FROM project_members WHERE project_id = ? AND user_id = ?', [id, targetUser.id]);
-  if (existing) {
-    res.status(400).json({ error: 'User is already a member of this project.' });
-    return;
-  }
-
-  await runQuery(`
-    INSERT INTO project_members (id, project_id, user_id, role)
-    VALUES (?, ?, ?, 'member')
-  `, [uuidv4(), id, targetUser.id]);
-
-  res.status(201).json({
-    success: true,
-    message: `${targetUser.name} added as project member.`,
-    user: targetUser
+  res.json({
+    members: members || [],
+    pendingInvitations: pendingInvitations || []
   });
 });
 
-// DELETE Member from project
+// POST Invite Member to project by SHIORI ID / username / email
+projectsRouter.post('/:id/members', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { shioriId, userId, username, email, role = 'member' } = req.body;
+
+  const project = await queryOne('SELECT * FROM projects WHERE id = ?', [id]);
+  if (!project) {
+    res.status(404).json({ error: 'Project not found.' });
+    return;
+  }
+
+  let targetUser = null;
+  if (shioriId) {
+    targetUser = await queryOne('SELECT id, name, email, shiori_id, username FROM users WHERE UPPER(shiori_id) = UPPER(?)', [shioriId.trim()]);
+  } else if (userId) {
+    targetUser = await queryOne('SELECT id, name, email, shiori_id, username FROM users WHERE id = ?', [userId]);
+  } else if (username) {
+    targetUser = await queryOne('SELECT id, name, email, shiori_id, username FROM users WHERE LOWER(username) = LOWER(?)', [username.trim()]);
+  } else if (email) {
+    targetUser = await queryOne('SELECT id, name, email, shiori_id, username FROM users WHERE LOWER(email) = LOWER(?)', [email.trim()]);
+  }
+
+  if (!targetUser) {
+    res.status(404).json({ error: 'User was not found. Please verify the SHIORI ID or username.' });
+    return;
+  }
+
+  if (targetUser.id === req.user!.id) {
+    res.status(400).json({ error: 'You are already the creator/owner of this project.' });
+    return;
+  }
+
+  // Check if already an active member
+  const existing = await queryOne('SELECT id FROM project_members WHERE project_id = ? AND user_id = ?', [id, targetUser.id]);
+  if (existing) {
+    res.status(400).json({ error: `${targetUser.name} is already an active member of this project.` });
+    return;
+  }
+
+  // Check if there is already a pending invitation
+  const existingInvite = await queryOne('SELECT id FROM project_invitations WHERE project_id = ? AND invitee_id = ? AND status = "PENDING"', [id, targetUser.id]);
+  if (existingInvite) {
+    res.status(400).json({ error: `An invitation is already pending for ${targetUser.name}.` });
+    return;
+  }
+
+  const inviteId = uuidv4();
+  await runQuery(`
+    INSERT INTO project_invitations (id, project_id, inviter_id, invitee_id, role, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'PENDING', datetime('now'), datetime('now'))
+  `, [inviteId, id, req.user!.id, targetUser.id, role]);
+
+  // Create notification for target member
+  const notifId = uuidv4();
+  await runQuery(`
+    INSERT INTO notifications (id, user_id, title, message, type, is_read, read, created_at)
+    VALUES (?, ?, ?, ?, 'PROJECT_INVITATION', 0, 0, datetime('now'))
+  `, [
+    notifId,
+    targetUser.id,
+    `Project Invitation 📂`,
+    `${req.user!.name} invited you to join project "${project.name}".`
+  ]);
+
+  // Emit real-time socket events
+  emitToUser(targetUser.id, 'notification:new', {
+    id: notifId,
+    title: `Project Invitation 📂`,
+    message: `${req.user!.name} invited you to join project "${project.name}".`,
+    type: 'PROJECT_INVITATION',
+    project_id: project.id,
+    invite_id: inviteId
+  });
+
+  emitToUser(targetUser.id, 'project:invite_received', {
+    inviteId,
+    projectId: project.id,
+    projectName: project.name,
+    inviterName: req.user!.name,
+    role
+  });
+
+  res.status(201).json({
+    success: true,
+    message: `Invitation sent to ${targetUser.name}. They will be added to the project once they accept.`,
+    invitation: {
+      id: inviteId,
+      user: targetUser,
+      status: 'PENDING'
+    }
+  });
+});
+
+// DELETE Member or Cancel Invitation from project
 projectsRouter.delete('/:id/members/:userId', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id, userId } = req.params;
 
   await runQuery('DELETE FROM project_members WHERE project_id = ? AND user_id = ?', [id, userId]);
-  res.json({ success: true, message: 'Member removed from project.' });
+  await runQuery('DELETE FROM project_invitations WHERE project_id = ? AND invitee_id = ?', [id, userId]);
+  
+  res.json({ success: true, message: 'Member or invitation removed from project.' });
 });

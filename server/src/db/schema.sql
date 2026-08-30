@@ -171,6 +171,32 @@ CREATE TABLE IF NOT EXISTS projects (
   FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS project_members (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT DEFAULT 'member',
+  joined_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (project_id, user_id),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS project_invitations (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  inviter_id TEXT NOT NULL,
+  invitee_id TEXT NOT NULL,
+  role TEXT DEFAULT 'member',
+  status TEXT DEFAULT 'PENDING',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (project_id, invitee_id),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (inviter_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (invitee_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Core To-Do / Task Model with Automatic Completion & GitHub Linking
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,

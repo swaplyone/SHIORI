@@ -327,6 +327,18 @@ async function initPgSchema(pool: pg.Pool) {
       expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '7 days')
     );
 
+    CREATE TABLE IF NOT EXISTS project_invitations (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      inviter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      invitee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT DEFAULT 'member',
+      status TEXT DEFAULT 'PENDING',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (project_id, invitee_id)
+    );
+
     CREATE TABLE IF NOT EXISTS workspace_verification_sessions (
       id TEXT PRIMARY KEY,
       invitation_id TEXT NOT NULL,

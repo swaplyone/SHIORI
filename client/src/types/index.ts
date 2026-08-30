@@ -115,6 +115,9 @@ export interface Project {
   in_progress_tasks?: number;
   review_tasks?: number;
   failed_ci_tasks?: number;
+  members_count?: number;
+  membersCount?: number;
+  members?: any[];
 }
 
 export interface Task {
