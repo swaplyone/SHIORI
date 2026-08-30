@@ -35,12 +35,14 @@ tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Pr
   try {
     const { workspaceId, projectId, status, priority, search, repo, archived = 'false', recurring } = req.query;
 
-    // Trigger live GitHub sync if repo is requested or project is connected
-    try {
-      const syncRepo = (repo as string) || 'SHIORI';
-      const { syncRepoLiveFromGitHub } = await import('./github.routes.js');
-      await syncRepoLiveFromGitHub(req.user!.id, syncRepo);
-    } catch {}
+    // Trigger live GitHub sync in the background without blocking API response
+    if (repo) {
+      import('./github.routes.js')
+        .then(({ syncRepoLiveFromGitHub }) => {
+          syncRepoLiveFromGitHub(req.user!.id, repo as string).catch(() => {});
+        })
+        .catch(() => {});
+    }
 
     let sql = `
       SELECT t.*, 
@@ -102,7 +104,15 @@ tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Pr
       params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
-    sql += ' ORDER BY t.task_number DESC';
+    sql += ` ORDER BY 
+      CASE UPPER(COALESCE(t.priority, 'MEDIUM'))
+        WHEN 'URGENT' THEN 1
+        WHEN 'HIGH' THEN 2
+        WHEN 'MEDIUM' THEN 3
+        WHEN 'LOW' THEN 4
+        ELSE 3
+      END ASC,
+      t.task_number DESC`;
 
     const tasks = await queryAll(sql, params);
     res.json({ tasks: tasks || [] });
