@@ -84,6 +84,22 @@ const FONT_OPTIONS: { id: FontOption; name: string; category: string; descriptio
     description: 'Authentic historical typography and Japanese craft spirit.',
     sample: 'The quick brown fox jumps over the lazy dog',
     cssFont: "'Abask', 'Instrument Serif', serif"
+  },
+  {
+    id: 'qualli',
+    name: 'Qualli',
+    category: 'Modern Organic Display',
+    description: 'Contemporary organic display typography with distinctive character.',
+    sample: 'The quick brown fox jumps over the lazy dog',
+    cssFont: "'Qualli', 'Instrument Serif', serif"
+  },
+  {
+    id: 'archela',
+    name: 'Archela',
+    category: 'Sculptural Display Serif',
+    description: 'Refined sculptural serif with classical proportions and modern sharpness.',
+    sample: 'The quick brown fox jumps over the lazy dog',
+    cssFont: "'Archela', 'Instrument Serif', serif"
   }
 ];
 

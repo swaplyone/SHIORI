@@ -19,6 +19,25 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Qualli';
+  src: url('/fonts/qualli.otf') format('opentype'),
+       url('/fonts/Qualli/Qualli-0ve1G-BF6a6f0f37537db.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Archela';
+  src: url('/fonts/archela-regular.ttf') format('truetype'),
+       url('/fonts/archela-regular.otf') format('opentype'),
+       url('/fonts/Archela/archela-regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 .font-island,
 .font-navbar,
 .font-brashkick {
@@ -27,6 +46,14 @@
 
 .font-abask {
   font-family: 'Abask', serif;
+}
+
+.font-qualli {
+  font-family: 'Qualli', serif;
+}
+
+.font-archela {
+  font-family: 'Archela', serif;
 }
 
 :root {
@@ -99,6 +126,12 @@ html[data-font="serif"], [data-font="serif"] {
 }
 html[data-font="abask"], [data-font="abask"] {
   --font-app: 'Abask', 'Instrument Serif', Georgia, serif;
+}
+html[data-font="qualli"], [data-font="qualli"] {
+  --font-app: 'Qualli', 'Instrument Serif', Georgia, serif;
+}
+html[data-font="archela"], [data-font="archela"] {
+  --font-app: 'Archela', 'Instrument Serif', Georgia, serif;
 }
 
 /* Global Font Application */

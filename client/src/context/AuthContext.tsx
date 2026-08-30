@@ -129,6 +129,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fontStack = "'Instrument Serif', 'Newsreader', Georgia, serif";
     } else if (font === 'abask') {
       fontStack = "'Abask', 'Instrument Serif', Georgia, serif";
+    } else if (font === 'qualli') {
+      fontStack = "'Qualli', 'Instrument Serif', Georgia, serif";
+    } else if (font === 'archela') {
+      fontStack = "'Archela', 'Instrument Serif', Georgia, serif";
     }
     doc.style.setProperty('--font-app', fontStack);
   };

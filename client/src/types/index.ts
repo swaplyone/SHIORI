@@ -1,6 +1,6 @@
 export type EInkTheme = 'light' | 'dark' | 'monochrome';
 export type UIMode = 'eink_matte' | 'color_matte';
-export type FontOption = 'geist' | 'inter' | 'plex_sans' | 'plex_mono' | 'serif' | 'abask';
+export type FontOption = 'geist' | 'inter' | 'plex_sans' | 'plex_mono' | 'serif' | 'abask' | 'qualli' | 'archela';
 
 export type TaskStatus = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
