@@ -119,6 +119,20 @@ export const TasksPage: React.FC = () => {
     const newUserStatus = newStatus === 'DONE' ? 'COMPLETED' : 'IN_PROGRESS';
     if (!token) return;
 
+    // 1. Instant optimistic update
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === task.id
+          ? {
+              ...t,
+              status: newStatus,
+              user_status: newUserStatus,
+              completed_at: newStatus === 'DONE' ? new Date().toISOString() : undefined
+            }
+          : t
+      )
+    );
+
     try {
       await fetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
@@ -126,12 +140,17 @@ export const TasksPage: React.FC = () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ status: newStatus, user_status: newUserStatus })
+        body: JSON.stringify({
+          status: newStatus,
+          userStatus: newUserStatus,
+          user_status: newUserStatus
+        })
       });
       triggerEInkRefresh();
-      fetchTasks();
+      window.dispatchEvent(new Event('shiori-refresh'));
     } catch (err) {
       console.error(err);
+      fetchTasks();
     }
   };
 

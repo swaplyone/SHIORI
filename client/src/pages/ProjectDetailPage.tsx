@@ -99,15 +99,34 @@ export const ProjectDetailPage: React.FC = () => {
     const newUserStatus = newStatus === 'DONE' ? 'COMPLETED' : 'IN_PROGRESS';
     if (!token) return;
 
+    // 1. Instant optimistic state update
+    setTodos((prev) =>
+      prev.map((t) =>
+        t.id === task.id
+          ? {
+              ...t,
+              status: newStatus,
+              user_status: newUserStatus,
+              completed_at: newStatus === 'DONE' ? new Date().toISOString() : undefined
+            }
+          : t
+      )
+    );
+
     try {
       await fetchJson(`/api/tasks/${task.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: newStatus, user_status: newUserStatus })
+        body: JSON.stringify({
+          status: newStatus,
+          userStatus: newUserStatus,
+          user_status: newUserStatus
+        })
       });
       triggerEInkRefresh();
-      fetchProjectData();
+      window.dispatchEvent(new Event('shiori-refresh'));
     } catch (err) {
       console.error(err);
+      fetchProjectData();
     }
   };
 

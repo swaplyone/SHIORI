@@ -192,20 +192,18 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
 // PATCH Update task
 tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const {
-    title,
-    description,
-    status,
-    priority,
-    userStatus,
-    assigneeId,
-    dueDate,
-    githubRepo,
-    githubBranch,
-    githubPrNumber,
-    githubPrState,
-    githubCiStatus
-  } = req.body;
+  const title = req.body.title;
+  const description = req.body.description;
+  const status = req.body.status;
+  const priority = req.body.priority;
+  const userStatus = req.body.userStatus || req.body.user_status || (status === 'DONE' ? 'COMPLETED' : (status ? 'IN_PROGRESS' : undefined));
+  const assigneeId = req.body.assigneeId || req.body.assignee_id;
+  const dueDate = req.body.dueDate || req.body.due_date;
+  const githubRepo = req.body.githubRepo || req.body.github_repo;
+  const githubBranch = req.body.githubBranch || req.body.github_branch;
+  const githubPrNumber = req.body.githubPrNumber || req.body.github_pr_number;
+  const githubPrState = req.body.githubPrState || req.body.github_pr_state;
+  const githubCiStatus = req.body.githubCiStatus || req.body.github_ci_status;
 
   const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
   if (!current) {
@@ -221,6 +219,8 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
     `, [uuidv4(), id, req.user!.id, `Status changed from ${current.status} to ${status}`, `${req.user!.name} updated status`]);
   }
 
+  const completedAtValue = status === 'DONE' ? new Date().toISOString() : (status === 'IN_PROGRESS' || status === 'TODO' ? null : current.completed_at);
+
   await runQuery(`
     UPDATE tasks SET
       title = COALESCE(?, title),
@@ -235,11 +235,13 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
       github_pr_number = COALESCE(?, github_pr_number),
       github_pr_state = COALESCE(?, github_pr_state),
       github_ci_status = COALESCE(?, github_ci_status),
+      completed_at = ?,
       updated_at = datetime('now')
     WHERE id = ?
   `, [
     title, description, status, priority, userStatus, assigneeId, dueDate,
     githubRepo, githubBranch, githubPrNumber, githubPrState, githubCiStatus,
+    completedAtValue,
     id
   ]);
 
