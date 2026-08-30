@@ -56,8 +56,8 @@ class ReminderManager {
     }
 
     const payload: any = {
-      icon: '/favicon-shiori.png',
-      badge: '/favicon-shiori.png',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
       vibrate: [200, 100, 200],
       ...options,
     };

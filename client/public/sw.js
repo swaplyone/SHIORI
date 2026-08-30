@@ -90,8 +90,9 @@ self.addEventListener('push', (event) => {
       const data = event.data.json();
       const options = {
         body: data.body || 'New development update in SHIORI',
-        icon: '/logo.png',
-        badge: '/icons/shiori-icon.svg',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        vibrate: [200, 100, 200],
         data: {
           url: data.url || '/'
         }
