@@ -24,7 +24,8 @@ import {
   Bell,
   Clock,
   Play,
-  Tag
+  Tag,
+  Check
 } from 'lucide-react';
 import { Task, Subtask, Comment, TaskActivity, GitHubCommit, GitHubWorkflowRun, TaskPriority } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -237,6 +238,40 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
     if (!task || !token) return;
     try {
       const res = await fetch(`/api/tasks/${task.id}/restore`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAcceptTask = async () => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/accept`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRejectTask = async () => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/reject`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -496,13 +531,59 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           </div>
         ) : task ? (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            {/* Task Assignment Accept / Reject Banner */}
+            {task.assignee_id === user?.id && (task.assignment_status === 'ASSIGNED' || !task.assignment_status || task.assignment_status === 'NONE') && task.created_by !== user?.id && (
+              <div className="p-3.5 bg-eink-surface border-2 border-eink-text rounded-sm space-y-2 font-technical shadow-eink-sm animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 bg-eink-text text-eink-bg rounded-sm flex items-center justify-center font-bold text-xs">
+                      📋
+                    </span>
+                    <span className="font-bold text-xs uppercase tracking-wider text-eink-text">
+                      TASK ASSIGNED TO YOU
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-eink-textMuted uppercase font-bold">
+                    ACTION REQUIRED
+                  </span>
+                </div>
+                <p className="text-xs text-eink-textSecondary font-sans">
+                  {task.creator_name || 'A team member'} assigned this task to you. Accept to begin working or reject to unassign.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleAcceptTask}
+                    className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs shadow-eink-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>ACCEPT TASK</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRejectTask}
+                    className="px-3 py-1.5 border border-eink-border hover:bg-eink-surface rounded-sm text-xs font-bold text-eink-text hover:text-eink-text cursor-pointer transition-colors"
+                  >
+                    REJECT
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Title & Specs Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-6 border-b border-eink-border">
               <div className="md:col-span-2 space-y-4">
                 <div className="space-y-1">
-                  <h1 className="text-xl sm:text-2xl font-bold text-eink-text tracking-tight uppercase font-sans">
-                    {task.title}
-                  </h1>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl sm:text-2xl font-bold text-eink-text tracking-tight uppercase font-sans">
+                      {task.title}
+                    </h1>
+                    {task.assignment_status === 'ACCEPTED' && (
+                      <span className="px-1.5 py-0.5 bg-eink-text text-eink-bg rounded text-[10px] font-mono font-bold">
+                        ACCEPTED ✓
+                      </span>
+                    )}
+                  </div>
                   {task.tags && (
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
                       {task.tags.split(',').map((tag, idx) => (

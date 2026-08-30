@@ -414,6 +414,7 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_evidence_pr_merged INTEGER DEFAULT 0;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_confidence_score INTEGER DEFAULT 0;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS has_ci_discrepancy INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignment_status TEXT DEFAULT 'NONE';`,
       `ALTER TABLE task_activity ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`,
       `ALTER TABLE task_activity ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE SET NULL;`,
       `ALTER TABLE task_activity ADD COLUMN IF NOT EXISTS action_type TEXT NOT NULL DEFAULT 'ACTION';`,

@@ -5,5 +5,6 @@ import WidgetKit
 struct ShioriFocusWidgetBundle: WidgetBundle {
     var body: some Widget {
         ShioriFocusLiveActivityWidget()
+        ShioriTaskAssignmentWidget()
     }
 }

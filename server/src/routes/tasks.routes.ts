@@ -742,3 +742,234 @@ tasksRouter.post('/:id/comments', authMiddleware, async (req: AuthRequest, res: 
   emitToTask(id, 'task:comment', { comments });
   res.status(201).json({ comments });
 });
+
+// POST /api/tasks/:id/accept - Recipient accepts assigned task
+tasksRouter.post('/:id/accept', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+
+  const task = await queryOne(`
+    SELECT t.*, p.name as project_name, u.name as assignee_name, creator.id as creator_id, creator.name as creator_name
+    FROM tasks t
+    LEFT JOIN projects p ON t.project_id = p.id
+    LEFT JOIN users u ON t.assignee_id = u.id
+    LEFT JOIN users creator ON t.created_by = creator.id
+    WHERE t.id = ? AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+  `, [id]);
+
+  if (!task) {
+    res.status(404).json({ error: 'Task not found.' });
+    return;
+  }
+
+  // Verify user is the assigned recipient
+  if (task.assignee_id !== userId) {
+    res.status(403).json({ error: 'You are not authorized to accept this task. It is not assigned to you.' });
+    return;
+  }
+
+  // Verify project or workspace membership
+  const member = await queryOne(`
+    SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?
+    UNION
+    SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?
+  `, [task.project_id, userId, task.workspace_id, userId]);
+
+  if (!member) {
+    res.status(403).json({ error: 'You are not a member of this project or workspace.' });
+    return;
+  }
+
+  // Idempotent check
+  if (task.assignment_status === 'ACCEPTED') {
+    res.json({ task, message: 'Task has already been accepted.' });
+    return;
+  }
+
+  if (task.assignment_status === 'REJECTED') {
+    res.status(400).json({ error: 'Cannot accept a previously rejected task.' });
+    return;
+  }
+
+  // Update status: ASSIGNED -> ACCEPTED, user_status -> IN_PROGRESS
+  await runQuery(`
+    UPDATE tasks
+    SET assignment_status = 'ACCEPTED',
+        user_status = 'IN_PROGRESS',
+        status = CASE WHEN status = 'TODO' THEN 'IN_PROGRESS' ELSE status END,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `, [id]);
+
+  // Log activity
+  await runQuery(`
+    INSERT INTO task_activity (id, task_id, user_id, action_type, summary, created_at)
+    VALUES (?, ?, ?, 'TASK_ACCEPTED', ?, datetime('now'))
+  `, [uuidv4(), id, userId, `Task accepted by ${req.user!.name}`]);
+
+  await runQuery(`
+    INSERT INTO global_activities (id, user_id, workspace_id, project_id, task_id, category, icon_symbol, title, meta_text, created_at)
+    VALUES (?, ?, ?, ?, ?, 'TASK', '✓', ?, ?, datetime('now'))
+  `, [uuidv4(), userId, task.workspace_id, task.project_id, id, `Task accepted: ${task.title}`, task.task_code]);
+
+  const updatedTask = await queryOne(`
+    SELECT t.*, p.name as project_name, u.name as assignee_name, u.avatar_url as assignee_avatar
+    FROM tasks t
+    LEFT JOIN projects p ON t.project_id = p.id
+    LEFT JOIN users u ON t.assignee_id = u.id
+    WHERE t.id = ?
+  `, [id]);
+
+  // Notify the assigner (task.created_by)
+  if (task.created_by && task.created_by !== userId) {
+    const notifId = uuidv4();
+    await runQuery(`
+      INSERT INTO notifications (id, user_id, task_id, title, message, type, is_read, read, created_at)
+      VALUES (?, ?, ?, ?, ?, 'TASK_ACCEPTED', 0, 0, datetime('now'))
+    `, [
+      notifId,
+      task.created_by,
+      id,
+      `Task Accepted: ${task.task_code}`,
+      `${req.user!.name} accepted the assigned task "${task.title}".`
+    ]);
+
+    emitToUser(task.created_by, 'notification:new', {
+      id: notifId,
+      title: `Task Accepted: ${task.task_code}`,
+      message: `${req.user!.name} accepted the assigned task "${task.title}".`,
+      type: 'TASK_ACCEPTED',
+      task_id: id
+    });
+  }
+
+  // Real-time broadcast to all workspace members
+  emitToWorkspace(task.workspace_id, 'task:updated', { task: updatedTask });
+  emitToWorkspace(task.workspace_id, 'task:assignment_status_updated', {
+    taskId: id,
+    taskCode: task.task_code,
+    assignmentStatus: 'ACCEPTED',
+    assigneeId: userId,
+    assigneeName: req.user!.name
+  });
+  emitToTask(id, 'task:updated', { task: updatedTask });
+
+  res.json({ task: updatedTask, message: 'Task accepted successfully.' });
+});
+
+// POST /api/tasks/:id/reject - Recipient rejects assigned task
+tasksRouter.post('/:id/reject', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  const userId = req.user!.id;
+
+  const task = await queryOne(`
+    SELECT t.*, p.name as project_name, u.name as assignee_name, creator.id as creator_id, creator.name as creator_name
+    FROM tasks t
+    LEFT JOIN projects p ON t.project_id = p.id
+    LEFT JOIN users u ON t.assignee_id = u.id
+    LEFT JOIN users creator ON t.created_by = creator.id
+    WHERE t.id = ? AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+  `, [id]);
+
+  if (!task) {
+    res.status(404).json({ error: 'Task not found.' });
+    return;
+  }
+
+  // Verify user is the assigned recipient
+  if (task.assignee_id !== userId) {
+    res.status(403).json({ error: 'You are not authorized to reject this task. It is not assigned to you.' });
+    return;
+  }
+
+  // Verify project or workspace membership
+  const member = await queryOne(`
+    SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?
+    UNION
+    SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?
+  `, [task.project_id, userId, task.workspace_id, userId]);
+
+  if (!member) {
+    res.status(403).json({ error: 'You are not a member of this project or workspace.' });
+    return;
+  }
+
+  // Idempotent check
+  if (task.assignment_status === 'REJECTED') {
+    res.json({ task, message: 'Task has already been rejected.' });
+    return;
+  }
+
+  if (task.assignment_status === 'ACCEPTED') {
+    res.status(400).json({ error: 'Cannot reject an already accepted task.' });
+    return;
+  }
+
+  // Update status: ASSIGNED -> REJECTED, unassign task
+  await runQuery(`
+    UPDATE tasks
+    SET assignment_status = 'REJECTED',
+        assignee_id = NULL,
+        user_status = 'NOT_STARTED',
+        status = 'TODO',
+        updated_at = datetime('now')
+    WHERE id = ?
+  `, [id]);
+
+  // Log activity
+  const details = reason ? `Reason: ${reason}` : undefined;
+  await runQuery(`
+    INSERT INTO task_activity (id, task_id, user_id, action_type, summary, details, created_at)
+    VALUES (?, ?, ?, 'TASK_REJECTED', ?, ?, datetime('now'))
+  `, [uuidv4(), id, userId, `Task rejected by ${req.user!.name}`, details || null]);
+
+  await runQuery(`
+    INSERT INTO global_activities (id, user_id, workspace_id, project_id, task_id, category, icon_symbol, title, meta_text, created_at)
+    VALUES (?, ?, ?, ?, ?, 'TASK', '✕', ?, ?, datetime('now'))
+  `, [uuidv4(), userId, task.workspace_id, task.project_id, id, `Task rejected: ${task.title}`, task.task_code]);
+
+  const updatedTask = await queryOne(`
+    SELECT t.*, p.name as project_name, u.name as assignee_name, u.avatar_url as assignee_avatar
+    FROM tasks t
+    LEFT JOIN projects p ON t.project_id = p.id
+    LEFT JOIN users u ON t.assignee_id = u.id
+    WHERE t.id = ?
+  `, [id]);
+
+  // Notify the assigner (task.created_by)
+  if (task.created_by && task.created_by !== userId) {
+    const notifId = uuidv4();
+    await runQuery(`
+      INSERT INTO notifications (id, user_id, task_id, title, message, type, is_read, read, created_at)
+      VALUES (?, ?, ?, ?, ?, 'TASK_REJECTED', 0, 0, datetime('now'))
+    `, [
+      notifId,
+      task.created_by,
+      id,
+      `Task Rejected: ${task.task_code}`,
+      `${req.user!.name} rejected the assignment for "${task.title}".` + (reason ? ` (${reason})` : '')
+    ]);
+
+    emitToUser(task.created_by, 'notification:new', {
+      id: notifId,
+      title: `Task Rejected: ${task.task_code}`,
+      message: `${req.user!.name} rejected the assignment for "${task.title}".` + (reason ? ` (${reason})` : ''),
+      type: 'TASK_REJECTED',
+      task_id: id
+    });
+  }
+
+  // Real-time broadcast to all workspace members
+  emitToWorkspace(task.workspace_id, 'task:updated', { task: updatedTask });
+  emitToWorkspace(task.workspace_id, 'task:assignment_status_updated', {
+    taskId: id,
+    taskCode: task.task_code,
+    assignmentStatus: 'REJECTED',
+    assigneeId: null,
+    rejectedBy: req.user!.name
+  });
+  emitToTask(id, 'task:updated', { task: updatedTask });
+
+  res.json({ task: updatedTask, message: 'Task assignment rejected.' });
+});

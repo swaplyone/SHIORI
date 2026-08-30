@@ -131,6 +131,7 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   user_status: string;
+  assignment_status?: string;
   assignee_id?: string;
   assignee_name?: string;
   assignee_avatar?: string;
