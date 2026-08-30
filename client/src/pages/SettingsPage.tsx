@@ -358,11 +358,11 @@ export const SettingsPage: React.FC = () => {
                     )}
                   </div>
                   <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
-                    Very subtle matte effect. Slightly warm off-white paper with minimal texture and clean surfaces.
+                    Almost invisible grain. Very subtle surface variation. Clean, glare-free premium matte stationery.
                   </p>
                 </div>
                 <div className="pt-2 border-t border-eink-border/50 text-[10px] font-mono text-eink-textMuted flex items-center justify-between">
-                  <span>Subtle Paper</span>
+                  <span>Fine Matte</span>
                   <span className="font-bold">{matteLevel === 'soft' ? 'SELECTED' : 'APPLY'}</span>
                 </div>
               </div>
@@ -390,7 +390,7 @@ export const SettingsPage: React.FC = () => {
                     )}
                   </div>
                   <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
-                    Authentic uncoated Japanese paper / washi. Warmer tone with subtle paper grain and glare-free finish.
+                    Perceptible microscopic grain. Natural washi fiber texture with diffuse physical paper surface.
                   </p>
                 </div>
                 <div className="pt-2 border-t border-eink-border/50 text-[10px] font-mono text-eink-textMuted flex items-center justify-between">
@@ -419,7 +419,7 @@ export const SettingsPage: React.FC = () => {
                     )}
                   </div>
                   <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
-                    Strongest physical matte appearance. Rich warm paper tone with visible texture while keeping dark ink contrast.
+                    Strong physical washi texture. Tangible tactile grain and micro-variation while keeping ink 100% crisp.
                   </p>
                 </div>
                 <div className="pt-2 border-t border-eink-border/50 text-[10px] font-mono text-eink-textMuted flex items-center justify-between">

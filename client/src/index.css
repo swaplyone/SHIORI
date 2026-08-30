@@ -72,6 +72,11 @@
   --eink-accent-soft: rgba(34, 34, 34, 0.08);
   --eink-accent-contrast: #EBE9E1;
   --font-app: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Static Microscopic Japanese Washi Paper Grain Pattern (Vector SVG data URI) */
+  --washi-noise-pattern: url("data:image/svg+xml,%3Csvg viewBox='0 0 300 300' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paperGrain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.1 0 0 0 0 0.09 0 0 0 0 0.08 0 0 0 0.95 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paperGrain)'/%3E%3C/svg%3E");
+  --eink-matte-grain-opacity: 0.065;
+  --eink-card-grain-opacity: 0.035;
 }
 
 .dark, [data-theme="dark"] {
@@ -108,61 +113,40 @@
   --eink-accent-contrast: #FFFFFF;
 }
 
-/* MATTE LEVEL DESIGN TOKENS */
+/* MATTE LEVEL DESIGN TOKENS (MATERIAL GRAIN ONLY, NEVER SHIFTING BASE TONE TO BISCUIT) */
 html[data-matte-level="soft"] {
-  --eink-bg: #F5F3ED;
-  --eink-surface: #EAE7DF;
-  --eink-surface-hover: #DFDCD3;
-  --eink-border: #BCBAB0;
-  --eink-border-dark: #7A786F;
-  --eink-grain-opacity: 0.02;
+  --eink-matte-grain-opacity: 0.028;
+  --eink-card-grain-opacity: 0.015;
 }
 
 html[data-matte-level="natural"],
 html:not([data-matte-level]) {
-  --eink-bg: #EBE9E1;
-  --eink-surface: #DFDDD3;
-  --eink-surface-hover: #D5D3C8;
-  --eink-border: #AFAEA4;
-  --eink-border-dark: #74726A;
-  --eink-grain-opacity: 0.035;
+  --eink-matte-grain-opacity: 0.065;
+  --eink-card-grain-opacity: 0.035;
 }
 
 html[data-matte-level="deep"] {
-  --eink-bg: #E2DFD5;
-  --eink-surface: #D5D1C5;
-  --eink-surface-hover: #CAC5B7;
-  --eink-border: #9D9A8F;
-  --eink-border-dark: #65635B;
-  --eink-grain-opacity: 0.055;
+  --eink-matte-grain-opacity: 0.12;
+  --eink-card-grain-opacity: 0.065;
 }
 
 /* Dark mode matte levels */
 html[data-theme="dark"][data-matte-level="soft"],
 .dark[data-matte-level="soft"] {
-  --eink-bg: #1A1A1A;
-  --eink-surface: #242424;
-  --eink-surface-hover: #2E2E2E;
-  --eink-border: #42423E;
-  --eink-grain-opacity: 0.02;
+  --eink-matte-grain-opacity: 0.025;
+  --eink-card-grain-opacity: 0.015;
 }
 
 html[data-theme="dark"][data-matte-level="natural"],
 .dark[data-matte-level="natural"] {
-  --eink-bg: #141414;
-  --eink-surface: #1F1F1F;
-  --eink-surface-hover: #2A2A2A;
-  --eink-border: #383835;
-  --eink-grain-opacity: 0.035;
+  --eink-matte-grain-opacity: 0.055;
+  --eink-card-grain-opacity: 0.035;
 }
 
 html[data-theme="dark"][data-matte-level="deep"],
 .dark[data-matte-level="deep"] {
-  --eink-bg: #0F0F0F;
-  --eink-surface: #191919;
-  --eink-surface-hover: #232323;
-  --eink-border: #30302D;
-  --eink-grain-opacity: 0.055;
+  --eink-matte-grain-opacity: 0.095;
+  --eink-card-grain-opacity: 0.06;
 }
 
 /* Dynamic Font Configurations */
@@ -293,11 +277,56 @@ body {
   }
 }
 
-/* Subtle E-Ink Paper Texture Effect */
+/* Authentic Physical Matte Paper Surface & Tactile Microscopic Grain */
 .eink-paper {
   background-color: var(--eink-bg);
-  background-image: radial-gradient(rgba(0, 0, 0, var(--eink-grain-opacity, 0.035)) 1px, transparent 0);
-  background-size: 16px 16px;
+  position: relative;
+}
+
+.eink-paper::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-image: var(--washi-noise-pattern);
+  background-repeat: repeat;
+  background-size: 240px 240px;
+  opacity: var(--eink-matte-grain-opacity, 0.065);
+  pointer-events: none;
+  z-index: 9999;
+  mix-blend-mode: multiply;
+}
+
+.dark .eink-paper::before,
+[data-theme="dark"] .eink-paper::before {
+  mix-blend-mode: screen;
+}
+
+/* Microscopic Grain Swatch Preview Utilities */
+.matte-swatch-soft {
+  background-color: var(--eink-surface);
+  background-image: var(--washi-noise-pattern);
+  background-size: 140px 140px;
+  background-blend-mode: multiply;
+  opacity: 0.85;
+}
+
+.matte-swatch-natural {
+  background-color: var(--eink-surface);
+  background-image: var(--washi-noise-pattern);
+  background-size: 140px 140px;
+  background-blend-mode: multiply;
+  opacity: 0.95;
+}
+
+.matte-swatch-deep {
+  background-color: var(--eink-surface);
+  background-image: var(--washi-noise-pattern);
+  background-size: 140px 140px;
+  background-blend-mode: multiply;
+  opacity: 1;
 }
 
 /* Crisp technical typography */
