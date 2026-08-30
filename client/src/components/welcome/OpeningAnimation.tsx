@@ -137,7 +137,7 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
   };
 
   return (
-    <div className="relative w-full min-h-screen bg-[#F5F4EE] text-[#111111] font-sans select-none overflow-hidden flex flex-col justify-between p-6 sm:p-10 md:p-14">
+    <div className="relative w-full min-h-screen bg-[#EBE9E1] text-[#111111] font-sans select-none overflow-x-hidden flex flex-col justify-between p-4 sm:p-8 md:p-12">
       {/* 1. Subtle Paper Grain Texture Overlay */}
       <div
         className="fixed inset-0 pointer-events-none opacity-[0.035] mix-blend-multiply"
@@ -165,7 +165,7 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
         <div className="fixed inset-0 bg-[#111111]/25 z-50 pointer-events-none transition-all duration-100" />
       )}
       {entryPhase === 'ghosting' && (
-        <div className="fixed inset-0 bg-[#F5F4EE]/90 z-50 pointer-events-none backdrop-blur-[0.5px] transition-all duration-150" />
+        <div className="fixed inset-0 bg-[#EBE9E1]/90 z-50 pointer-events-none backdrop-blur-[0.5px] transition-all duration-150" />
       )}
 
       {/* TOP: Subtle Japanese Editorial Header Tag + Sound Toggle */}
@@ -177,28 +177,25 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
         <div className="flex items-center gap-2 font-mono">
           <span>栞</span>
           <span>·</span>
-          <span className="font-abask text-xs tracking-wider">SHIORI</span>
+          <span className="font-abask text-xs tracking-wider font-bold">SHIORI</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[11px] font-abask tracking-widest text-[#777770] uppercase">
-            A PRODUCT OF SWAPLYONE
-          </span>
           <button
             onClick={toggleSound}
-            className="flex items-center gap-1.5 px-2 py-0.5 border border-[#B8B7B1]/60 hover:border-[#111111] bg-[#F5F4EE] hover:bg-[#EAE9E3] text-[#777770] hover:text-[#111111] rounded-xs transition-colors text-[9px] font-mono tracking-wider cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1 border border-[#AFAEA4]/80 hover:border-[#111111] bg-[#DFDDD3] hover:bg-[#D5D3C8] text-[#555550] hover:text-[#111111] rounded-xs transition-colors text-[10px] font-mono tracking-wider cursor-pointer shadow-xs"
             aria-label={soundEnabled ? "Disable welcome sound effects" : "Enable welcome sound effects"}
             title={soundEnabled ? "Sound ON (Click to mute)" : "Sound OFF (Click to unmute)"}
           >
-            {soundEnabled ? <Volume2 className="w-3 h-3 text-[#111111]" /> : <VolumeX className="w-3 h-3 text-[#999990]" />}
-            <span className="hidden sm:inline">{soundEnabled ? 'SOUND ON' : 'SOUND OFF'}</span>
+            {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-[#111111]" /> : <VolumeX className="w-3.5 h-3.5 text-[#888880]" />}
+            <span>{soundEnabled ? 'SOUND ON' : 'SOUND OFF'}</span>
           </button>
         </div>
       </header>
 
-      {/* CENTER: Main Cohesive Full-Screen Composition */}
-      <main className="relative z-10 w-full max-w-6xl mx-auto my-auto flex flex-col lg:flex-row items-center justify-center lg:justify-between gap-10 lg:gap-16 py-4">
-        {/* Left / Center-Left: Japanese Desk Illustration (Progressive Ink Drawing Reveal 0.4s - 1.5s) */}
-        <div className="w-full max-w-md sm:max-w-lg lg:max-w-xl flex items-center justify-center relative">
+      {/* CENTER: Main Cohesive Responsive Composition */}
+      <main className="relative z-10 w-full max-w-5xl mx-auto my-auto flex flex-col lg:flex-row items-center justify-center lg:justify-between gap-6 lg:gap-14 py-2 sm:py-6">
+        {/* Left / Top: Japanese Desk Illustration */}
+        <div className="w-full max-w-[220px] sm:max-w-[300px] lg:max-w-lg flex items-center justify-center relative shrink-0">
           <div className="relative w-full aspect-4/3 flex items-center justify-center overflow-hidden">
             {/* Progressive Ink Mask: Revealing bottom-to-top like physical ink drawing */}
             <div
@@ -229,23 +226,23 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
           </div>
         </div>
 
-        {/* Right / Center-Right: Editorial Typography, Micro-Task & Open Control */}
-        <div className="w-full max-w-sm lg:max-w-md flex flex-col items-center lg:items-start text-center lg:text-left space-y-6">
+        {/* Right / Bottom: Editorial Typography, Micro-Task & Open Control */}
+        <div className="w-full max-w-sm lg:max-w-md flex flex-col items-center lg:items-start text-center lg:text-left space-y-3 sm:space-y-5">
           {/* Brand & Creator Attribution */}
           <div
             className={`transition-all duration-700 ease-out ${
               stage >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
             }`}
           >
-            <span className="font-abask text-[11px] tracking-[0.25em] text-[#888880] uppercase block">
+            <span className="font-abask text-[10px] sm:text-xs tracking-[0.25em] text-[#74726A] uppercase block font-semibold">
               A PRODUCT OF SWAPLYONE
             </span>
           </div>
 
-          {/* SHIORI Single-Line Sequential Ink Reveal (1.3s - 1.9s) using Abask Font */}
-          <div className="min-h-[56px] flex items-center">
+          {/* SHIORI Single-Line Sequential Ink Reveal in Abask Font */}
+          <div className="min-h-[44px] sm:min-h-[56px] flex items-center">
             <h1
-              className="font-abask text-4xl sm:text-5xl md:text-6xl font-normal tracking-[0.22em] uppercase text-[#111111] whitespace-nowrap leading-none transition-opacity duration-300"
+              className="font-abask text-3xl sm:text-5xl md:text-6xl font-normal tracking-[0.2em] uppercase text-[#111111] whitespace-nowrap leading-none transition-opacity duration-300"
               style={{ opacity: stage >= 3 ? 1 : 0 }}
             >
               {fullShioriTitle.slice(0, shioriCharCount)}
@@ -256,34 +253,34 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
             </h1>
           </div>
 
-          {/* Tagline: Work. Remembered. (1.8s - 2.2s) in Abask font */}
+          {/* Tagline: Work. Remembered. in Abask font */}
           <div
             className={`transition-all duration-700 ease-out ${
               stage >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
             }`}
           >
-            <p className="font-abask italic text-base sm:text-lg tracking-wider text-[#444440]">
+            <p className="font-abask italic text-sm sm:text-base md:text-lg tracking-wider text-[#42413C]">
               Work. Remembered.
             </p>
           </div>
 
-          {/* Micro Task & Git Demonstration (2.1s - 2.8s: TODO → Git → Verified) */}
+          {/* Micro Task & Git Demonstration */}
           <div
-            className={`min-h-[28px] flex items-center transition-all duration-500 ease-out ${
+            className={`min-h-[26px] flex items-center transition-all duration-500 ease-out ${
               stage >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
             }`}
           >
             {stage === 5 && (
-              <div className="flex items-center gap-2 text-xs font-mono text-[#666660] animate-fade-in">
+              <div className="flex items-center gap-2 text-xs font-mono text-[#555550] animate-fade-in">
                 <span className="w-3 h-3 border border-[#666660] inline-block rounded-[1px]" />
                 <span>Fix authentication</span>
-                <span className="text-[10px] text-[#888880] font-mono">· 8f42c1</span>
+                <span className="text-[10px] text-[#777770] font-mono">· 8f42c1</span>
               </div>
             )}
 
             {stage >= 6 && (
               <div className="flex items-center gap-2 text-xs font-mono text-[#111111] animate-fade-in">
-                <span className="w-3.5 h-3.5 bg-[#111111] text-[#F5F4EE] rounded-[1px] flex items-center justify-center text-[10px]">
+                <span className="w-3.5 h-3.5 bg-[#111111] text-[#EBE9E1] rounded-[1px] flex items-center justify-center text-[10px]">
                   <Check className="w-2.5 h-2.5 stroke-[2.5]" />
                 </span>
                 <span className="font-semibold">Fix authentication</span>
@@ -294,16 +291,16 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
             )}
           </div>
 
-          {/* Minimal Printed Entrance Control: OPEN SHIORI → (2.7s - 3.2s) in Abask font */}
+          {/* Minimal Printed Entrance Control: OPEN SHIORI → in Abask font */}
           <div
-            className={`pt-3 transition-all duration-700 ease-out ${
+            className={`pt-2 sm:pt-4 transition-all duration-700 ease-out ${
               stage >= 7 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'
             }`}
           >
             <button
               onClick={handleOpenShiori}
               disabled={isEntering}
-              className="group relative inline-flex items-center gap-3 py-2 text-sm sm:text-base font-abask tracking-[0.2em] uppercase font-bold text-[#111111] hover:text-[#000000] cursor-pointer transition-all duration-150"
+              className="group relative inline-flex items-center gap-3 px-5 py-2.5 bg-[#DFDDD3] hover:bg-[#D5D3C8] border border-[#AFAEA4] hover:border-[#111111] text-xs sm:text-sm font-abask tracking-[0.2em] uppercase font-bold text-[#111111] cursor-pointer transition-all duration-150 rounded-sm shadow-sm active:scale-98"
             >
               <span className="relative pb-0.5">
                 OPEN SHIORI
@@ -322,12 +319,12 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
 
       {/* BOTTOM: Minimal Editorial Footer */}
       <footer
-        className={`relative z-10 w-full flex items-center justify-between text-[10px] tracking-widest uppercase transition-opacity duration-700 ${
+        className={`relative z-10 w-full flex flex-col sm:flex-row items-center justify-between gap-1 text-[10px] tracking-widest uppercase transition-opacity duration-700 ${
           stage >= 2 ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        <span className="font-abask text-[#888880]">A PRODUCT OF SWAPLYONE</span>
-        <span className="font-mono text-[#999990]">ELECTRONIC PAPER · QUIET WORKSPACE</span>
+        <span className="font-abask text-[#74726A] font-semibold">A PRODUCT OF SWAPLYONE</span>
+        <span className="font-mono text-[#74726A]">ELECTRONIC PAPER · QUIET WORKSPACE</span>
       </footer>
     </div>
   );
