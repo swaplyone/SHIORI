@@ -122,7 +122,7 @@ export const TasksPage: React.FC = () => {
   useEffect(() => {
     fetchTasks();
 
-    const handleRefresh = () => fetchTasks();
+    const handleRefresh = () => fetchTasks(false);
     window.addEventListener('shiori-refresh', handleRefresh);
     return () => window.removeEventListener('shiori-refresh', handleRefresh);
   }, [token, tabFilter, selectedPriority, searchQuery]);
@@ -139,7 +139,7 @@ export const TasksPage: React.FC = () => {
         body: JSON.stringify({ status: newStatus })
       });
       triggerEInkRefresh();
-      fetchTasks();
+      fetchTasks(false);
     } catch (err) {
       console.error(err);
     }
@@ -179,10 +179,9 @@ export const TasksPage: React.FC = () => {
         })
       });
       triggerEInkRefresh();
-      window.dispatchEvent(new Event('shiori-refresh'));
     } catch (err) {
       console.error(err);
-      fetchTasks();
+      fetchTasks(false);
     }
   };
 
@@ -195,6 +194,28 @@ export const TasksPage: React.FC = () => {
     const finalPriority = quickNlp.priority || 'MEDIUM';
     const finalRecurrence = quickNlp.recurrenceRule || null;
     const finalTags = quickNlp.tags.length > 0 ? quickNlp.tags.join(', ') : null;
+
+    // 1. Instant optimistic insertion
+    const tempId = `temp-${Date.now()}`;
+    const optimisticTask: any = {
+      id: tempId,
+      task_code: '...',
+      title: finalTitle,
+      status: 'TODO',
+      priority: finalPriority,
+      user_status: 'TODO',
+      due_date: finalDueDate,
+      due_at: quickNlp.dueAt || null,
+      recurrence_rule: finalRecurrence,
+      tags: finalTags,
+      github_repo: selectedRepo || 'SHIORI',
+      github_branch: 'main',
+      created_at: new Date().toISOString()
+    };
+
+    setTasks((prev) => [optimisticTask, ...prev]);
+    setQuickTaskTitle('');
+    triggerEInkRefresh();
 
     try {
       const res = await fetch('/api/tasks', {
@@ -220,18 +241,15 @@ export const TasksPage: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (data?.task) {
-          setTasks((prev) => [data.task, ...prev]);
+          setTasks((prev) => prev.map((t) => (t.id === tempId ? data.task : t)));
           if (data.task.status !== 'DONE' && data.task.user_status !== 'COMPLETED') {
             setCreatedHandoffTask(data.task);
           }
         }
-        setQuickTaskTitle('');
-        triggerEInkRefresh();
-        window.dispatchEvent(new Event('shiori-refresh'));
-        fetchTasks();
       }
     } catch (err) {
       console.error(err);
+      setTasks((prev) => prev.filter((t) => t.id !== tempId));
     }
   };
 

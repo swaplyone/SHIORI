@@ -104,12 +104,13 @@ projectsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Respons
     WHERE pm.project_id = ?
   `, [project.id]);
 
-  // Sync real GitHub commits and actions if repository is connected
+  // Sync real GitHub commits and actions in background without blocking response
   if (project.github_repo_name) {
-    try {
-      const { syncRepoLiveFromGitHub } = await import('./github.routes.js');
-      await syncRepoLiveFromGitHub(req.user!.id, project.github_repo_name);
-    } catch {}
+    import('./github.routes.js')
+      .then(({ syncRepoLiveFromGitHub }) => {
+        syncRepoLiveFromGitHub(req.user!.id, project.github_repo_name).catch(() => {});
+      })
+      .catch(() => {});
   }
 
   // Get project TODOs (with updated evidence and commit counts)

@@ -205,14 +205,14 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   }
 
   // Get next task number (starts from 1, format SHR-0001, SHR-0042)
-  const maxRow = await queryOne('SELECT MAX(task_number) as max_num FROM tasks');
-  const countRow = await queryOne('SELECT COUNT(*) as total FROM tasks');
-  const nextNum = Math.max(Number(maxRow?.max_num || 0), Number(countRow?.total || 0)) + 1;
+  const maxRow = await queryOne('SELECT COALESCE(MAX(task_number), 0) as max_num FROM tasks');
+  const nextNum = Number(maxRow?.max_num || 0) + 1;
   const taskCode = `SHR-${String(nextNum).padStart(4, '0')}`;
   const taskId = uuidv4();
 
   const rawAssignee = req.body.assigneeId || req.body.assignee_id || req.body.assignee;
   const targetAssigneeId = typeof rawAssignee === 'object' ? rawAssignee?.id : (rawAssignee || null);
+  const nowIso = new Date().toISOString();
 
   await runQuery(`
     INSERT INTO tasks (
@@ -233,33 +233,61 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     finalGithubRepo || null, githubBranch || null
   ]);
 
-  // Add creation activity
-  await runQuery(`
-    INSERT INTO task_activity (id, task_id, user_id, action_type, summary, created_at)
-    VALUES (?, ?, ?, 'CREATED', ?, datetime('now'))
-  `, [uuidv4(), taskId, req.user!.id, `Task created by ${req.user!.name}`]);
+  const createdTask: any = {
+    id: taskId,
+    task_number: nextNum,
+    task_code: taskCode,
+    project_id: projectId,
+    workspace_id: finalWorkspaceId,
+    title,
+    description: description || '',
+    status,
+    priority,
+    user_status: 'TODO',
+    assignee_id: targetAssigneeId || req.user!.id,
+    created_by: req.user!.id,
+    due_date: dueDate || 'Tomorrow',
+    due_at: due_at || null,
+    reminder_at: reminder_at || null,
+    recurrence_rule: recurrence_rule || null,
+    tags: tags || null,
+    github_repo: finalGithubRepo || null,
+    github_branch: githubBranch || null,
+    github_ci_status: 'UNKNOWN',
+    is_archived: 0,
+    is_deleted: 0,
+    created_at: nowIso,
+    updated_at: nowIso
+  };
 
-  await runQuery(`
-    INSERT INTO global_activities (id, user_id, workspace_id, project_id, task_id, category, icon_symbol, title, meta_text, created_at)
-    VALUES (?, ?, ?, ?, ?, 'TASK', '○', ?, ?, datetime('now'))
-  `, [uuidv4(), req.user!.id, finalWorkspaceId, projectId, taskId, `Task created: ${title}`, taskCode]);
-
-  const createdTask = await queryOne('SELECT * FROM tasks WHERE id = ?', [taskId]);
   emitToWorkspace(finalWorkspaceId, 'task:created', { task: createdTask });
 
-  // Notify assignee if assigned to someone else
+  // Parallel background logging & notifications (non-blocking)
+  const bgPromises: Promise<any>[] = [
+    runQuery(`
+      INSERT INTO task_activity (id, task_id, user_id, action_type, summary, created_at)
+      VALUES (?, ?, ?, 'CREATED', ?, datetime('now'))
+    `, [uuidv4(), taskId, req.user!.id, `Task created by ${req.user!.name}`]),
+    runQuery(`
+      INSERT INTO global_activities (id, user_id, workspace_id, project_id, task_id, category, icon_symbol, title, meta_text, created_at)
+      VALUES (?, ?, ?, ?, ?, 'TASK', '○', ?, ?, datetime('now'))
+    `, [uuidv4(), req.user!.id, finalWorkspaceId, projectId, taskId, `Task created: ${title}`, taskCode])
+  ];
+
   if (targetAssigneeId && targetAssigneeId !== req.user!.id) {
     const notifId = uuidv4();
-    await runQuery(`
-      INSERT INTO notifications (id, user_id, task_id, title, message, type, is_read, read, created_at)
-      VALUES (?, ?, ?, ?, ?, 'TASK_ASSIGNMENT', 0, 0, datetime('now'))
-    `, [
-      notifId,
-      targetAssigneeId,
-      taskId,
-      `New Task Assigned: ${taskCode}`,
-      `${req.user!.name} assigned task "${title}" (${taskCode}) to you.`
-    ]);
+    bgPromises.push(
+      runQuery(`
+        INSERT INTO notifications (id, user_id, task_id, title, message, type, is_read, read, created_at)
+        VALUES (?, ?, ?, ?, ?, 'TASK_ASSIGNMENT', 0, 0, datetime('now'))
+      `, [
+        notifId,
+        targetAssigneeId,
+        taskId,
+        `New Task Assigned: ${taskCode}`,
+        `${req.user!.name} assigned task "${title}" (${taskCode}) to you.`
+      ])
+    );
 
     emitToUser(targetAssigneeId, 'notification:new', {
       id: notifId,
@@ -276,6 +304,8 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
       assignerName: req.user!.name
     });
   }
+
+  Promise.all(bgPromises).catch(console.error);
 
   res.status(201).json({ task: createdTask });
 });

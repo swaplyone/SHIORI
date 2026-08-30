@@ -61,10 +61,12 @@ export const ProjectDetailPage: React.FC = () => {
   // Commits & Git history state
   const [commits, setCommits] = useState<any[]>([]);
 
-  const fetchProjectData = async () => {
+  const fetchProjectData = async (silent = false) => {
     if (!projectId || !token) return;
     try {
-      setLoading(true);
+      if (!silent && !project) {
+        setLoading(true);
+      }
       const { ok, data } = await fetchJson(`/api/projects/${encodeURIComponent(projectId)}`);
       if (ok && data?.project) {
         setProject(data.project);
@@ -73,12 +75,15 @@ export const ProjectDetailPage: React.FC = () => {
           setNewTodoBranch(data.project.default_branch);
         }
 
-        // Fetch Git commits for the project's repository
+        // Fetch Git commits in background asynchronously without blocking UI render
         if (data.project.github_repo_name) {
-          const { ok: gitOk, data: gitData } = await fetchJson(`/api/github/history?repo=${encodeURIComponent(data.project.github_repo_name)}`);
-          if (gitOk) {
-            setCommits(gitData?.commits || []);
-          }
+          fetchJson(`/api/github/history?repo=${encodeURIComponent(data.project.github_repo_name)}`)
+            .then(({ ok: gitOk, data: gitData }) => {
+              if (gitOk && gitData?.commits) {
+                setCommits(gitData.commits);
+              }
+            })
+            .catch(console.error);
         }
       }
     } catch (err) {
@@ -91,7 +96,7 @@ export const ProjectDetailPage: React.FC = () => {
   useEffect(() => {
     fetchProjectData();
 
-    const handleRefresh = () => fetchProjectData();
+    const handleRefresh = () => fetchProjectData(true);
     window.addEventListener('shiori-refresh', handleRefresh);
     return () => window.removeEventListener('shiori-refresh', handleRefresh);
   }, [projectId, token]);
@@ -126,10 +131,9 @@ export const ProjectDetailPage: React.FC = () => {
         })
       });
       triggerEInkRefresh();
-      window.dispatchEvent(new Event('shiori-refresh'));
     } catch (err) {
       console.error(err);
-      fetchProjectData();
+      fetchProjectData(true);
     }
   };
 
@@ -137,40 +141,59 @@ export const ProjectDetailPage: React.FC = () => {
     e.preventDefault();
     if (!newTodoTitle.trim() || !project || !token) return;
 
-    setSubmitting(true);
+    const tempTitle = newTodoTitle.trim();
+    const tempDesc = newTodoDescription.trim() || null;
+    const tempBranch = newTodoBranch.trim() || 'main';
+    const tempAssigneeId = newTodoAssignee || null;
+
+    // 1. Instant optimistic creation
+    const tempId = `temp-${Date.now()}`;
+    const optimisticTask: any = {
+      id: tempId,
+      task_code: '...',
+      title: tempTitle,
+      description: tempDesc,
+      status: 'TODO',
+      priority: 'MEDIUM',
+      user_status: 'TODO',
+      project_id: project.id,
+      github_branch: tempBranch,
+      assignee_id: tempAssigneeId,
+      assignee_name: project.members?.find((m: any) => m.id === tempAssigneeId)?.name || 'Unassigned',
+      created_at: new Date().toISOString()
+    };
+
+    setTodos((prev) => [optimisticTask, ...prev]);
+    setNewTodoTitle('');
+    setNewTodoDescription('');
+    setIsAddTodoOpen(false);
+    triggerEInkRefresh();
+
     try {
       const { ok, data } = await fetchJson('/api/tasks', {
         method: 'POST',
         body: JSON.stringify({
           projectId: project.id,
-          title: newTodoTitle.trim(),
-          description: newTodoDescription.trim() || null,
+          title: tempTitle,
+          description: tempDesc,
           status: 'TODO',
           priority: 'MEDIUM',
           githubRepo: project.github_repo_name,
-          githubBranch: newTodoBranch.trim() || 'main',
-          assigneeId: newTodoAssignee || null
+          githubBranch: tempBranch,
+          assigneeId: tempAssigneeId
         })
       });
 
-      if (ok) {
-        if (data?.task) {
-          setTodos((prev) => [data.task, ...prev]);
-          if (data.task.status !== 'DONE' && data.task.user_status !== 'COMPLETED') {
-            setCreatedHandoffTask(data.task);
-          }
+      if (ok && data?.task) {
+        setTodos((prev) => prev.map((t) => (t.id === tempId ? data.task : t)));
+        if (data.task.status !== 'DONE' && data.task.user_status !== 'COMPLETED') {
+          setCreatedHandoffTask(data.task);
         }
-        setNewTodoTitle('');
-        setNewTodoDescription('');
-        setIsAddTodoOpen(false);
-        triggerEInkRefresh();
-        window.dispatchEvent(new Event('shiori-refresh'));
-        fetchProjectData();
       }
     } catch (err) {
       console.error(err);
-    } finally {
-      setSubmitting(false);
+      // Rollback on network error
+      setTodos((prev) => prev.filter((t) => t.id !== tempId));
     }
   };
 

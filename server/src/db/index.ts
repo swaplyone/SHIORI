@@ -469,7 +469,17 @@ async function initPgSchema(pool: pg.Pool) {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(user_id, note_date)
-      );`
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_workspace_id ON tasks(workspace_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_number ON tasks(task_number);`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by);`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_is_deleted ON tasks(is_deleted);`,
+      `CREATE INDEX IF NOT EXISTS idx_project_members_lookup ON project_members(project_id, user_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);`,
+      `CREATE INDEX IF NOT EXISTS idx_global_activities_proj ON global_activities(project_id, created_at DESC);`
     ];
 
     for (const migration of migrations) {
