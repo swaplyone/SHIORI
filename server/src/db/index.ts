@@ -437,7 +437,26 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS duration_seconds INTEGER DEFAULT 0;`,
       `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS tests_total INTEGER DEFAULT 0;`,
       `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS tests_passed INTEGER DEFAULT 0;`,
-      `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS tests_failed INTEGER DEFAULT 0;`
+      `ALTER TABLE github_workflow_runs ADD COLUMN IF NOT EXISTS tests_failed INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_at TIMESTAMPTZ;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_reminder_sent INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence_rule TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS tags TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_archived INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_deleted INTEGER DEFAULT 0;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`,
+      `CREATE TABLE IF NOT EXISTS daily_notes (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        note_date TEXT NOT NULL,
+        content TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, note_date)
+      );`
     ];
 
     for (const migration of migrations) {

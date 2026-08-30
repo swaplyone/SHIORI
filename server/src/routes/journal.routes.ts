@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { queryAll, queryOne } from '../db/index.js';
+import { queryAll, queryOne, runQuery } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 
 export const journalRouter = Router();
@@ -54,26 +54,32 @@ journalRouter.get('/today', authMiddleware, async (req: AuthRequest, res: Respon
   });
 });
 
-// GET Weekly Work Summary
-journalRouter.get('/weekly', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  res.json({
-    weekNumber: 35,
-    dateRange: '24 Aug - 30 Aug 2026',
-    tasksCompleted: 31,
-    commitsCount: 74,
-    pullRequestsCount: 12,
-    buildSuccessRate: 94, // 94%
-    projectsDistribution: [
-      { name: 'SwaplyOne Compiler', commits: 42, percentage: 56, bar: '██████████' },
-      { name: 'Swaply Backend', commits: 22, percentage: 30, bar: '███████' },
-      { name: 'AI Artisan Marketplace', commits: 10, percentage: 14, bar: '████' }
-    ],
-    dailyVelocity: [
-      { day: 'Mon', commits: 12, tasks: 6, ciRate: 100 },
-      { day: 'Tue', commits: 18, tasks: 8, ciRate: 92 },
-      { day: 'Wed', commits: 14, tasks: 5, ciRate: 95 },
-      { day: 'Thu', commits: 16, tasks: 7, ciRate: 88 },
-      { day: 'Fri', commits: 14, tasks: 5, ciRate: 95 }
-    ]
-  });
+// GET Daily Note
+journalRouter.get('/notes/:date', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { date } = req.params;
+  const note = await queryOne('SELECT * FROM daily_notes WHERE user_id = ? AND note_date = ?', [req.user!.id, date]);
+  res.json({ note: note || { note_date: date, content: '' } });
+});
+
+// POST Save Daily Note
+journalRouter.post('/notes/:date', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { date } = req.params;
+  const { content } = req.body;
+  const noteId = `${req.user!.id}_${date}`;
+
+  const existing = await queryOne('SELECT id FROM daily_notes WHERE user_id = ? AND note_date = ?', [req.user!.id, date]);
+  if (existing) {
+    await runQuery(`
+      UPDATE daily_notes SET content = ?, updated_at = datetime('now')
+      WHERE user_id = ? AND note_date = ?
+    `, [content || '', req.user!.id, date]);
+  } else {
+    await runQuery(`
+      INSERT INTO daily_notes (id, user_id, note_date, content, created_at, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+    `, [noteId, req.user!.id, date, content || '']);
+  }
+
+  const saved = await queryOne('SELECT * FROM daily_notes WHERE user_id = ? AND note_date = ?', [req.user!.id, date]);
+  res.json({ note: saved });
 });

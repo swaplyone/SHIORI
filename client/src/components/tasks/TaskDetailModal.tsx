@@ -16,9 +16,17 @@ import {
   RotateCcw,
   CheckCircle2,
   XCircle,
-  AlertOctagon
+  AlertOctagon,
+  Trash2,
+  Archive,
+  ArchiveRestore,
+  Repeat,
+  Bell,
+  Clock,
+  Play,
+  Tag
 } from 'lucide-react';
-import { Task, Subtask, Comment, TaskActivity, GitHubCommit, GitHubWorkflowRun } from '../../types';
+import { Task, Subtask, Comment, TaskActivity, GitHubCommit, GitHubWorkflowRun, TaskPriority } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DevelopmentEvidenceBadge } from './DevelopmentEvidenceBadge';
@@ -27,6 +35,9 @@ import { GitHistoryModal } from '../github/GitHistoryModal';
 import { Skeleton, SkeletonTitle, SkeletonText, SkeletonBadge } from '../ui/Skeleton';
 import { AiDeveloperHandoffModal } from './AiDeveloperHandoffModal';
 import { TaskCommitHistory } from './TaskCommitHistory';
+import { FocusModeModal } from './FocusModeModal';
+import { triggerUndoToast } from '../ui/UndoToast';
+import { reminderManager } from '../../utils/reminderManager';
 
 interface TaskDetailModalProps {
   taskId: string | null;
@@ -50,6 +61,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
   const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isHandoffOpen, setIsHandoffOpen] = useState(false);
+  const [isFocusOpen, setIsFocusOpen] = useState(false);
 
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [newCommentText, setNewCommentText] = useState('');
@@ -103,6 +115,166 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
     }
   };
 
+  const handleUpdatePriority = async (newPriority: TaskPriority) => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ priority: newPriority })
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateRecurrence = async (rule: string) => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ recurrence_rule: rule || null })
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSetReminder = async (preset: string) => {
+    if (!task || !token) return;
+    let reminderDate: Date | null = null;
+    const now = new Date();
+
+    if (preset === '15m') {
+      reminderDate = new Date(now.getTime() + 15 * 60 * 1000);
+    } else if (preset === 'today_evening') {
+      reminderDate = new Date();
+      reminderDate.setHours(18, 0, 0, 0);
+    } else if (preset === 'tomorrow_morning') {
+      reminderDate = new Date();
+      reminderDate.setDate(reminderDate.getDate() + 1);
+      reminderDate.setHours(9, 0, 0, 0);
+    } else if (preset === 'clear') {
+      reminderDate = null;
+    }
+
+    // Request notification permission if enabling
+    if (reminderDate) {
+      await reminderManager.requestPermission();
+      reminderManager.scheduleReminder({
+        taskId: task.id,
+        taskCode: task.task_code,
+        taskTitle: task.title,
+        reminderAt: reminderDate.toISOString(),
+      });
+    } else {
+      reminderManager.clearReminder(task.id);
+    }
+
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ reminder_at: reminderDate ? reminderDate.toISOString() : null })
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleArchiveTask = async () => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/archive`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        triggerUndoToast(`Todo ${task.task_code} archived`, async () => {
+          await fetch(`/api/tasks/${task.id}/restore`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          triggerEInkRefresh();
+          fetchTaskDetails();
+          if (onTaskUpdated) onTaskUpdated();
+        });
+        triggerEInkRefresh();
+        onClose();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRestoreTask = async () => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/restore`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteTask = async () => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        triggerUndoToast(`Todo ${task.task_code} deleted`, async () => {
+          await fetch(`/api/tasks/${task.id}/undo-delete`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          triggerEInkRefresh();
+          if (onTaskUpdated) onTaskUpdated();
+        });
+        triggerEInkRefresh();
+        onClose();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleToggleUserStatus = async () => {
     if (!task || !token) return;
     const nextStatus = task.user_status === 'COMPLETED' ? 'IN_PROGRESS' : 'COMPLETED';
@@ -135,6 +307,20 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({ completed: !currentCompleted })
+      });
+      fetchTaskDetails();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!task || !token) return;
+    try {
+      await fetch(`/api/tasks/${task.id}/subtasks/${subtaskId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
       });
       fetchTaskDetails();
     } catch (err) {
@@ -200,20 +386,61 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
 
           <div className="flex items-center gap-2">
             {task && (
-              <button
-                type="button"
-                onClick={() => setIsHandoffOpen(true)}
-                className="px-2.5 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm text-[11px] font-mono font-bold text-eink-text flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Open AI Developer Handoff"
-              >
-                <Terminal className="w-3.5 h-3.5" />
-                <span>AI PROMPT</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsFocusOpen(true)}
+                  className="px-2.5 py-1 bg-eink-text text-eink-bg rounded-sm text-[11px] font-bold flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+                  title="Open Focus Mode for this task"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>FOCUS MODE</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsHandoffOpen(true)}
+                  className="px-2.5 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm text-[11px] font-mono font-bold text-eink-text flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Open AI Developer Handoff"
+                >
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>AI PROMPT</span>
+                </button>
+
+                {Boolean(task.is_archived) ? (
+                  <button
+                    type="button"
+                    onClick={handleRestoreTask}
+                    className="p-1 border border-eink-border hover:bg-eink-surface rounded text-eink-text cursor-pointer"
+                    title="Restore Task"
+                  >
+                    <ArchiveRestore className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleArchiveTask}
+                    className="p-1 border border-eink-border hover:bg-eink-surface rounded text-eink-text cursor-pointer"
+                    title="Archive Task"
+                  >
+                    <Archive className="w-4 h-4" />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleDeleteTask}
+                  className="p-1 border border-eink-border hover:bg-eink-surface rounded text-eink-textMuted hover:text-eink-text cursor-pointer"
+                  title="Delete Task"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
             )}
 
             <button
               onClick={onClose}
-              className="p-1 border border-eink-border hover:bg-eink-surfaceHover rounded text-eink-text cursor-pointer"
+              className="p-1 border border-eink-border hover:bg-eink-surfaceHover rounded text-eink-text cursor-pointer ml-1"
             >
               <X className="w-4 h-4" />
             </button>
@@ -266,9 +493,21 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
             {/* Title & Specs Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-6 border-b border-eink-border">
               <div className="md:col-span-2 space-y-4">
-                <h1 className="text-xl sm:text-2xl font-bold text-eink-text tracking-tight uppercase font-sans">
-                  {task.title}
-                </h1>
+                <div className="space-y-1">
+                  <h1 className="text-xl sm:text-2xl font-bold text-eink-text tracking-tight uppercase font-sans">
+                    {task.title}
+                  </h1>
+                  {task.tags && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {task.tags.split(',').map((tag, idx) => (
+                        <span key={idx} className="px-1.5 py-0.5 bg-eink-surface border border-eink-border rounded text-[10px] font-technical text-eink-textMuted flex items-center gap-1">
+                          <Tag className="w-2.5 h-2.5" />
+                          <span>#{tag.trim()}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 
                 <div className="text-xs text-eink-textSecondary leading-relaxed whitespace-pre-line bg-eink-surface/50 p-3 border border-eink-border rounded-sm">
                   {task.description || 'No description provided for this technical task.'}
@@ -334,17 +573,62 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
 
                 <div>
                   <span className="text-[10px] text-eink-textMuted uppercase block">PRIORITY</span>
-                  <span className="text-xs font-bold text-eink-text">{task.priority}</span>
+                  <select
+                    value={task.priority || 'MEDIUM'}
+                    onChange={(e) => handleUpdatePriority(e.target.value as TaskPriority)}
+                    className="w-full mt-1 px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical font-bold text-eink-text outline-none"
+                  >
+                    <option value="LOW">LOW</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="HIGH">HIGH</option>
+                    <option value="URGENT">URGENT</option>
+                  </select>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-eink-textMuted uppercase block flex items-center gap-1">
+                    <Repeat className="w-3 h-3" />
+                    <span>RECURRING</span>
+                  </span>
+                  <select
+                    value={task.recurrence_rule || ''}
+                    onChange={(e) => handleUpdateRecurrence(e.target.value)}
+                    className="w-full mt-1 px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none"
+                  >
+                    <option value="">None (One-time)</option>
+                    <option value="Daily">↻ Every day</option>
+                    <option value="Weekdays">↻ Weekdays (Mon-Fri)</option>
+                    <option value="Weekly">↻ Every week</option>
+                    <option value="Monthly">↻ Every month</option>
+                  </select>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-eink-textMuted uppercase block flex items-center gap-1">
+                    <Bell className="w-3 h-3" />
+                    <span>REMINDER</span>
+                  </span>
+                  <select
+                    value={task.reminder_at ? 'active' : ''}
+                    onChange={(e) => handleSetReminder(e.target.value)}
+                    className="w-full mt-1 px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none"
+                  >
+                    <option value="clear">No reminder</option>
+                    <option value="15m">In 15 minutes</option>
+                    <option value="today_evening">Today · 6:00 PM</option>
+                    <option value="tomorrow_morning">Tomorrow · 9:00 AM</option>
+                    {task.reminder_at && <option value="active">Active ({new Date(task.reminder_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})</option>}
+                  </select>
                 </div>
 
                 <div>
                   <span className="text-[10px] text-eink-textMuted uppercase block">ASSIGNEE</span>
-                  <span className="text-xs text-eink-text">{task.assignee_name || 'Unassigned'}</span>
+                  <span className="text-xs text-eink-text block mt-1">{task.assignee_name || 'Unassigned'}</span>
                 </div>
 
                 <div>
                   <span className="text-[10px] text-eink-textMuted uppercase block">DUE DATE</span>
-                  <span className="text-xs text-eink-text">{task.due_date || 'No due date'}</span>
+                  <span className="text-xs text-eink-text block mt-1">{task.due_date || 'No due date'}</span>
                 </div>
               </div>
             </div>
@@ -483,27 +767,47 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
 
             {/* Subtasks Section */}
             <div className="space-y-3 pb-6 border-b border-eink-border">
-              <h3 className="font-technical font-bold text-xs uppercase tracking-wider text-eink-text">
-                SUBTASKS ({subtasks.filter((s) => s.completed).length}/{subtasks.length})
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-technical font-bold text-xs uppercase tracking-wider text-eink-text">
+                  SUBTASKS ({subtasks.filter((s) => Boolean(s.completed)).length}/{subtasks.length})
+                </h3>
+                {subtasks.length > 0 && (
+                  <span className="text-[10px] font-mono text-eink-textMuted">
+                    {Math.round((subtasks.filter((s) => Boolean(s.completed)).length / subtasks.length) * 100)}% DONE
+                  </span>
+                )}
+              </div>
 
               <div className="space-y-1.5">
-                {subtasks.map((subtask) => (
-                  <button
-                    key={subtask.id}
-                    onClick={() => handleToggleSubtask(subtask.id, subtask.completed)}
-                    className="w-full flex items-center gap-2.5 p-2 bg-eink-surface/50 hover:bg-eink-surface border border-eink-border rounded text-left transition-colors text-xs"
-                  >
-                    {subtask.completed ? (
-                      <CheckSquare className="w-4 h-4 text-eink-text shrink-0" />
-                    ) : (
-                      <Square className="w-4 h-4 text-eink-textMuted shrink-0" />
-                    )}
-                    <span className={subtask.completed ? 'line-through text-eink-textMuted' : 'text-eink-text'}>
-                      {subtask.title}
-                    </span>
-                  </button>
-                ))}
+                {subtasks.map((subtask) => {
+                  const isDone = Boolean(subtask.completed);
+                  return (
+                    <div
+                      key={subtask.id}
+                      onClick={() => handleToggleSubtask(subtask.id, subtask.completed)}
+                      className="group w-full flex items-center justify-between gap-2.5 p-2 bg-eink-surface/50 hover:bg-eink-surface border border-eink-border rounded text-left transition-colors text-xs cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {isDone ? (
+                          <CheckSquare className="w-4 h-4 text-eink-text shrink-0" />
+                        ) : (
+                          <Square className="w-4 h-4 text-eink-textMuted shrink-0" />
+                        )}
+                        <span className={`truncate ${isDone ? 'line-through text-eink-textMuted' : 'text-eink-text'}`}>
+                          {subtask.title}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteSubtask(subtask.id, e)}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-eink-textMuted hover:text-eink-text transition-opacity"
+                        title="Delete subtask"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
 
               <form onSubmit={handleAddSubtask} className="flex gap-2 pt-1">
@@ -585,7 +889,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           <div className="p-12 text-center text-xs text-eink-textMuted">Task not found.</div>
         )}
 
-        {/* Modals for Git History & Code Recovery */}
+        {/* Modals for Git History, Code Recovery, Focus Mode, and AI Handoff */}
         <GitHistoryModal
           isOpen={isHistoryOpen}
           onClose={() => setIsHistoryOpen(false)}
@@ -604,6 +908,16 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           isOpen={isHandoffOpen}
           task={task}
           onClose={() => setIsHandoffOpen(false)}
+        />
+
+        <FocusModeModal
+          isOpen={isFocusOpen}
+          task={task}
+          onClose={() => setIsFocusOpen(false)}
+          onTaskCompleted={(tid) => {
+            handleUpdateStatus('DONE');
+            setIsFocusOpen(false);
+          }}
         />
       </div>
     </div>

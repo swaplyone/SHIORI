@@ -7,10 +7,33 @@ import { emitToWorkspace, emitToTask } from '../services/socket.service.js';
 
 export const tasksRouter = Router();
 
-// GET all tasks (filtered by workspace, project, status, search, repo)
+// Helper for computing next recurring occurrence
+function getNextRecurrenceDate(rule: string, baseDateStr?: string | null): string {
+  const base = baseDateStr ? new Date(baseDateStr) : new Date();
+  const date = isNaN(base.getTime()) ? new Date() : base;
+  
+  const r = (rule || '').toLowerCase().trim();
+  if (r.includes('daily') || r.includes('every day')) {
+    date.setDate(date.getDate() + 1);
+  } else if (r.includes('weekday')) {
+    const day = date.getDay();
+    if (day === 5) date.setDate(date.getDate() + 3); // Fri -> Mon
+    else if (day === 6) date.setDate(date.getDate() + 2); // Sat -> Mon
+    else date.setDate(date.getDate() + 1);
+  } else if (r.includes('weekly') || r.includes('every week') || r.includes('every monday')) {
+    date.setDate(date.getDate() + 7);
+  } else if (r.includes('monthly') || r.includes('every month')) {
+    date.setMonth(date.getMonth() + 1);
+  } else {
+    date.setDate(date.getDate() + 1);
+  }
+  return date.toISOString();
+}
+
+// GET all tasks (filtered by workspace, project, status, priority, archived, search, repo)
 tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { workspaceId, projectId, status, search, repo } = req.query;
+    const { workspaceId, projectId, status, priority, search, repo, archived = 'false', recurring } = req.query;
 
     // Trigger live GitHub sync if repo is requested or project is connected
     try {
@@ -29,13 +52,20 @@ tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Pr
       FROM tasks t
       LEFT JOIN projects p ON t.project_id = p.id
       LEFT JOIN users u ON t.assignee_id = u.id
-      WHERE (
-        t.workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = ?)
-        OR t.created_by = ?
-        OR t.assignee_id = ?
-      )
+      WHERE (t.is_deleted = 0 OR t.is_deleted IS NULL)
+        AND (
+          t.workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = ?)
+          OR t.created_by = ?
+          OR t.assignee_id = ?
+        )
     `;
     const params: any[] = [req.user!.id, req.user!.id, req.user!.id];
+
+    if (archived === 'true') {
+      sql += ' AND t.is_archived = 1';
+    } else if (archived === 'false') {
+      sql += ' AND (t.is_archived = 0 OR t.is_archived IS NULL)';
+    }
 
     if (workspaceId) {
       sql += ' AND t.workspace_id = ?';
@@ -57,10 +87,19 @@ tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Pr
       params.push(status);
     }
 
+    if (priority) {
+      sql += ' AND t.priority = ?';
+      params.push(priority);
+    }
+
+    if (recurring === 'true') {
+      sql += ' AND t.recurrence_rule IS NOT NULL AND t.recurrence_rule != ""';
+    }
+
     if (search) {
-      sql += ' AND (t.title LIKE ? OR t.task_code LIKE ? OR t.description LIKE ?)';
+      sql += ' AND (t.title LIKE ? OR t.task_code LIKE ? OR t.description LIKE ? OR t.tags LIKE ?)';
       const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern);
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
     sql += ' ORDER BY t.task_number DESC';
@@ -94,7 +133,7 @@ tasksRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Response):
     return;
   }
 
-  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC', [task.id]);
+  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [task.id]);
   
   const comments = await queryAll(`
     SELECT c.*, u.name as user_name, u.avatar_url as user_avatar, u.username
@@ -133,6 +172,10 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     priority = 'MEDIUM',
     assigneeId,
     dueDate,
+    due_at,
+    reminder_at,
+    recurrence_rule,
+    tags,
     githubRepo,
     githubBranch
   } = req.body;
@@ -161,16 +204,19 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   await runQuery(`
     INSERT INTO tasks (
       id, task_number, task_code, project_id, workspace_id, title, description,
-      status, priority, user_status, assignee_id, created_by, due_date,
-      github_repo, github_branch, github_ci_status, created_at, updated_at
+      status, priority, user_status, assignee_id, created_by, due_date, due_at,
+      reminder_at, recurrence_rule, tags, github_repo, github_branch, github_ci_status,
+      is_archived, is_deleted, created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, 'TODO', ?, ?, ?,
-      ?, ?, 'UNKNOWN', datetime('now'), datetime('now')
+      ?, ?, 'TODO', ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, 'UNKNOWN',
+      0, 0, datetime('now'), datetime('now')
     )
   `, [
     taskId, nextNum, taskCode, projectId, finalWorkspaceId, title, description || '',
     status, priority, assigneeId || req.user!.id, req.user!.id, dueDate || 'Tomorrow',
+    due_at || null, reminder_at || null, recurrence_rule || null, tags || null,
     finalGithubRepo || null, githubBranch || null
   ]);
 
@@ -361,6 +407,10 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
   const userStatus = req.body.userStatus || req.body.user_status || (status === 'DONE' ? 'COMPLETED' : (status ? 'IN_PROGRESS' : undefined));
   const assigneeId = req.body.assigneeId || req.body.assignee_id;
   const dueDate = req.body.dueDate || req.body.due_date;
+  const due_at = req.body.due_at;
+  const reminder_at = req.body.reminder_at;
+  const recurrence_rule = req.body.recurrence_rule;
+  const tags = req.body.tags;
   const githubRepo = req.body.githubRepo || req.body.github_repo;
   const githubBranch = req.body.githubBranch || req.body.github_branch;
   const githubPrNumber = req.body.githubPrNumber || req.body.github_pr_number;
@@ -392,6 +442,10 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
       user_status = COALESCE(?, user_status),
       assignee_id = COALESCE(?, assignee_id),
       due_date = COALESCE(?, due_date),
+      due_at = COALESCE(?, due_at),
+      reminder_at = COALESCE(?, reminder_at),
+      recurrence_rule = COALESCE(?, recurrence_rule),
+      tags = COALESCE(?, tags),
       github_repo = COALESCE(?, github_repo),
       github_branch = COALESCE(?, github_branch),
       github_pr_number = COALESCE(?, github_pr_number),
@@ -402,10 +456,52 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
     WHERE id = ?
   `, [
     title, description, status, priority, userStatus, assigneeId, dueDate,
-    githubRepo, githubBranch, githubPrNumber, githubPrState, githubCiStatus,
+    due_at, reminder_at, recurrence_rule, tags, githubRepo, githubBranch,
+    githubPrNumber, githubPrState, githubCiStatus,
     completedAtValue,
     id
   ]);
+
+  // Recurrence handling: When a recurring task is completed, generate the next occurrence
+  const effectiveRecurrence = recurrence_rule !== undefined ? recurrence_rule : current.recurrence_rule;
+  if (
+    (status === 'DONE' || userStatus === 'COMPLETED') &&
+    (current.status !== 'DONE' && current.user_status !== 'COMPLETED') &&
+    effectiveRecurrence
+  ) {
+    try {
+      const nextDue = getNextRecurrenceDate(effectiveRecurrence, current.due_at || current.due_date);
+      const maxRow = await queryOne('SELECT MAX(task_number) as max_num FROM tasks');
+      const countRow = await queryOne('SELECT COUNT(*) as total FROM tasks');
+      const nextNum = Math.max(Number(maxRow?.max_num || 0), Number(countRow?.total || 0)) + 1;
+      const nextTaskCode = `SHR-${String(nextNum).padStart(4, '0')}`;
+      const nextTaskId = uuidv4();
+
+      await runQuery(`
+        INSERT INTO tasks (
+          id, task_number, task_code, project_id, workspace_id, title, description,
+          status, priority, user_status, assignee_id, created_by, due_date, due_at,
+          reminder_at, recurrence_rule, parent_task_id, tags, github_repo, github_branch,
+          github_ci_status, is_archived, is_deleted, created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?,
+          'TODO', ?, 'PENDING', ?, ?, ?, ?,
+          NULL, ?, ?, ?, ?, ?,
+          'UNKNOWN', 0, 0, datetime('now'), datetime('now')
+        )
+      `, [
+        nextTaskId, nextNum, nextTaskCode, current.project_id, current.workspace_id,
+        current.title, current.description, current.priority, current.assignee_id,
+        req.user!.id, 'Next occurrence', nextDue, effectiveRecurrence,
+        current.id, current.tags, current.github_repo, current.github_branch
+      ]);
+
+      const createdNextTask = await queryOne('SELECT * FROM tasks WHERE id = ?', [nextTaskId]);
+      emitToWorkspace(current.workspace_id, 'task:created', { task: createdNextTask });
+    } catch (recErr) {
+      console.error('[RECURRENCE GENERATION ERROR]', recErr);
+    }
+  }
 
   const evidence = await recalculateTaskEvidence(id);
   const updated = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
@@ -416,7 +512,45 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
   res.json({ task: updated, evidence });
 });
 
-// DELETE Task
+// POST Archive task
+tasksRouter.post('/:id/archive', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  if (!current) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  await runQuery(`
+    UPDATE tasks SET is_archived = 1, archived_at = datetime('now'), updated_at = datetime('now')
+    WHERE id = ?
+  `, [id]);
+
+  const updated = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  emitToWorkspace(current.workspace_id, 'task:updated', { task: updated });
+  res.json({ task: updated, message: 'Task archived' });
+});
+
+// POST Restore task from archive
+tasksRouter.post('/:id/restore', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  if (!current) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  await runQuery(`
+    UPDATE tasks SET is_archived = 0, archived_at = NULL, is_deleted = 0, deleted_at = NULL, updated_at = datetime('now')
+    WHERE id = ?
+  `, [id]);
+
+  const updated = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  emitToWorkspace(current.workspace_id, 'task:updated', { task: updated });
+  res.json({ task: updated, message: 'Task restored' });
+});
+
+// DELETE Task (Soft delete with undo support)
 tasksRouter.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
@@ -425,41 +559,81 @@ tasksRouter.delete('/:id', authMiddleware, async (req: AuthRequest, res: Respons
     return;
   }
 
-  await runQuery('DELETE FROM tasks WHERE id = ?', [id]);
+  await runQuery(`
+    UPDATE tasks SET is_deleted = 1, deleted_at = datetime('now'), updated_at = datetime('now')
+    WHERE id = ?
+  `, [id]);
+
   emitToWorkspace(current.workspace_id, 'task:deleted', { taskId: id });
-  res.json({ success: true, message: 'Task deleted' });
+  res.json({ success: true, message: 'Task deleted', taskId: id });
+});
+
+// POST Undo Delete Task
+tasksRouter.post('/:id/undo-delete', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  if (!current) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  await runQuery(`
+    UPDATE tasks SET is_deleted = 0, deleted_at = NULL, updated_at = datetime('now')
+    WHERE id = ?
+  `, [id]);
+
+  const restored = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  emitToWorkspace(current.workspace_id, 'task:created', { task: restored });
+  res.json({ task: restored, message: 'Task restored' });
 });
 
 // Subtask management
+tasksRouter.get('/:id/subtasks', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [id]);
+  res.json({ subtasks: subtasks || [] });
+});
+
 tasksRouter.post('/:id/subtasks', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { title } = req.body;
-  if (!title) {
+  if (!title || !title.trim()) {
     res.status(400).json({ error: 'Subtask title is required' });
     return;
   }
   const subtaskId = uuidv4();
   await runQuery(`
-    INSERT INTO task_subtasks (id, task_id, title, completed, position)
-    VALUES (?, ?, ?, 0, 100)
-  `, [subtaskId, id, title]);
+    INSERT INTO task_subtasks (id, task_id, title, completed, position, created_at)
+    VALUES (?, ?, ?, 0, 100, datetime('now'))
+  `, [subtaskId, id, title.trim()]);
 
-  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC', [id]);
+  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [id]);
+  emitToTask(id, 'subtask:updated', { subtasks });
   res.status(201).json({ subtasks });
 });
 
 tasksRouter.patch('/:id/subtasks/:subtaskId', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id, subtaskId } = req.params;
-  const { completed, title } = req.body;
+  const { completed, title, position } = req.body;
 
   await runQuery(`
     UPDATE task_subtasks SET
       completed = COALESCE(?, completed),
-      title = COALESCE(?, title)
+      title = COALESCE(?, title),
+      position = COALESCE(?, position)
     WHERE id = ? AND task_id = ?
-  `, [completed !== undefined ? (completed ? 1 : 0) : null, title, subtaskId, id]);
+  `, [completed !== undefined ? (completed ? 1 : 0) : null, title ? title.trim() : null, position !== undefined ? position : null, subtaskId, id]);
 
-  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC', [id]);
+  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [id]);
+  emitToTask(id, 'subtask:updated', { subtasks });
+  res.json({ subtasks });
+});
+
+tasksRouter.delete('/:id/subtasks/:subtaskId', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id, subtaskId } = req.params;
+  await runQuery('DELETE FROM task_subtasks WHERE id = ? AND task_id = ?', [subtaskId, id]);
+  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [id]);
+  emitToTask(id, 'subtask:updated', { subtasks });
   res.json({ subtasks });
 });
 

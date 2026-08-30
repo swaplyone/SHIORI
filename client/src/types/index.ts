@@ -134,6 +134,16 @@ export interface Task {
   created_by: string;
   creator_name?: string;
   due_date?: string;
+  due_at?: string;
+  reminder_at?: string;
+  is_reminder_sent?: number | boolean;
+  recurrence_rule?: string;
+  parent_task_id?: string;
+  tags?: string;
+  is_archived?: number | boolean;
+  archived_at?: string;
+  is_deleted?: number | boolean;
+  deleted_at?: string;
   
   // GitHub Linking
   github_repo?: string;

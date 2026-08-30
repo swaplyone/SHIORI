@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   LayoutGrid,
   List,
+  Calendar as CalendarIcon,
   Search,
   GitBranch,
   CheckSquare,
@@ -12,16 +13,26 @@ import {
   Github,
   Check,
   Calendar,
-  X
+  X,
+  Repeat,
+  Bell,
+  Sparkles,
+  Tag,
+  AlertCircle,
+  Archive,
+  ArchiveRestore
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Task, TaskStatus } from '../types';
+import { Task, TaskStatus, TaskPriority } from '../types';
 import { KanbanBoard } from '../components/tasks/KanbanBoard';
 import { TaskCreateModal } from '../components/tasks/TaskCreateModal';
 import { DevelopmentEvidenceBadge } from '../components/tasks/DevelopmentEvidenceBadge';
 import { TodoListSkeleton, KanbanBoardSkeleton } from '../components/ui/Skeleton';
 import { AiDeveloperHandoffModal } from '../components/tasks/AiDeveloperHandoffModal';
+import { TaskCalendarView } from '../components/tasks/TaskCalendarView';
+import { UndoToast, triggerUndoToast } from '../components/ui/UndoToast';
+import { parseNaturalLanguageTask, ParsedTaskInput } from '../utils/nlpTaskParser';
 
 export const TasksPage: React.FC = () => {
   const { token, user } = useAuth();
@@ -32,14 +43,20 @@ export const TasksPage: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [repositories, setRepositories] = useState<any[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>(() => searchParams.get('repo') || '');
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [tabFilter, setTabFilter] = useState<'active' | 'completed' | 'archived'>('active');
+  const [selectedPriority, setSelectedPriority] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'calendar'>('list');
   const [quickTaskTitle, setQuickTaskTitle] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createInitialStatus, setCreateInitialStatus] = useState<TaskStatus>('TODO');
   const [createdHandoffTask, setCreatedHandoffTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Live NLP parsing for Quick Add
+  const quickNlp: ParsedTaskInput = useMemo(() => {
+    return parseNaturalLanguageTask(quickTaskTitle);
+  }, [quickTaskTitle]);
 
   // Sync selectedRepo with searchParams when searchParams change
   useEffect(() => {
@@ -69,7 +86,15 @@ export const TasksPage: React.FC = () => {
     try {
       setLoading(true);
       let url = '/api/tasks?';
-      if (selectedStatus) url += `status=${selectedStatus}&`;
+      if (tabFilter === 'archived') {
+        url += 'archived=true&';
+      } else if (tabFilter === 'completed') {
+        url += 'status=DONE&archived=false&';
+      } else {
+        url += 'archived=false&';
+      }
+
+      if (selectedPriority) url += `priority=${selectedPriority}&`;
       if (searchQuery) url += `search=${encodeURIComponent(searchQuery)}&`;
 
       const res = await fetch(url, {
@@ -96,7 +121,7 @@ export const TasksPage: React.FC = () => {
     const handleRefresh = () => fetchTasks();
     window.addEventListener('shiori-refresh', handleRefresh);
     return () => window.removeEventListener('shiori-refresh', handleRefresh);
-  }, [token, selectedStatus, searchQuery]);
+  }, [token, tabFilter, selectedPriority, searchQuery]);
 
   const handleUpdateStatus = async (taskId: string, newStatus: TaskStatus) => {
     if (!token) return;
@@ -161,6 +186,12 @@ export const TasksPage: React.FC = () => {
     e.preventDefault();
     if (!quickTaskTitle.trim() || !token) return;
 
+    const finalTitle = quickNlp.title || quickTaskTitle.trim();
+    const finalDueDate = quickNlp.dueDate || 'Tomorrow';
+    const finalPriority = quickNlp.priority || 'MEDIUM';
+    const finalRecurrence = quickNlp.recurrenceRule || null;
+    const finalTags = quickNlp.tags.length > 0 ? quickNlp.tags.join(', ') : null;
+
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -170,9 +201,13 @@ export const TasksPage: React.FC = () => {
         },
         body: JSON.stringify({
           projectId: 'default',
-          title: quickTaskTitle.trim(),
+          title: finalTitle,
           status: 'TODO',
-          priority: 'MEDIUM',
+          priority: finalPriority,
+          dueDate: finalDueDate,
+          due_at: quickNlp.dueAt || null,
+          recurrence_rule: finalRecurrence,
+          tags: finalTags,
           githubRepo: selectedRepo || 'SHIORI',
           githubBranch: 'main'
         })
@@ -196,6 +231,7 @@ export const TasksPage: React.FC = () => {
 
   const filteredTasks = tasks.filter((t) => {
     if (selectedRepo && t.github_repo !== selectedRepo) return false;
+    if (tabFilter === 'active' && t.status === 'DONE') return false;
     return true;
   });
 
@@ -223,7 +259,7 @@ export const TasksPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-eink-border pb-4">
         <div>
           <div className="flex items-center gap-2 font-technical text-xs text-eink-textMuted mb-1">
-            <span>REPOSITORY-BASED WORKSPACE</span>
+            <span>WORKSPACE</span>
             <span>•</span>
             <span className="font-mono text-eink-text font-bold">
               {selectedRepo ? selectedRepo.toUpperCase() : 'ALL REPOSITORIES'} ({loading ? '...' : filteredTasks.length})
@@ -234,7 +270,8 @@ export const TasksPage: React.FC = () => {
           </h1>
         </div>
 
-        <div className="flex items-center gap-2 font-technical text-xs">
+        <div className="flex flex-wrap items-center gap-2 font-technical text-xs">
+          {/* View Mode Toggle: Checklist, Kanban, Calendar */}
           <div className="flex items-center bg-eink-surface border border-eink-border rounded-sm p-0.5">
             <button
               onClick={() => setViewMode('list')}
@@ -243,7 +280,7 @@ export const TasksPage: React.FC = () => {
               }`}
             >
               <List className="w-3.5 h-3.5" />
-              <span>Checklist</span>
+              <span>List</span>
             </button>
             <button
               onClick={() => setViewMode('kanban')}
@@ -253,6 +290,15 @@ export const TasksPage: React.FC = () => {
             >
               <LayoutGrid className="w-3.5 h-3.5" />
               <span>Kanban</span>
+            </button>
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`px-3 py-1 rounded-sm flex items-center gap-1.5 ${
+                viewMode === 'calendar' ? 'bg-eink-text text-eink-bg font-bold' : 'text-eink-text hover:bg-eink-bg'
+              }`}
+            >
+              <CalendarIcon className="w-3.5 h-3.5" />
+              <span>Calendar</span>
             </button>
           </div>
 
@@ -269,27 +315,52 @@ export const TasksPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Search & Repository Selectors */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs font-technical">
-        <div className="flex items-center gap-2 flex-1 max-w-md bg-eink-surface border border-eink-border rounded-sm px-2.5 py-1.5 shadow-eink-sm">
-          <Search className="w-3.5 h-3.5 text-eink-textMuted" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by title, code, or description..."
-            className="w-full bg-transparent text-eink-text outline-none text-xs"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-eink-textMuted hover:text-eink-text">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+      {/* 3. Filter Bar & Search */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs font-technical border-b border-eink-border pb-3">
+        {/* Status Tab Filters */}
+        <div className="flex items-center bg-eink-surface border border-eink-border rounded-sm p-0.5 self-start sm:self-auto">
+          <button
+            onClick={() => setTabFilter('active')}
+            className={`px-3 py-1 rounded-sm text-xs font-bold ${
+              tabFilter === 'active' ? 'bg-eink-darkSurface text-eink-darkText' : 'text-eink-text hover:bg-eink-bg'
+            }`}
+          >
+            ACTIVE
+          </button>
+          <button
+            onClick={() => setTabFilter('completed')}
+            className={`px-3 py-1 rounded-sm text-xs font-bold ${
+              tabFilter === 'completed' ? 'bg-eink-darkSurface text-eink-darkText' : 'text-eink-text hover:bg-eink-bg'
+            }`}
+          >
+            COMPLETED
+          </button>
+          <button
+            onClick={() => setTabFilter('archived')}
+            className={`px-3 py-1 rounded-sm text-xs font-bold ${
+              tabFilter === 'archived' ? 'bg-eink-darkSurface text-eink-darkText' : 'text-eink-text hover:bg-eink-bg'
+            }`}
+          >
+            ARCHIVED
+          </button>
         </div>
 
-        {/* Repository Filter */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-eink-textMuted uppercase font-bold">REPO:</span>
+        {/* Priority & Repository & Search Filter Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Priority Filter */}
+          <select
+            value={selectedPriority}
+            onChange={(e) => setSelectedPriority(e.target.value)}
+            className="px-2.5 py-1.5 bg-eink-surface border border-eink-border rounded-sm text-xs font-technical font-bold text-eink-text outline-none shadow-eink-sm"
+          >
+            <option value="">ALL PRIORITIES</option>
+            <option value="URGENT">URGENT</option>
+            <option value="HIGH">HIGH</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="LOW">LOW</option>
+          </select>
+
+          {/* Repository Filter */}
           <select
             value={selectedRepo}
             onChange={(e) => setSelectedRepo(e.target.value)}
@@ -302,16 +373,39 @@ export const TasksPage: React.FC = () => {
               </option>
             ))}
           </select>
+
+          {/* Search Box */}
+          <div className="flex items-center gap-1.5 bg-eink-surface border border-eink-border rounded-sm px-2.5 py-1.5 shadow-eink-sm">
+            <Search className="w-3.5 h-3.5 text-eink-textMuted" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search tasks..."
+              className="bg-transparent text-eink-text outline-none text-xs w-28 sm:w-40"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="text-eink-textMuted hover:text-eink-text">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 4. Main Content: List or Kanban */}
+      {/* 4. Main Content: List, Kanban, or Calendar */}
       {loading ? (
         viewMode === 'kanban' ? (
           <KanbanBoardSkeleton />
         ) : (
           <TodoListSkeleton rows={5} />
         )
+      ) : viewMode === 'calendar' ? (
+        <TaskCalendarView
+          tasks={filteredTasks}
+          onSelectTask={(task: Task) => openTaskModal(task.id)}
+          onToggleStatus={handleToggleTaskStatus}
+        />
       ) : viewMode === 'kanban' ? (
         <KanbanBoard
           tasks={filteredTasks}
@@ -324,35 +418,77 @@ export const TasksPage: React.FC = () => {
         />
       ) : (
         <div className="space-y-4 font-technical animate-fade-in">
-          {/* Quick Add Input Form */}
-          <form onSubmit={handleQuickAdd} className="flex gap-2 text-xs">
-            <input
-              type="text"
-              value={quickTaskTitle}
-              onChange={(e) => setQuickTaskTitle(e.target.value)}
-              placeholder={`+ Quick add TODO to ${selectedRepo || 'SHIORI'} (press Enter)...`}
-              className="flex-1 px-3 py-2 bg-eink-surface border border-eink-border rounded-sm text-eink-text outline-none focus:border-eink-text text-xs font-sans"
-            />
-            <button
-              type="submit"
-              disabled={!quickTaskTitle.trim()}
-              className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>ADD TODO</span>
-            </button>
-          </form>
+          {/* Smart NLP Quick Add Input Form */}
+          <div className="space-y-1.5">
+            <form onSubmit={handleQuickAdd} className="flex gap-2 text-xs">
+              <input
+                type="text"
+                value={quickTaskTitle}
+                onChange={(e) => setQuickTaskTitle(e.target.value)}
+                placeholder={`+ Quick add with NLP: e.g. "Review compiler Friday at 7pm #career high" (press Enter)...`}
+                className="flex-1 px-3 py-2 bg-eink-surface border border-eink-border rounded-sm text-eink-text outline-none focus:border-eink-text text-xs font-sans"
+              />
+              <button
+                type="submit"
+                disabled={!quickTaskTitle.trim()}
+                className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>ADD TODO</span>
+              </button>
+            </form>
+
+            {/* Smart NLP Interpretation Preview Chips */}
+            {quickNlp.hasParsedData && (
+              <div className="p-2 bg-eink-surface border border-eink-border rounded-sm flex items-center justify-between gap-2 text-[11px] font-technical animate-fade-in">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-eink-textMuted flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    <span>PARSED:</span>
+                  </span>
+                  <span className="font-bold text-eink-text">"{quickNlp.title}"</span>
+                  {quickNlp.dueDate && (
+                    <span className="px-1.5 py-0.2 bg-eink-bg border border-eink-border rounded text-eink-text">
+                      📅 {quickNlp.dueDate}
+                    </span>
+                  )}
+                  {quickNlp.priority !== 'MEDIUM' && (
+                    <span className="px-1.5 py-0.2 bg-eink-bg border border-eink-border rounded text-eink-text font-bold">
+                      ⚡ {quickNlp.priority}
+                    </span>
+                  )}
+                  {quickNlp.recurrenceRule && (
+                    <span className="px-1.5 py-0.2 bg-eink-bg border border-eink-border rounded text-eink-text">
+                      ↻ {quickNlp.recurrenceRule}
+                    </span>
+                  )}
+                  {quickNlp.tags.map((t) => (
+                    <span key={t} className="px-1.5 py-0.2 bg-eink-bg border border-eink-border rounded text-eink-text">
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* List Table */}
           <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border overflow-hidden shadow-eink-card">
             {filteredTasks.length === 0 ? (
               <div className="p-12 text-center text-xs text-eink-textMuted font-technical">
-                No to-do tasks found for this repository. Click <strong>+ ADD TODO</strong> to create one.
+                {tabFilter === 'archived'
+                  ? 'No archived tasks.'
+                  : 'No to-do tasks found. Type above or click + ADD TODO to create one.'}
               </div>
             ) : (
               filteredTasks.map((task) => {
                 const isDone = task.status === 'DONE';
                 const hasDiscrepancy = Boolean(task.has_ci_discrepancy);
+                const isOverdue =
+                  !isDone &&
+                  task.due_date &&
+                  (task.due_date.toLowerCase().includes('yesterday') ||
+                    (task.due_at && new Date(task.due_at).getTime() < Date.now()));
 
                 return (
                   <div
@@ -381,6 +517,22 @@ export const TasksPage: React.FC = () => {
                           <span className="font-bold text-xs bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
                             {task.task_code}
                           </span>
+
+                          {/* Priority Badge */}
+                          {task.priority && task.priority !== 'MEDIUM' && (
+                            <span
+                              className={`text-[10px] font-mono font-bold px-1.5 py-0.2 border rounded ${
+                                task.priority === 'URGENT'
+                                  ? 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface'
+                                  : task.priority === 'HIGH'
+                                  ? 'bg-eink-bg text-eink-text border-eink-text'
+                                  : 'bg-eink-bg text-eink-textMuted border-eink-border'
+                              }`}
+                            >
+                              {task.priority}
+                            </span>
+                          )}
+
                           <h3
                             className={`text-xs font-bold text-eink-text truncate ${
                               isDone ? 'line-through text-eink-textMuted' : ''
@@ -388,11 +540,36 @@ export const TasksPage: React.FC = () => {
                           >
                             {task.title}
                           </h3>
+
+                          {/* Recurring Indicator */}
+                          {task.recurrence_rule && (
+                            <span className="text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
+                              <Repeat className="w-2.5 h-2.5" />
+                              <span>{task.recurrence_rule}</span>
+                            </span>
+                          )}
+
+                          {/* Subtasks Count Badge */}
+                          {Boolean(task.subtasks_count) && (
+                            <span className="text-[10px] bg-eink-bg text-eink-textSecondary px-1.5 py-0.2 border border-eink-border rounded font-mono">
+                              {task.subtasks_completed || 0}/{task.subtasks_count} subtasks
+                            </span>
+                          )}
+
+                          {/* Overdue Notice */}
+                          {isOverdue && (
+                            <span className="text-[10px] font-bold bg-eink-surface text-eink-text px-1.5 py-0.2 border border-eink-text rounded flex items-center gap-1">
+                              <AlertCircle className="w-2.5 h-2.5" />
+                              <span>OVERDUE</span>
+                            </span>
+                          )}
+
                           {Boolean(task.auto_completed) && (
                             <span className="text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
                               ✓ AUTO COMPLETED • GitHub activity detected
                             </span>
                           )}
+
                           {hasDiscrepancy && (
                             <span className="text-[10px] font-bold bg-eink-darkSurface text-eink-darkText px-1.5 py-0.2 rounded flex items-center gap-1">
                               <ShieldAlert className="w-3 h-3" />
@@ -411,8 +588,11 @@ export const TasksPage: React.FC = () => {
                             <span>{task.github_branch || 'main'}</span>
                           </span>
                           {task.due_date && <span>Due: {task.due_date}</span>}
-                          {task.assignee_name && (
-                            <span>Assigned: {task.assignee_name}</span>
+                          {task.tags && (
+                            <span className="flex items-center gap-1 text-eink-textMuted">
+                              <Tag className="w-2.5 h-2.5" />
+                              <span>{task.tags}</span>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -450,6 +630,8 @@ export const TasksPage: React.FC = () => {
         task={createdHandoffTask}
         onClose={() => setCreatedHandoffTask(null)}
       />
+
+      <UndoToast />
     </div>
   );
 };
