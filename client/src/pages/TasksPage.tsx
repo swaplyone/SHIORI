@@ -20,7 +20,8 @@ import {
   Tag,
   AlertCircle,
   Archive,
-  ArchiveRestore
+  ArchiveRestore,
+  ArrowUpDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -45,6 +46,7 @@ export const TasksPage: React.FC = () => {
   const [selectedRepo, setSelectedRepo] = useState<string>(() => searchParams.get('repo') || '');
   const [tabFilter, setTabFilter] = useState<'active' | 'completed' | 'archived'>('active');
   const [selectedPriority, setSelectedPriority] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'number_desc' | 'number_asc' | 'priority_desc' | 'title_asc'>('number_desc');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'calendar'>('list');
   const [quickTaskTitle, setQuickTaskTitle] = useState('');
@@ -248,21 +250,44 @@ export const TasksPage: React.FC = () => {
     return true;
   });
 
-  const activeTasks = filteredTasks
-    .filter((t) => t.status !== 'DONE' && !t.is_archived)
-    .sort((a, b) => {
-      const pDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
-      if (pDiff !== 0) return pDiff;
-      return (b.task_number || 0) - (a.task_number || 0);
-    });
+  const activeTasks = useMemo(() => {
+    return filteredTasks
+      .filter((t) => t.status !== 'DONE' && !t.is_archived)
+      .sort((a, b) => {
+        if (sortBy === 'number_asc') {
+          return (a.task_number || 0) - (b.task_number || 0);
+        }
+        if (sortBy === 'priority_desc') {
+          const pDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
+          if (pDiff !== 0) return pDiff;
+          return (b.task_number || 0) - (a.task_number || 0);
+        }
+        if (sortBy === 'title_asc') {
+          return (a.title || '').localeCompare(b.title || '');
+        }
+        // Default: number_desc
+        return (b.task_number || 0) - (a.task_number || 0);
+      });
+  }, [filteredTasks, sortBy]);
 
-  const completedTasks = filteredTasks
-    .filter((t) => t.status === 'DONE' && !t.is_archived)
-    .sort((a, b) => {
-      const tA = a.completed_at ? new Date(a.completed_at).getTime() : (a.updated_at ? new Date(a.updated_at).getTime() : 0);
-      const tB = b.completed_at ? new Date(b.completed_at).getTime() : (b.updated_at ? new Date(b.updated_at).getTime() : 0);
-      return tB - tA;
-    });
+  const completedTasks = useMemo(() => {
+    return filteredTasks
+      .filter((t) => t.status === 'DONE' && !t.is_archived)
+      .sort((a, b) => {
+        if (sortBy === 'number_asc') {
+          return (a.task_number || 0) - (b.task_number || 0);
+        }
+        if (sortBy === 'number_desc') {
+          return (b.task_number || 0) - (a.task_number || 0);
+        }
+        if (sortBy === 'title_asc') {
+          return (a.title || '').localeCompare(b.title || '');
+        }
+        const tA = a.completed_at ? new Date(a.completed_at).getTime() : (a.updated_at ? new Date(a.updated_at).getTime() : 0);
+        const tB = b.completed_at ? new Date(b.completed_at).getTime() : (b.updated_at ? new Date(b.updated_at).getTime() : 0);
+        return tB - tA;
+      });
+  }, [filteredTasks, sortBy]);
 
   const archivedTasks = filteredTasks.filter((t) => Boolean(t.is_archived));
 
@@ -511,6 +536,21 @@ export const TasksPage: React.FC = () => {
 
         {/* Priority & Repository & Search Filter Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Sort Filter */}
+          <div className="flex items-center gap-1 bg-eink-surface border border-eink-border rounded-sm px-2 py-0.5 shadow-eink-sm">
+            <ArrowUpDown className="w-3 h-3 text-eink-text" />
+            <select
+              value={sortBy}
+              onChange={(e: any) => setSortBy(e.target.value)}
+              className="bg-transparent text-xs font-technical font-bold text-eink-text outline-none cursor-pointer py-1"
+            >
+              <option value="number_desc">SORT: NEWEST (SHR-30 → 1)</option>
+              <option value="number_asc">SORT: OLDEST (SHR-1 → 30)</option>
+              <option value="priority_desc">SORT: PRIORITY (URGENT)</option>
+              <option value="title_asc">SORT: TITLE (A → Z)</option>
+            </select>
+          </div>
+
           {/* Priority Filter */}
           <select
             value={selectedPriority}
