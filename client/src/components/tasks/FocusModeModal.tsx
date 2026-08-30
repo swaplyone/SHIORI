@@ -397,37 +397,69 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
 
         {/* Timer Controls */}
         {!isFinished && (
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setIsActive(!isActive)}
-              className="px-6 py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-card flex items-center gap-2 text-xs hover:opacity-90 active:scale-95 transition-all cursor-pointer"
-            >
-              {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-              <span>{isActive ? 'PAUSE' : `START ${selectedMinutes}M FOCUS`}</span>
-            </button>
+          <div className="space-y-3 pt-2">
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!isActive) {
+                    if (reminderManager.getPermission() === 'default') {
+                      await reminderManager.requestPermission();
+                    }
+                    setIsActive(true);
+                  } else {
+                    setIsActive(false);
+                  }
+                }}
+                className="px-6 py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-card flex items-center gap-2 text-xs hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+              >
+                {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                <span>{isActive ? 'PAUSE' : `START ${selectedMinutes}M FOCUS`}</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setIsActive(false);
-                setSecondsRemaining(selectedMinutes * 60);
-                setHasWarnedEnding(false);
-              }}
-              className="p-2.5 border border-eink-border rounded-sm text-eink-textSecondary hover:text-eink-text hover:bg-eink-surface active:scale-95 cursor-pointer"
-              title={`Reset timer to ${selectedMinutes}:00`}
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsActive(false);
+                  setSecondsRemaining(selectedMinutes * 60);
+                  setHasWarnedEnding(false);
+                  lockScreenTimer.stop();
+                }}
+                className="px-4 py-2.5 border border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text rounded-sm text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                title={`Reset timer to ${selectedMinutes}:00`}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>RESET</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleCompleteTask}
-              className="px-5 py-2.5 border border-eink-border bg-eink-surface text-eink-text font-bold rounded-sm flex items-center gap-2 text-xs hover:bg-eink-surfaceHover active:scale-95 transition-all cursor-pointer"
-            >
-              <Check className="w-4 h-4" />
-              <span>COMPLETE TODO</span>
-            </button>
+              <button
+                type="button"
+                onClick={handleCompleteTask}
+                className="px-5 py-2.5 border border-eink-border bg-eink-surface text-eink-text font-bold rounded-sm flex items-center gap-2 text-xs hover:bg-eink-surfaceHover active:scale-95 transition-all cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>COMPLETE TODO</span>
+              </button>
+            </div>
+
+            {/* Lock-Screen Live Activity & Permission Hint */}
+            <div className="text-[10px] text-eink-textMuted font-mono flex items-center justify-center gap-2">
+              {reminderManager.getPermission() === 'default' ? (
+                <button
+                  type="button"
+                  onClick={() => reminderManager.requestPermission()}
+                  className="px-2 py-0.5 border border-dashed border-eink-border rounded hover:bg-eink-surface text-eink-text flex items-center gap-1 cursor-pointer"
+                >
+                  <Bell className="w-2.5 h-2.5" />
+                  <span>ENABLE LOCK SCREEN LIVE TIMER & ALERTS</span>
+                </button>
+              ) : (
+                <span className="flex items-center gap-1">
+                  <span>📱</span>
+                  <span>{isActive ? 'LOCK SCREEN LIVE TIMER RUNNING' : 'LOCK SCREEN LIVE ACTIVITY READY'}</span>
+                </span>
+              )}
+            </div>
           </div>
         )}
 

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useSocket } from './SocketContext';
 import { lockScreenTimer } from '../utils/lockScreenTimer';
+import { reminderManager } from '../utils/reminderManager';
 
 export type MorphBarStateType =
   | 'IDLE'
@@ -208,6 +209,10 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       projectName = 'SHIORI',
       durationMinutes = 25
     ) => {
+      if (reminderManager.getPermission() === 'default') {
+        reminderManager.requestPermission().catch(() => {});
+      }
+
       const totalSec = Math.max(1, durationMinutes) * 60;
       setFocusTimer({
         isActive: true,
