@@ -10,7 +10,9 @@
   font-display: swap;
 }
 
-.font-island {
+.font-island,
+.font-navbar,
+.font-brashkick {
   font-family: 'Brashkick', 'IBM Plex Mono', monospace;
 }
 

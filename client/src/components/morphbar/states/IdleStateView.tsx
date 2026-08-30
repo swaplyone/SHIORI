@@ -80,7 +80,7 @@ export const IdleCollapsedView: React.FC = () => {
             height={24}
             className="w-6 h-6 max-w-[24px] max-h-[24px] object-contain shrink-0"
           />
-          <span className="font-mono font-bold text-xs tracking-[0.18em] text-eink-text uppercase leading-none">
+          <span className="font-brashkick font-bold text-xs tracking-[0.18em] text-eink-text uppercase leading-none">
             SHIORI
           </span>
         </div>
