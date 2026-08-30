@@ -37,10 +37,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSimulator, onOpenCom
           <img
             src="/nav-logo.png"
             alt="SHIORI"
-            className="w-7 h-7 object-contain bg-transparent border-0 shrink-0 select-none"
+            className="w-8 h-8 object-contain bg-transparent border-0 shrink-0 select-none"
           />
           <div className="flex flex-col justify-center">
-            <h1 className="font-abask font-bold text-sm tracking-[0.18em] uppercase leading-none text-eink-text">SHIORI</h1>
+            <h1 className="font-abask font-bold text-base tracking-[0.18em] uppercase leading-none text-eink-text">SHIORI</h1>
             <p className="text-[8px] text-eink-textMuted uppercase tracking-wider font-mono mt-0.5 font-semibold">A SwaplyOne product</p>
           </div>
         </div>
@@ -74,10 +74,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSimulator, onOpenCom
                   <img
                     src="/nav-logo.png"
                     alt="SHIORI"
-                    className="w-7 h-7 object-contain bg-transparent border-0 shrink-0 select-none"
+                    className="w-8 h-8 object-contain bg-transparent border-0 shrink-0 select-none"
                   />
                   <div>
-                    <h2 className="font-abask font-bold text-lg tracking-[0.16em] uppercase leading-none">SHIORI</h2>
+                    <h2 className="font-abask font-bold text-lg tracking-[0.18em] uppercase leading-none">SHIORI</h2>
                     <p className="text-[9px] text-eink-textMuted uppercase font-mono tracking-wider mt-0.5">Plan. Build. Verify.</p>
                   </div>
                 </div>

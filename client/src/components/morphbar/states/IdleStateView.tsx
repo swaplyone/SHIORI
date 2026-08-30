@@ -76,11 +76,11 @@ export const IdleCollapsedView: React.FC = () => {
           <img
             src="/nav-logo.png"
             alt="SHIORI"
-            width={24}
-            height={24}
-            className="w-6 h-6 max-w-[24px] max-h-[24px] object-contain bg-transparent border-0 shrink-0 select-none"
+            width={28}
+            height={28}
+            className="w-7 h-7 max-w-[28px] max-h-[28px] object-contain bg-transparent border-0 shrink-0 select-none"
           />
-          <span className="font-abask font-bold text-xs tracking-[0.18em] text-eink-text uppercase leading-none">
+          <span className="font-abask font-bold text-sm tracking-[0.18em] text-eink-text uppercase leading-none">
             SHIORI
           </span>
         </div>

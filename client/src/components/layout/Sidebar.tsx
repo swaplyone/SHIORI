@@ -47,10 +47,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSimulator, onOpenCommand
               <img
                 src="/nav-logo.png"
                 alt="SHIORI"
-                className="w-8 h-8 object-contain bg-transparent border-0 shrink-0 select-none"
+                className="w-9 h-9 object-contain bg-transparent border-0 shrink-0 select-none"
               />
               <div className="flex flex-col justify-center">
-                <h1 className="font-abask font-bold text-base tracking-[0.18em] text-eink-text uppercase leading-none">
+                <h1 className="font-abask font-bold text-lg tracking-[0.18em] text-eink-text uppercase leading-none">
                   SHIORI
                 </h1>
                 <p className="text-[8px] text-eink-textMuted tracking-wider font-mono uppercase mt-1 font-semibold">
