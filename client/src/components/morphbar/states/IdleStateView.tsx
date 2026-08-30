@@ -74,7 +74,7 @@ export const IdleCollapsedView: React.FC = () => {
       <div className="flex items-center justify-center gap-2.5">
         <div className="flex items-center gap-2 shrink-0">
           <img
-            src="/favicon-shiori.png"
+            src="/nav-logo.png"
             alt="SHIORI"
             width={24}
             height={24}

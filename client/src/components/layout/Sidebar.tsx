@@ -45,7 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSimulator, onOpenCommand
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <img
-                src="/favicon-shiori.png"
+                src="/nav-logo.png"
                 alt="SHIORI"
                 className="w-7 h-7 object-contain rounded-sm border border-eink-border bg-eink-bg"
               />

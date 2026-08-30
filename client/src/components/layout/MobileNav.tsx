@@ -35,7 +35,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSimulator, onOpenCom
       <header className="md:hidden sticky top-0 z-30 bg-eink-bg border-b border-eink-border px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <img
-            src="/favicon-shiori.png"
+            src="/nav-logo.png"
             alt="SHIORI"
             className="w-6 h-6 object-contain rounded-sm border border-eink-border bg-eink-bg"
           />
