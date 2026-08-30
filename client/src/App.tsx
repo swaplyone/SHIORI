@@ -77,15 +77,9 @@ export const App: React.FC = () => {
               <MorphBar />
 
               <Routes>
-                {/* Public Routes (Redirect to /home if user is already logged in) */}
-                <Route
-                  path="/"
-                  element={
-                    <PublicOnlyRoute>
-                      <LandingPage />
-                    </PublicOnlyRoute>
-                  }
-                />
+                {/* Landing & Welcome Routes */}
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/welcome" element={<LandingPage />} />
                 <Route
                   path="/login"
                   element={
