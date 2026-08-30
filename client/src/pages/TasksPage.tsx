@@ -217,7 +217,9 @@ export const TasksPage: React.FC = () => {
         const data = await res.json();
         if (data?.task) {
           setTasks((prev) => [data.task, ...prev]);
-          setCreatedHandoffTask(data.task);
+          if (data.task.status !== 'DONE' && data.task.user_status !== 'COMPLETED') {
+            setCreatedHandoffTask(data.task);
+          }
         }
         setQuickTaskTitle('');
         triggerEInkRefresh();
@@ -325,7 +327,7 @@ export const TasksPage: React.FC = () => {
               tabFilter === 'active' ? 'bg-eink-darkSurface text-eink-darkText' : 'text-eink-text hover:bg-eink-bg'
             }`}
           >
-            ACTIVE
+            ACTIVE ({tasks.filter((t) => t.status !== 'DONE' && !t.is_archived).length})
           </button>
           <button
             onClick={() => setTabFilter('completed')}
@@ -333,7 +335,7 @@ export const TasksPage: React.FC = () => {
               tabFilter === 'completed' ? 'bg-eink-darkSurface text-eink-darkText' : 'text-eink-text hover:bg-eink-bg'
             }`}
           >
-            COMPLETED
+            COMPLETED ({tasks.filter((t) => t.status === 'DONE' && !t.is_archived).length})
           </button>
           <button
             onClick={() => setTabFilter('archived')}
@@ -341,7 +343,7 @@ export const TasksPage: React.FC = () => {
               tabFilter === 'archived' ? 'bg-eink-darkSurface text-eink-darkText' : 'text-eink-text hover:bg-eink-bg'
             }`}
           >
-            ARCHIVED
+            ARCHIVED ({tasks.filter((t) => Boolean(t.is_archived)).length})
           </button>
         </div>
 

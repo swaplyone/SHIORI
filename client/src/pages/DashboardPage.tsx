@@ -114,7 +114,7 @@ export const DashboardPage: React.FC = () => {
             SHIORI HOME • TODAY
           </span>
           <h2 className="text-sm sm:text-base font-bold text-eink-text uppercase mt-0.5">
-            {totalActiveTodos} TODOs remaining · {totalCompletedTodos} completed · {totalCommitsToday} commits recorded
+            {totalActiveTodos} TODOs remaining · {totalCompletedTodos} completed · {totalActiveTodos + totalCompletedTodos} total
           </h2>
         </div>
 
@@ -165,7 +165,9 @@ export const DashboardPage: React.FC = () => {
                     </p>
                   </div>
                   <span className="text-[10px] bg-eink-bg px-2 py-0.5 border border-eink-border rounded font-mono font-bold shrink-0">
-                    {proj.active_todos ?? 0} TODOs
+                    {proj.total_tasks !== undefined
+                      ? `${proj.active_todos || 0} active · ${proj.completed_tasks || 0} done`
+                      : `${proj.active_todos ?? 0} TODOs`}
                   </span>
                 </div>
 

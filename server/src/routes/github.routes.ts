@@ -404,13 +404,17 @@ githubRouter.get('/user-repositories', authMiddleware, async (req: AuthRequest, 
     userRepos.map(async (r) => {
       const activeTodos = await queryOne(`
         SELECT COUNT(*) as count FROM tasks 
-        WHERE github_repo = ? AND status != 'DONE'
-      `, [r.repo_name]);
+        WHERE (LOWER(github_repo) = LOWER(?) OR LOWER(github_repo) LIKE '%' || LOWER(?) || '%')
+          AND status != 'DONE'
+          AND (is_deleted = 0 OR is_deleted IS NULL)
+      `, [r.repo_name, r.repo_name]);
 
       const completedTodos = await queryOne(`
         SELECT COUNT(*) as count FROM tasks 
-        WHERE github_repo = ? AND status = 'DONE'
-      `, [r.repo_name]);
+        WHERE (LOWER(github_repo) = LOWER(?) OR LOWER(github_repo) LIKE '%' || LOWER(?) || '%')
+          AND (status = 'DONE' OR user_status = 'COMPLETED')
+          AND (is_deleted = 0 OR is_deleted IS NULL)
+      `, [r.repo_name, r.repo_name]);
 
       const lastCommit = await queryOne(`
         SELECT * FROM github_commits 

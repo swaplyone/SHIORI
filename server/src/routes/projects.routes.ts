@@ -10,15 +10,18 @@ projectsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response):
   const projects = await queryAll(`
     SELECT p.*,
            (SELECT COUNT(*) FROM tasks t 
-            WHERE (t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%') 
+            WHERE (t.project_id = p.id OR LOWER(t.github_repo) = LOWER(p.github_repo_name) OR LOWER(t.github_repo) = LOWER(p.name) OR LOWER(t.github_repo) LIKE '%' || LOWER(p.name) || '%') 
               AND (t.status != 'DONE' AND (t.user_status != 'COMPLETED' OR t.user_status IS NULL))
+              AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
            ) as active_todos,
            (SELECT COUNT(*) FROM tasks t 
-            WHERE (t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%') 
+            WHERE (t.project_id = p.id OR LOWER(t.github_repo) = LOWER(p.github_repo_name) OR LOWER(t.github_repo) = LOWER(p.name) OR LOWER(t.github_repo) LIKE '%' || LOWER(p.name) || '%') 
               AND (t.status = 'DONE' OR t.user_status = 'COMPLETED')
+              AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
            ) as completed_tasks,
            (SELECT COUNT(*) FROM tasks t 
-            WHERE t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%'
+            WHERE (t.project_id = p.id OR LOWER(t.github_repo) = LOWER(p.github_repo_name) OR LOWER(t.github_repo) = LOWER(p.name) OR LOWER(t.github_repo) LIKE '%' || LOWER(p.name) || '%')
+              AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
            ) as total_tasks,
            (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) as members_count
     FROM projects p
