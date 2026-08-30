@@ -117,10 +117,22 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
 
       {/* Main Split Grid Container */}
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-        {/* Left Column: Pure Isometric Vector SVG Workstation Line Art */}
+        {/* Left Column: Exact Isometric Desk Artwork (100% Transparent, Zero Box Borders) */}
         <div className="lg:col-span-7 flex items-center justify-center p-2 sm:p-4">
           <div className="relative w-full max-w-lg lg:max-w-xl aspect-4/3 flex items-center justify-center transition-all duration-300">
-            <WorkstationSvg isDark={isDark} />
+            {isDark ? (
+              <img
+                src="/exact-desk-dark.png"
+                alt="SHIORI Developer Workstation Dark"
+                className="w-full h-full object-contain filter drop-shadow-[0_0_20px_rgba(255,255,255,0.06)] select-none pointer-events-none"
+              />
+            ) : (
+              <img
+                src="/exact-desk-light.png"
+                alt="SHIORI Developer Workstation Light"
+                className="w-full h-full object-contain filter drop-shadow-[0_0_20px_rgba(0,0,0,0.06)] select-none pointer-events-none"
+              />
+            )}
           </div>
         </div>
 
