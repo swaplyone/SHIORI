@@ -211,6 +211,9 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   const taskCode = `SHR-${String(nextNum).padStart(4, '0')}`;
   const taskId = uuidv4();
 
+  const rawAssignee = req.body.assigneeId || req.body.assignee_id || req.body.assignee;
+  const targetAssigneeId = typeof rawAssignee === 'object' ? rawAssignee?.id : (rawAssignee || null);
+
   await runQuery(`
     INSERT INTO tasks (
       id, task_number, task_code, project_id, workspace_id, title, description,
@@ -225,7 +228,7 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     )
   `, [
     taskId, nextNum, taskCode, projectId, finalWorkspaceId, title, description || '',
-    status, priority, assigneeId || req.user!.id, req.user!.id, dueDate || 'Tomorrow',
+    status, priority, targetAssigneeId || req.user!.id, req.user!.id, dueDate || 'Tomorrow',
     due_at || null, reminder_at || null, recurrence_rule || null, tags || null,
     finalGithubRepo || null, githubBranch || null
   ]);
@@ -245,20 +248,20 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   emitToWorkspace(finalWorkspaceId, 'task:created', { task: createdTask });
 
   // Notify assignee if assigned to someone else
-  if (assigneeId && assigneeId !== req.user!.id) {
+  if (targetAssigneeId && targetAssigneeId !== req.user!.id) {
     const notifId = uuidv4();
     await runQuery(`
       INSERT INTO notifications (id, user_id, task_id, title, message, type, is_read, read, created_at)
       VALUES (?, ?, ?, ?, ?, 'TASK_ASSIGNMENT', 0, 0, datetime('now'))
     `, [
       notifId,
-      assigneeId,
+      targetAssigneeId,
       taskId,
       `New Task Assigned: ${taskCode}`,
       `${req.user!.name} assigned task "${title}" (${taskCode}) to you.`
     ]);
 
-    emitToUser(assigneeId, 'notification:new', {
+    emitToUser(targetAssigneeId, 'notification:new', {
       id: notifId,
       title: `New Task Assigned: ${taskCode}`,
       message: `${req.user!.name} assigned task "${title}" (${taskCode}) to you.`,
@@ -266,7 +269,7 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
       task_id: taskId
     });
 
-    emitToUser(assigneeId, 'task:assigned', {
+    emitToUser(targetAssigneeId, 'task:assigned', {
       taskId,
       taskCode,
       title,
@@ -445,7 +448,8 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
   const status = req.body.status;
   const priority = req.body.priority;
   const userStatus = req.body.userStatus || req.body.user_status || (status === 'DONE' ? 'COMPLETED' : (status ? 'IN_PROGRESS' : undefined));
-  const assigneeId = req.body.assigneeId || req.body.assignee_id;
+  const rawAssignee = req.body.assigneeId || req.body.assignee_id || req.body.assignee;
+  const assigneeId = typeof rawAssignee === 'object' ? rawAssignee?.id : (rawAssignee !== undefined ? rawAssignee : undefined);
   const dueDate = req.body.dueDate || req.body.due_date;
   const due_at = req.body.due_at;
   const reminder_at = req.body.reminder_at;

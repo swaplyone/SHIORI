@@ -83,6 +83,8 @@ export const NotificationsPage: React.FC = () => {
           const isFailed = n.type === 'BUILD_FAILED';
           const isRecovered = n.type === 'BUILD_RECOVERED';
           const isReview = n.type === 'PR_REVIEW';
+          const isAssignment = n.type === 'TASK_ASSIGNMENT';
+          const isInvite = n.type === 'PROJECT_INVITATION';
 
           return (
             <div
@@ -105,10 +107,14 @@ export const NotificationsPage: React.FC = () => {
                         ? 'bg-eink-darkSurface text-eink-darkText'
                         : isRecovered
                         ? 'bg-eink-text text-eink-bg'
+                        : isAssignment
+                        ? 'bg-eink-text text-eink-bg'
+                        : isInvite
+                        ? 'bg-eink-darkSurface text-eink-darkText'
                         : 'bg-eink-surface border border-eink-border text-eink-text'
                     }`}
                   >
-                    {isFailed ? '✕' : isRecovered ? '✓' : '→'}
+                    {isFailed ? '✕' : isRecovered ? '✓' : isAssignment ? '📋' : isInvite ? '✉' : '→'}
                   </div>
 
                   <div className="space-y-0.5">

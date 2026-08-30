@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Notification } from '../types';
 import { useAuth } from './AuthContext';
 import { useSocket } from './SocketContext';
+import { shioriAudio } from '../utils/shioriAudio';
+import { reminderManager } from '../utils/reminderManager';
 
 interface ToastNotice {
   id: string;
@@ -94,13 +96,64 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       fetchNotifications();
     };
 
+    const handleNewNotification = (data: any) => {
+      triggerEInkRefresh();
+      shioriAudio.playSoftClick(0.15);
+      fetchNotifications();
+
+      if (data.title) {
+        reminderManager.showNotification(data.title, {
+          body: data.message || 'You have a new update in SHIORI.',
+          tag: `shiori-notif-${data.id || Date.now()}`,
+        });
+      }
+    };
+
+    const handleTaskAssigned = (data: any) => {
+      triggerEInkRefresh();
+      shioriAudio.playSoftClick(0.18);
+      fetchNotifications();
+
+      setActiveNotice({
+        id: Date.now().toString(),
+        type: 'INFO',
+        title: `📋 TASK ASSIGNED: ${data.taskCode || ''}`,
+        message: `${data.assignerName || 'A teammate'} assigned "${data.title}" to you.`,
+        taskId: data.taskId,
+      });
+
+      reminderManager.showNotification(`New Task Assigned: ${data.taskCode}`, {
+        body: `${data.assignerName} assigned task "${data.title}" to you.`,
+        tag: `shiori-assigned-${data.taskId}`,
+      });
+    };
+
+    const handleInviteReceived = (data: any) => {
+      triggerEInkRefresh();
+      shioriAudio.playSoftClick(0.15);
+      fetchNotifications();
+
+      setActiveNotice({
+        id: Date.now().toString(),
+        type: 'INFO',
+        title: `✉️ PROJECT INVITATION`,
+        message: `${data.inviterName} invited you to join "${data.projectName}".`,
+      });
+    };
+
     socket.on('ci:updated', handleCIUpdated);
+    socket.on('notification:new', handleNewNotification);
+    socket.on('task:assigned', handleTaskAssigned);
+    socket.on('project:invite_received', handleInviteReceived);
     socket.on('task:updated', () => {
       triggerEInkRefresh();
     });
 
     return () => {
       socket.off('ci:updated', handleCIUpdated);
+      socket.off('notification:new', handleNewNotification);
+      socket.off('task:assigned', handleTaskAssigned);
+      socket.off('project:invite_received', handleInviteReceived);
       socket.off('task:updated');
     };
   }, [socket]);
