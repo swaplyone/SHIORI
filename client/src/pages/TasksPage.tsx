@@ -11,7 +11,8 @@ import {
   ShieldAlert,
   Github,
   Check,
-  Calendar
+  Calendar,
+  X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -146,17 +147,23 @@ export const TasksPage: React.FC = () => {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          projectId: 'proj-compiler-01',
+          projectId: 'default',
           title: quickTaskTitle.trim(),
-          priority: 'MEDIUM',
           status: 'TODO',
-          githubRepo: selectedRepo || 'swaply-one-compiler',
+          priority: 'MEDIUM',
+          githubRepo: selectedRepo || 'SHIORI',
           githubBranch: 'main'
         })
       });
+
       if (res.ok) {
+        const data = await res.json();
+        if (data?.task) {
+          setTasks((prev) => [data.task, ...prev]);
+        }
         setQuickTaskTitle('');
         triggerEInkRefresh();
+        window.dispatchEvent(new Event('shiori-refresh'));
         fetchTasks();
       }
     } catch (err) {
@@ -164,27 +171,25 @@ export const TasksPage: React.FC = () => {
     }
   };
 
-  // Filter tasks by repository
   const filteredTasks = tasks.filter((t) => {
     if (selectedRepo && t.github_repo !== selectedRepo) return false;
     return true;
   });
 
-  const completedCount = filteredTasks.filter((t) => t.status === 'DONE').length;
+  const totalCompletedCount = tasks.filter((t) => t.status === 'DONE').length;
+  const totalEvidenceCommits = tasks.reduce((sum, t) => sum + (t.dev_evidence_commits_count || (t.github_last_commit_hash ? 1 : 0)), 0);
 
   return (
-    <div className="space-y-6 font-sans select-none pb-12">
-      {/* 1. Daily Minimal Summary Block */}
-      <div className="p-3 bg-eink-surface border border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-technical shadow-eink-sm">
+    <div className="space-y-6 select-none font-sans pb-12">
+      {/* 1. Global Metrics Banner */}
+      <div className="p-3.5 bg-eink-surface border border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-technical shadow-eink-sm">
         <div className="flex items-center gap-2">
           <span className="font-bold text-eink-text uppercase tracking-wider">TODAY SUMMARY:</span>
           <span className="text-eink-textSecondary">
-            {completedCount} TODOs completed · 7 commits · 13 files changed
+            {totalCompletedCount} TODOs completed · {totalEvidenceCommits} verified commits
           </span>
         </div>
         <div className="flex items-center gap-2 font-mono text-[11px] text-eink-text">
-          <span className="font-bold">+482 lines</span>
-          <span className="text-eink-textMuted">-126 lines</span>
           <span className="bg-eink-bg px-1.5 py-0.5 border border-eink-border rounded font-bold">
             {user?.points ?? 120} PTS
           </span>
@@ -198,7 +203,7 @@ export const TasksPage: React.FC = () => {
             <span>REPOSITORY-BASED WORKSPACE</span>
             <span>•</span>
             <span className="font-mono text-eink-text font-bold">
-              {selectedRepo ? selectedRepo.toUpperCase() : 'ALL REPOSITORIES'} ({filteredTasks.length})
+              {selectedRepo ? selectedRepo.toUpperCase() : 'ALL REPOSITORIES'} ({loading ? '...' : filteredTasks.length})
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold font-technical text-eink-text uppercase tracking-tight">
@@ -233,7 +238,7 @@ export const TasksPage: React.FC = () => {
               setCreateInitialStatus('TODO');
               setIsCreateOpen(true);
             }}
-            className="px-4 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99]"
+            className="px-4 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99] cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>+ ADD TODO</span>
@@ -241,49 +246,39 @@ export const TasksPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Filter Toolbar: Repository = Project */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-technical text-xs">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Repository Selector (Repository = Project) */}
-          <div className="flex items-center gap-1 bg-eink-surface border border-eink-border px-2 py-1 rounded-sm">
-            <Github className="w-3.5 h-3.5 text-eink-text" />
-            <select
-              value={selectedRepo}
-              onChange={(e) => setSelectedRepo(e.target.value)}
-              className="bg-transparent border-none text-eink-text font-mono font-bold text-xs outline-none cursor-pointer"
-            >
-              <option value="">ALL REPOSITORIES</option>
-              {repositories.map((r) => (
-                <option key={r.name} value={r.name}>
-                  {r.name.toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Status Filter */}
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="px-3 py-1.5 bg-eink-surface border border-eink-border rounded-sm text-eink-text outline-none"
-          >
-            <option value="">ALL STATUSES</option>
-            <option value="TODO">○ PENDING</option>
-            <option value="IN_PROGRESS">◐ IN PROGRESS</option>
-            <option value="DONE">✓ COMPLETED</option>
-          </select>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-eink-textMuted" />
+      {/* 3. Search & Repository Selectors */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs font-technical">
+        <div className="flex items-center gap-2 flex-1 max-w-md bg-eink-surface border border-eink-border rounded-sm px-2.5 py-1.5 shadow-eink-sm">
+          <Search className="w-3.5 h-3.5 text-eink-textMuted" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter tasks..."
-            className="w-full md:w-56 pl-8 pr-3 py-1.5 bg-eink-surface border border-eink-border rounded-sm text-eink-text outline-none"
+            placeholder="Search by title, code, or description..."
+            className="w-full bg-transparent text-eink-text outline-none text-xs"
           />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="text-eink-textMuted hover:text-eink-text">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Repository Filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-eink-textMuted uppercase font-bold">REPO:</span>
+          <select
+            value={selectedRepo}
+            onChange={(e) => setSelectedRepo(e.target.value)}
+            className="px-2.5 py-1.5 bg-eink-surface border border-eink-border rounded-sm text-xs font-technical font-bold text-eink-text outline-none shadow-eink-sm"
+          >
+            <option value="">ALL REPOSITORIES</option>
+            {repositories.map((repo) => (
+              <option key={repo.name} value={repo.name}>
+                {repo.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -306,13 +301,13 @@ export const TasksPage: React.FC = () => {
               type="text"
               value={quickTaskTitle}
               onChange={(e) => setQuickTaskTitle(e.target.value)}
-              placeholder={`+ Quick add TODO to ${selectedRepo || 'swaply-one-compiler'} (press Enter)...`}
+              placeholder={`+ Quick add TODO to ${selectedRepo || 'SHIORI'} (press Enter)...`}
               className="flex-1 px-3 py-2 bg-eink-surface border border-eink-border rounded-sm text-eink-text outline-none focus:border-eink-text text-xs font-sans"
             />
             <button
               type="submit"
               disabled={!quickTaskTitle.trim()}
-              className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm disabled:opacity-50 flex items-center gap-1.5"
+              className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>ADD TODO</span>
@@ -320,8 +315,23 @@ export const TasksPage: React.FC = () => {
           </form>
 
           {/* List Table */}
-          <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border/60 overflow-hidden shadow-eink-card">
-            {filteredTasks.length === 0 ? (
+          <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border overflow-hidden shadow-eink-card">
+            {loading ? (
+              <div className="p-4 space-y-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex items-center justify-between gap-4 p-2 animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="w-4 h-4 bg-eink-border/40 rounded-xs" />
+                      <div className="space-y-1.5">
+                        <div className="h-4 w-52 bg-eink-border/50 rounded-xs" />
+                        <div className="h-3 w-36 bg-eink-border/30 rounded-xs" />
+                      </div>
+                    </div>
+                    <div className="h-6 w-24 bg-eink-border/35 rounded-xs" />
+                  </div>
+                ))}
+              </div>
+            ) : filteredTasks.length === 0 ? (
               <div className="p-12 text-center text-xs text-eink-textMuted font-technical">
                 No to-do tasks found for this repository. Click <strong>+ ADD TODO</strong> to create one.
               </div>

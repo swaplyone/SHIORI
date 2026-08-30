@@ -143,23 +143,55 @@ export const RepositoriesPage: React.FC = () => {
       </div>
 
       {/* Repositories Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-technical">
-        {repositories.map((repo) => (
-          <div
-            key={repo.name}
-            className="p-5 bg-eink-surface border-2 border-eink-border hover:border-eink-text rounded-sm space-y-4 shadow-eink-sm transition-all"
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2">
-                <Github className="w-4 h-4 text-eink-text" />
-                <h3 className="font-bold text-sm text-eink-text uppercase tracking-wide">
-                  {repo.name}
-                </h3>
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-technical">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="p-5 bg-eink-surface border-2 border-eink-border rounded-sm space-y-4 shadow-eink-sm animate-pulse"
+            >
+              <div className="flex justify-between">
+                <div className="h-4 w-32 bg-eink-border/40 rounded-xs" />
+                <div className="h-4 w-12 bg-eink-border/30 rounded-xs" />
               </div>
-              <span className="text-[10px] bg-eink-bg px-2 py-0.5 border border-eink-border rounded font-mono font-bold">
-                {repo.activeTodosCount} ACTIVE
-              </span>
+              <div className="h-16 bg-eink-border/20 rounded-xs" />
+              <div className="h-8 bg-eink-border/25 rounded-xs" />
             </div>
+          ))}
+        </div>
+      ) : repositories.length === 0 ? (
+        <div className="p-12 text-center border-2 border-dashed border-eink-border rounded-sm space-y-3 bg-eink-surface/30 font-technical">
+          <Github className="w-8 h-8 text-eink-textMuted mx-auto" />
+          <h3 className="font-bold text-sm text-eink-text uppercase">No repositories linked</h3>
+          <p className="text-xs text-eink-textSecondary max-w-sm mx-auto font-sans">
+            Link repositories from your GitHub account to enable automated task tracking and commit recovery.
+          </p>
+          <button
+            onClick={handleOpenAddModal}
+            className="px-4 py-2 bg-eink-text text-eink-bg text-xs font-technical font-bold rounded-sm inline-flex items-center gap-1.5 shadow-eink-sm"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>LINK REPOSITORY</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-technical">
+          {repositories.map((repo) => (
+            <div
+              key={repo.name}
+              className="p-5 bg-eink-surface border-2 border-eink-border hover:border-eink-text rounded-sm space-y-4 shadow-eink-sm transition-all"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <Github className="w-4 h-4 text-eink-text" />
+                  <h3 className="font-bold text-sm text-eink-text uppercase tracking-wide">
+                    {repo.name}
+                  </h3>
+                </div>
+                <span className="text-[10px] bg-eink-bg px-2 py-0.5 border border-eink-border rounded font-mono font-bold">
+                  {repo.activeTodosCount || 0} ACTIVE
+                </span>
+              </div>
 
             <div className="space-y-1 text-xs text-eink-textSecondary font-mono border-t border-b border-eink-border/50 py-2.5">
               <div className="flex justify-between">
@@ -176,26 +208,27 @@ export const RepositoriesPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-1">
-              <button
-                onClick={() => navigate(`/tasks?repo=${repo.name}`)}
-                className="px-3 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs flex items-center gap-1 hover:opacity-90"
-              >
-                <span>OPEN WORKSPACE</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  onClick={() => navigate(`/tasks?repo=${repo.name}`)}
+                  className="px-3 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs flex items-center gap-1 hover:opacity-90"
+                >
+                  <span>OPEN WORKSPACE</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
 
-              <button
-                onClick={() => handleArchiveRepo(repo.name)}
-                className="p-1.5 text-eink-textMuted hover:text-eink-text border border-eink-border hover:bg-eink-bg rounded"
-                title="Archive repository from active list (never deletes from GitHub)"
-              >
-                <Archive className="w-3.5 h-3.5" />
-              </button>
+                <button
+                  onClick={() => handleArchiveRepo(repo.name)}
+                  className="p-1.5 text-eink-textMuted hover:text-eink-text border border-eink-border hover:bg-eink-bg rounded"
+                  title="Archive repository from active list (never deletes from GitHub)"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* ADD REPOSITORY MODAL */}
       {isAddModalOpen && (

@@ -117,7 +117,7 @@ export const ProjectDetailPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const { ok } = await fetchJson('/api/tasks', {
+      const { ok, data } = await fetchJson('/api/tasks', {
         method: 'POST',
         body: JSON.stringify({
           projectId: project.id,
@@ -132,10 +132,14 @@ export const ProjectDetailPage: React.FC = () => {
       });
 
       if (ok) {
+        if (data?.task) {
+          setTodos((prev) => [data.task, ...prev]);
+        }
         setNewTodoTitle('');
         setNewTodoDescription('');
         setIsAddTodoOpen(false);
         triggerEInkRefresh();
+        window.dispatchEvent(new Event('shiori-refresh'));
         fetchProjectData();
       }
     } catch (err) {
@@ -296,13 +300,28 @@ export const ProjectDetailPage: React.FC = () => {
             </span>
           </div>
 
-          <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border/60 overflow-hidden shadow-eink-card">
-            {todos.length === 0 ? (
+          <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border">
+            {loading ? (
+              <div className="p-4 space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center justify-between gap-4 p-2 animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="w-4 h-4 bg-eink-border/40 rounded-xs" />
+                      <div className="space-y-1.5">
+                        <div className="h-4 w-48 bg-eink-border/50 rounded-xs" />
+                        <div className="h-3 w-32 bg-eink-border/30 rounded-xs" />
+                      </div>
+                    </div>
+                    <div className="h-6 w-24 bg-eink-border/35 rounded-xs" />
+                  </div>
+                ))}
+              </div>
+            ) : todos.length === 0 ? (
               <div className="p-12 text-center text-xs text-eink-textMuted font-technical space-y-2">
                 <p>No TODOs in this project yet.</p>
                 <button
                   onClick={() => setIsAddTodoOpen(true)}
-                  className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs"
+                  className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs cursor-pointer"
                 >
                   + CREATE FIRST TODO
                 </button>

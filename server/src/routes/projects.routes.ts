@@ -29,14 +29,19 @@ projectsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response):
       `, [p.id]);
 
       const lastCommit = await queryOne(`
-        SELECT * FROM github_commits WHERE repo_name = ? ORDER BY pushed_at DESC LIMIT 1
-      `, [p.github_repo_name]);
+        SELECT * FROM github_commits WHERE repo_name = ? OR repo_name LIKE ? ORDER BY pushed_at DESC LIMIT 1
+      `, [p.github_repo_name, `%${p.github_repo_name}%`]);
+
+      const commitsCountRow = await queryOne(`
+        SELECT COUNT(*) as cnt FROM github_commits 
+        WHERE repo_name = ? OR repo_name LIKE ?
+      `, [p.github_repo_name, `%${p.github_repo_name}%`]);
 
       return {
         ...p,
         membersCount: members.length,
         members,
-        commitsTodayCount: 0,
+        commitsTodayCount: Number(commitsCountRow?.cnt || 0),
         lastCommitMessage: lastCommit?.message || 'Workspace repository initialized'
       };
     })

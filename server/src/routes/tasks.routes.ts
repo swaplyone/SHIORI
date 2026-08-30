@@ -142,18 +142,19 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     return;
   }
 
-  // Get next task number
-  const maxRow = await queryOne('SELECT MAX(task_number) as max_num FROM tasks');
-  const nextNum = (maxRow?.max_num || 42) + 1;
-  const taskCode = `TASK-${String(nextNum).padStart(3, '0')}`;
-  const taskId = uuidv4();
-
   // Find workspace if not given
   let finalWorkspaceId = workspaceId;
   if (!finalWorkspaceId) {
     const project = await queryOne('SELECT workspace_id, github_repo_name FROM projects WHERE id = ?', [projectId]);
     finalWorkspaceId = project?.workspace_id;
   }
+
+  // Get next task number (starts from 1 per project/workspace)
+  const maxRow = await queryOne('SELECT MAX(task_number) as max_num FROM tasks WHERE project_id = ? OR workspace_id = ?', [projectId, finalWorkspaceId]);
+  const countRow = await queryOne('SELECT COUNT(*) as total FROM tasks WHERE project_id = ? OR workspace_id = ?', [projectId, finalWorkspaceId]);
+  const nextNum = (maxRow?.max_num || countRow?.total || 0) + 1;
+  const taskCode = `TASK-${String(nextNum).padStart(3, '0')}`;
+  const taskId = uuidv4();
 
   await runQuery(`
     INSERT INTO tasks (

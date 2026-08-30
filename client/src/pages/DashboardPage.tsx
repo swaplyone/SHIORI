@@ -98,35 +98,46 @@ export const DashboardPage: React.FC = () => {
 
   const totalActiveTodos = projects.reduce((sum, p) => sum + (p.active_todos || 0), 0);
   const totalCompletedTodos = projects.reduce((sum, p) => sum + (p.completed_tasks || 0), 0);
+  const totalCommitsToday = projects.reduce((sum, p) => sum + (p.commitsTodayCount || 0), 0);
 
   return (
     <div className="space-y-8 select-none font-sans pb-12">
       {/* 1. TODAY SUMMARY STRIP */}
-      <div className="p-4 bg-eink-surface border-2 border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-technical shadow-eink-sm">
-        <div>
-          <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider block">
-            SHIORI HOME • TODAY
-          </span>
-          <h2 className="text-sm sm:text-base font-bold text-eink-text uppercase mt-0.5">
-            {totalActiveTodos} TODOs remaining · {totalCompletedTodos} completed · 16 commits today
-          </h2>
+      {loading ? (
+        <div className="p-4 bg-eink-surface border-2 border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-technical shadow-eink-sm animate-pulse">
+          <div className="space-y-2">
+            <div className="h-2.5 w-32 bg-eink-border/40 rounded-xs" />
+            <div className="h-4 w-64 bg-eink-border/50 rounded-xs" />
+          </div>
+          <div className="h-8 w-28 bg-eink-border/40 rounded-xs" />
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* User Points Badge */}
-          <div className="px-2.5 py-1 bg-eink-bg border border-eink-border rounded-sm font-mono text-xs font-bold text-eink-text">
-            {user?.points ?? 120} SHIORI POINTS
+      ) : (
+        <div className="p-4 bg-eink-surface border-2 border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-technical shadow-eink-sm">
+          <div>
+            <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider block">
+              SHIORI HOME • TODAY
+            </span>
+            <h2 className="text-sm sm:text-base font-bold text-eink-text uppercase mt-0.5">
+              {totalActiveTodos} TODOs remaining · {totalCompletedTodos} completed · {totalCommitsToday} commits recorded
+            </h2>
           </div>
 
-          <button
-            onClick={() => setIsAddProjectOpen(true)}
-            className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99] text-xs font-technical"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ ADD PROJECT</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* User Points Badge */}
+            <div className="px-2.5 py-1 bg-eink-bg border border-eink-border rounded-sm font-mono text-xs font-bold text-eink-text">
+              {user?.points ?? 120} SHIORI POINTS
+            </div>
+
+            <button
+              onClick={() => setIsAddProjectOpen(true)}
+              className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99] text-xs font-technical cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ ADD PROJECT</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 2. MY PROJECTS CARDS GRID (Project = GitHub Repository) */}
       <div className="space-y-4 font-technical">
@@ -134,7 +145,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <FolderGit2 className="w-4 h-4 text-eink-text" />
             <h3 className="font-bold text-xs uppercase text-eink-text tracking-wider">
-              MY PROJECTS ({projects.length})
+              MY PROJECTS ({loading ? '...' : projects.length})
             </h3>
           </div>
           <span className="text-[11px] text-eink-textSecondary">
@@ -142,66 +153,81 @@ export const DashboardPage: React.FC = () => {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {projects.map((proj) => (
-            <div
-              key={proj.id}
-              onClick={() => navigate(`/projects/${proj.id}`)}
-              className="p-5 bg-eink-surface border-2 border-eink-border hover:border-eink-text hover:bg-eink-surfaceHover cursor-pointer rounded-sm space-y-3.5 transition-all shadow-eink-sm group"
-            >
-              <div className="flex items-start justify-between">
-                <div className="space-y-1 min-w-0">
-                  <span className="font-bold text-sm text-eink-text uppercase tracking-tight block truncate group-hover:underline">
-                    {proj.name}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="p-5 bg-eink-surface border-2 border-eink-border rounded-sm space-y-3 animate-pulse">
+                <div className="flex justify-between">
+                  <div className="h-4 w-32 bg-eink-border/40 rounded-xs" />
+                  <div className="h-4 w-14 bg-eink-border/30 rounded-xs" />
+                </div>
+                <div className="h-16 bg-eink-border/20 rounded-xs" />
+                <div className="h-3 w-24 bg-eink-border/30 rounded-xs" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {projects.map((proj) => (
+              <div
+                key={proj.id}
+                onClick={() => navigate(`/projects/${proj.id}`)}
+                className="p-5 bg-eink-surface border-2 border-eink-border hover:border-eink-text hover:bg-eink-surfaceHover cursor-pointer rounded-sm space-y-3.5 transition-all shadow-eink-sm group"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1 min-w-0">
+                    <span className="font-bold text-sm text-eink-text uppercase tracking-tight block truncate group-hover:underline">
+                      {proj.name}
+                    </span>
+                    <p className="text-[10px] text-eink-textMuted font-mono truncate">
+                      repo: {proj.github_repo_name}
+                    </p>
+                  </div>
+                  <span className="text-[10px] bg-eink-bg px-2 py-0.5 border border-eink-border rounded font-mono font-bold shrink-0">
+                    {proj.active_todos ?? 0} TODOs
                   </span>
-                  <p className="text-[10px] text-eink-textMuted font-mono truncate">
-                    repo: {proj.github_repo_name}
+                </div>
+
+                <div className="space-y-1 text-xs text-eink-textSecondary font-mono border-t border-b border-eink-border/50 py-2.5">
+                  <div className="flex justify-between">
+                    <span>Members:</span>
+                    <strong className="text-eink-text">{proj.membersCount || 1} members</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Repository commits:</span>
+                    <span>{proj.commitsTodayCount || 0} commits</span>
+                  </div>
+                  <p className="text-[10px] text-eink-textMuted truncate pt-0.5">
+                    Last: {proj.lastCommitMessage}
                   </p>
                 </div>
-                <span className="text-[10px] bg-eink-bg px-2 py-0.5 border border-eink-border rounded font-mono font-bold shrink-0">
-                  {proj.active_todos ?? 3} TODOs
-                </span>
-              </div>
 
-              <div className="space-y-1 text-xs text-eink-textSecondary font-mono border-t border-b border-eink-border/50 py-2.5">
-                <div className="flex justify-between">
-                  <span>Members:</span>
-                  <strong className="text-eink-text">{proj.membersCount || 2} members</strong>
+                <div className="flex items-center justify-between pt-1 text-[11px]">
+                  <span className="text-[10px] text-eink-textMuted font-mono">
+                    branch: {proj.default_branch || 'main'}
+                  </span>
+                  <span className="font-bold text-eink-text flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                    OPEN PROJECT →
+                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Today activity:</span>
-                  <span>{proj.commitsTodayCount || 5} commits today</span>
-                </div>
-                <p className="text-[10px] text-eink-textMuted truncate pt-0.5">
-                  Last: {proj.lastCommitMessage}
-                </p>
               </div>
+            ))}
 
-              <div className="flex items-center justify-between pt-1 text-[11px]">
-                <span className="text-[10px] text-eink-textMuted font-mono">
-                  branch: {proj.default_branch || 'main'}
-                </span>
-                <span className="font-bold text-eink-text flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                  OPEN PROJECT →
-                </span>
+            {/* Add Project Placeholder Card */}
+            <div
+              onClick={() => setIsAddProjectOpen(true)}
+              className="p-5 bg-eink-surface/40 border-2 border-dashed border-eink-border hover:border-eink-text cursor-pointer rounded-sm flex flex-col items-center justify-center text-center space-y-2 min-h-[180px] transition-colors"
+            >
+              <div className="w-8 h-8 rounded-full border border-eink-border flex items-center justify-center text-eink-text">
+                <Plus className="w-4 h-4" />
               </div>
+              <span className="font-bold text-xs text-eink-text uppercase">ADD GITHUB PROJECT</span>
+              <p className="text-[10px] text-eink-textMuted font-sans max-w-[200px]">
+                Select a repository to create a shared project. No new GitHub login.
+              </p>
             </div>
-          ))}
-
-          {/* Add Project Placeholder Card */}
-          <div
-            onClick={() => setIsAddProjectOpen(true)}
-            className="p-5 bg-eink-surface/40 border-2 border-dashed border-eink-border hover:border-eink-text cursor-pointer rounded-sm flex flex-col items-center justify-center text-center space-y-2 min-h-[180px] transition-colors"
-          >
-            <div className="w-8 h-8 rounded-full border border-eink-border flex items-center justify-center text-eink-text">
-              <Plus className="w-4 h-4" />
-            </div>
-            <span className="font-bold text-xs text-eink-text uppercase">ADD GITHUB PROJECT</span>
-            <p className="text-[10px] text-eink-textMuted font-sans max-w-[200px]">
-              Select a repository to create a shared project. No new GitHub login.
-            </p>
           </div>
-        </div>
+        )}
       </div>
 
       {/* 3. YOUR INTENTIONAL SHIORI ID */}

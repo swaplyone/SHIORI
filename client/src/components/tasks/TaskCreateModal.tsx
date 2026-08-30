@@ -79,7 +79,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          projectId: 'proj-compiler-01',
+          projectId: 'default',
           title: title.trim(),
           description: description.trim() || null,
           status,
@@ -95,6 +95,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         setTitle('');
         setDescription('');
         setGithubBranch('main');
+        window.dispatchEvent(new Event('shiori-refresh'));
         onTaskCreated();
         onClose();
       }
