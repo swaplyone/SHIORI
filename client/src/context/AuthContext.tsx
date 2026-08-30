@@ -100,9 +100,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Apply appearance (UI Mode, Accent Color, Font) on DOM
   const applyAppearance = (mode: UIMode, accent: string, font: FontOption) => {
-    document.documentElement.setAttribute('data-ui-mode', mode);
-    document.documentElement.setAttribute('data-font', font);
-    document.documentElement.style.setProperty('--eink-accent', accent);
+    const doc = document.documentElement;
+    doc.setAttribute('data-ui-mode', mode);
+    doc.setAttribute('data-font', font);
+    doc.style.setProperty('--eink-accent', accent);
+    doc.style.setProperty('--eink-accent-soft', `${accent}22`);
+
+    // Contrast calculation for primary button text
+    let contrast = '#FFFFFF';
+    if (accent && accent.startsWith('#') && accent.length === 7) {
+      const r = parseInt(accent.slice(1, 3), 16);
+      const g = parseInt(accent.slice(3, 5), 16);
+      const b = parseInt(accent.slice(5, 7), 16);
+      const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+      contrast = yiq >= 150 ? '#111111' : '#FFFFFF';
+    }
+    doc.style.setProperty('--eink-accent-contrast', contrast);
+
+    // Dynamic Font Stack
+    let fontStack = "'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    if (font === 'inter') {
+      fontStack = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    } else if (font === 'plex_sans') {
+      fontStack = "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif";
+    } else if (font === 'plex_mono') {
+      fontStack = "'IBM Plex Mono', 'JetBrains Mono', Menlo, Consolas, monospace";
+    } else if (font === 'serif') {
+      fontStack = "'Instrument Serif', 'Newsreader', Georgia, serif";
+    } else if (font === 'abask') {
+      fontStack = "'Abask', 'Instrument Serif', Georgia, serif";
+    }
+    doc.style.setProperty('--font-app', fontStack);
   };
 
   // Initial startup: apply cached preferences immediately to prevent flash

@@ -101,29 +101,68 @@ html[data-font="abask"], [data-font="abask"] {
   --font-app: 'Abask', 'Instrument Serif', Georgia, serif;
 }
 
-/* COLOR MATTE MODE EXTENSIONS */
-html[data-ui-mode="color_matte"] {
-  --eink-accent-soft: color-mix(in srgb, var(--eink-accent) 14%, transparent);
+/* Global Font Application */
+body,
+.font-sans,
+.font-technical {
+  font-family: var(--font-app, 'Geist', 'Inter', -apple-system, sans-serif) !important;
 }
 
-/* Primary actions and interactive focus in Color Matte */
+/* COLOR MATTE MODE EXTENSIONS */
+html[data-ui-mode="color_matte"] {
+  --eink-accent-soft: color-mix(in srgb, var(--eink-accent) 15%, transparent);
+}
+
+/* 1. Primary Action Buttons & Solid Controls in Color Matte */
 html[data-ui-mode="color_matte"] button.bg-eink-text,
-html[data-ui-mode="color_matte"] .btn-primary {
+html[data-ui-mode="color_matte"] a.bg-eink-text,
+html[data-ui-mode="color_matte"] button.bg-eink-darkSurface,
+html[data-ui-mode="color_matte"] a.bg-eink-darkSurface,
+html[data-ui-mode="color_matte"] .btn-primary,
+html[data-ui-mode="color_matte"] button[class*="bg-eink-text"],
+html[data-ui-mode="color_matte"] a[class*="bg-eink-text"] {
   background-color: var(--eink-accent) !important;
-  color: var(--eink-accent-contrast) !important;
+  color: var(--eink-accent-contrast, #FFFFFF) !important;
   border-color: var(--eink-accent) !important;
 }
 
-/* Active navigation pill & selected indicators in Color Matte */
+/* 2. Active Tab Buttons & Navigation Pills in Color Matte */
+html[data-ui-mode="color_matte"] button[class*="bg-eink-darkSurface text-eink-darkText"],
+html[data-ui-mode="color_matte"] .tab-active,
+html[data-ui-mode="color_matte"] .nav-active {
+  background-color: var(--eink-accent) !important;
+  color: var(--eink-accent-contrast, #FFFFFF) !important;
+  border-color: var(--eink-accent) !important;
+}
+
+/* 3. Priority Badges & Indicators in Color Matte */
+html[data-ui-mode="color_matte"] .accent-badge,
+html[data-ui-mode="color_matte"] span[class*="bg-eink-darkSurface text-eink-darkText"],
+html[data-ui-mode="color_matte"] span[class*="bg-eink-text text-eink-bg"] {
+  background-color: var(--eink-accent) !important;
+  color: var(--eink-accent-contrast, #FFFFFF) !important;
+  border-color: var(--eink-accent) !important;
+}
+
+/* 4. Active selections & borders */
+html[data-ui-mode="color_matte"] .border-eink-text {
+  border-color: var(--eink-accent) !important;
+}
+
+/* 5. Checkboxes and Task checks */
+html[data-ui-mode="color_matte"] svg.lucide-check-square,
+html[data-ui-mode="color_matte"] svg.lucide-check {
+  color: var(--eink-accent);
+}
+
+/* 6. Active Highlights & Subtle Accents */
 html[data-ui-mode="color_matte"] .accent-highlight {
   border-color: var(--eink-accent) !important;
   background-color: var(--eink-accent-soft) !important;
 }
 
-html[data-ui-mode="color_matte"] .accent-badge {
-  background-color: var(--eink-accent-soft) !important;
-  color: var(--eink-text) !important;
-  border-color: var(--eink-accent) !important;
+html[data-ui-mode="color_matte"] .accent-text {
+  color: var(--eink-accent) !important;
 }
 
 html {
@@ -138,7 +177,6 @@ body {
   overflow-x: hidden;
   background-color: var(--eink-bg);
   color: var(--eink-text);
-  font-family: var(--font-app, 'Geist', 'Inter', -apple-system, sans-serif);
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
