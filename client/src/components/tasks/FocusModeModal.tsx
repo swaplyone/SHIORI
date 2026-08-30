@@ -29,11 +29,10 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
   const [customInputVal, setCustomInputVal] = useState('10');
 
   const openedTaskIdRef = useRef<string | null>(null);
-  const DURATION_PRESETS = [5, 15, 25, 45, 60];
+  const DURATION_PRESETS = [5, 10, 15, 25, 30, 45, 60];
 
   useEffect(() => {
     if (isOpen && task && token) {
-      // Only reset timer state if this is a newly opened task
       if (openedTaskIdRef.current !== task.id) {
         openedTaskIdRef.current = task.id;
         setSelectedMinutes(25);
@@ -58,6 +57,15 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
   const handleSelectDuration = (minutes: number) => {
     setSelectedMinutes(minutes);
     setSecondsRemaining(minutes * 60);
+    setIsActive(false);
+    setIsFinished(false);
+    setHasWarnedEnding(false);
+  };
+
+  const adjustMinutes = (delta: number) => {
+    const newMins = Math.max(1, Math.min(240, selectedMinutes + delta));
+    setSelectedMinutes(newMins);
+    setSecondsRemaining(newMins * 60);
     setIsActive(false);
     setIsFinished(false);
     setHasWarnedEnding(false);
@@ -183,6 +191,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
         </div>
 
         <button
+          type="button"
           onClick={onClose}
           className="px-3 py-1.5 border border-eink-border rounded-sm text-xs text-eink-textSecondary hover:text-eink-text hover:bg-eink-surface flex items-center gap-1.5 cursor-pointer"
         >
@@ -192,9 +201,9 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
       </div>
 
       {/* Main Focus Card */}
-      <div className="max-w-2xl mx-auto w-full text-center space-y-6 my-auto py-4">
+      <div className="max-w-2xl mx-auto w-full text-center space-y-5 my-auto py-3">
         {/* Task Title & Specs */}
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <h1 className="text-2xl sm:text-3xl font-bold text-eink-text tracking-tight font-sans">
             {task.title}
           </h1>
@@ -206,14 +215,19 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
         </div>
 
         {/* Duration Preset Selector Pills */}
-        <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+        <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
           <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider mr-1">
-            DURATION:
+            TIMER:
           </span>
           {DURATION_PRESETS.map((m) => (
             <button
               key={m}
-              onClick={() => handleSelectDuration(m)}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSelectDuration(m);
+              }}
               className={`px-3 py-1 text-xs font-mono font-bold rounded-sm border transition-all cursor-pointer ${
                 selectedMinutes === m && !customInputOpen
                   ? 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface shadow-eink-sm'
@@ -224,6 +238,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
             </button>
           ))}
           <button
+            type="button"
             onClick={() => setCustomInputOpen(!customInputOpen)}
             className={`px-2.5 py-1 text-xs font-mono rounded-sm border transition-all cursor-pointer ${
               customInputOpen
@@ -250,7 +265,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
             />
             <button
               type="submit"
-              className="px-3 py-1 bg-eink-text text-eink-bg text-xs font-bold rounded-sm shadow-eink-sm"
+              className="px-3 py-1 bg-eink-text text-eink-bg text-xs font-bold rounded-sm shadow-eink-sm cursor-pointer"
             >
               SET
             </button>
@@ -258,7 +273,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
         )}
 
         {/* Large Minimal Timer */}
-        <div className="py-4">
+        <div className="py-2">
           {isFinished ? (
             <div className="space-y-2 p-6 bg-eink-surface border-2 border-eink-text rounded-sm animate-fade-in max-w-md mx-auto">
               <div className="flex items-center justify-center gap-2 text-eink-text font-bold text-sm uppercase tracking-wider">
@@ -270,6 +285,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
               </p>
               <div className="flex items-center justify-center gap-2 pt-3">
                 <button
+                  type="button"
                   onClick={handleStartBreak}
                   className="px-3.5 py-1.5 bg-eink-surface border border-eink-border rounded-sm text-xs font-bold text-eink-text flex items-center gap-1.5 hover:bg-eink-surfaceHover cursor-pointer"
                 >
@@ -277,12 +293,14 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
                   <span>5M BREAK</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleSelectDuration(selectedMinutes)}
                   className="px-3.5 py-1.5 border border-eink-border rounded-sm text-xs font-bold text-eink-text hover:bg-eink-surface cursor-pointer"
                 >
                   RESTART
                 </button>
                 <button
+                  type="button"
                   onClick={handleCompleteTask}
                   className="px-3.5 py-1.5 bg-eink-text text-eink-bg rounded-sm text-xs font-bold flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 cursor-pointer"
                 >
@@ -292,13 +310,49 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
               </div>
             </div>
           ) : (
-            <div>
+            <div className="space-y-2">
               <div className="font-mono text-6xl sm:text-8xl font-bold tracking-tighter text-eink-text">
                 {timeFormatted}
               </div>
-              <div className="text-[11px] text-eink-textMuted uppercase tracking-widest mt-2 flex items-center justify-center gap-1.5">
-                <Clock className="w-3 h-3" />
-                <span>{isActive ? `FOCUSING (${selectedMinutes} MIN)` : 'READY TO START'}</span>
+
+              {/* Quick Adjuster Buttons */}
+              <div className="flex items-center justify-center gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => adjustMinutes(-5)}
+                  className="px-2 py-0.5 border border-eink-border text-[11px] font-mono rounded hover:bg-eink-surface text-eink-textSecondary hover:text-eink-text cursor-pointer"
+                  title="Subtract 5 minutes"
+                >
+                  -5m
+                </button>
+                <button
+                  type="button"
+                  onClick={() => adjustMinutes(-1)}
+                  className="px-2 py-0.5 border border-eink-border text-[11px] font-mono rounded hover:bg-eink-surface text-eink-textSecondary hover:text-eink-text cursor-pointer"
+                  title="Subtract 1 minute"
+                >
+                  -1m
+                </button>
+                <div className="text-[11px] text-eink-textMuted uppercase tracking-widest px-2 flex items-center justify-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  <span>{isActive ? `FOCUSING (${selectedMinutes}M)` : `${selectedMinutes}M READY`}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => adjustMinutes(1)}
+                  className="px-2 py-0.5 border border-eink-border text-[11px] font-mono rounded hover:bg-eink-surface text-eink-textSecondary hover:text-eink-text cursor-pointer"
+                  title="Add 1 minute"
+                >
+                  +1m
+                </button>
+                <button
+                  type="button"
+                  onClick={() => adjustMinutes(5)}
+                  className="px-2 py-0.5 border border-eink-border text-[11px] font-mono rounded hover:bg-eink-surface text-eink-textSecondary hover:text-eink-text cursor-pointer"
+                  title="Add 5 minutes"
+                >
+                  +5m
+                </button>
               </div>
             </div>
           )}
@@ -306,8 +360,9 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
 
         {/* Timer Controls */}
         {!isFinished && (
-          <div className="flex flex-wrap items-center justify-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <button
+              type="button"
               onClick={() => setIsActive(!isActive)}
               className="px-6 py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-card flex items-center gap-2 text-xs hover:opacity-90 active:scale-95 transition-all cursor-pointer"
             >
@@ -316,9 +371,11 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 setIsActive(false);
                 setSecondsRemaining(selectedMinutes * 60);
+                setHasWarnedEnding(false);
               }}
               className="p-2.5 border border-eink-border rounded-sm text-eink-textSecondary hover:text-eink-text hover:bg-eink-surface active:scale-95 cursor-pointer"
               title={`Reset timer to ${selectedMinutes}:00`}
@@ -327,6 +384,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
             </button>
 
             <button
+              type="button"
               onClick={handleCompleteTask}
               className="px-5 py-2.5 border border-eink-border bg-eink-surface text-eink-text font-bold rounded-sm flex items-center gap-2 text-xs hover:bg-eink-surfaceHover active:scale-95 transition-all cursor-pointer"
             >
