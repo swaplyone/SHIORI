@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { Plus, FolderGit2, GitBranch, Github, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Project, Workspace } from '../types';
+import { ProjectsGridSkeleton } from '../components/ui/Skeleton';
 
 export const ProjectsPage: React.FC = () => {
   const { token } = useAuth();
@@ -114,22 +115,7 @@ export const ProjectsPage: React.FC = () => {
 
       {/* Projects Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="p-5 bg-eink-surface border border-eink-border rounded-sm space-y-4 shadow-eink-card animate-pulse"
-            >
-              <div className="flex justify-between">
-                <div className="h-4 w-32 bg-eink-border/40 rounded-xs" />
-                <div className="h-4 w-12 bg-eink-border/30 rounded-xs" />
-              </div>
-              <div className="h-10 bg-eink-border/20 rounded-xs" />
-              <div className="h-12 bg-eink-border/25 rounded-xs" />
-              <div className="h-4 bg-eink-border/30 rounded-xs" />
-            </div>
-          ))}
-        </div>
+        <ProjectsGridSkeleton count={3} />
       ) : projects.length === 0 ? (
         <div className="p-12 text-center border-2 border-dashed border-eink-border rounded-sm space-y-3 bg-eink-surface/30">
           <FolderGit2 className="w-8 h-8 text-eink-textMuted mx-auto" />

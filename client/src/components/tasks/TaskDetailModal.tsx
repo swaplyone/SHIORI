@@ -24,6 +24,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { DevelopmentEvidenceBadge } from './DevelopmentEvidenceBadge';
 import { CodeRecoveryModal } from '../recovery/CodeRecoveryModal';
 import { GitHistoryModal } from '../github/GitHistoryModal';
+import { Skeleton, SkeletonTitle, SkeletonText, SkeletonBadge } from '../ui/Skeleton';
 
 interface TaskDetailModalProps {
   taskId: string | null;
@@ -203,8 +204,44 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
 
         {/* Content Container */}
         {loading ? (
-          <div className="p-12 text-center font-technical text-xs text-eink-textMuted">
-            Loading technical document...
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6" aria-busy="true" aria-label="Loading task details...">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-6 border-b border-eink-border">
+              <div className="md:col-span-2 space-y-4">
+                <SkeletonTitle size="lg" width="70%" />
+                <div className="p-4 bg-eink-surface/50 border border-eink-border rounded-sm space-y-2">
+                  <SkeletonText lines={3} widths={['95%', '85%', '60%']} />
+                </div>
+              </div>
+              <div className="space-y-3 p-3.5 bg-eink-surface border border-eink-border rounded-sm">
+                <div className="space-y-1">
+                  <Skeleton variant="text" className="h-2 w-14" />
+                  <Skeleton variant="text" className="h-3 w-28" />
+                </div>
+                <div className="space-y-1">
+                  <Skeleton variant="text" className="h-2 w-16" />
+                  <Skeleton variant="text" className="h-3 w-24" />
+                </div>
+                <div className="space-y-1">
+                  <Skeleton variant="text" className="h-2 w-20" />
+                  <Skeleton variant="text" className="h-3 w-32" />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <SkeletonTitle size="sm" width="140px" />
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="p-3 bg-eink-surface border border-eink-border rounded-sm flex items-center justify-between">
+                    <div className="flex items-center gap-2 flex-1">
+                      <Skeleton variant="rounded" className="w-3.5 h-3.5" />
+                      <SkeletonTitle size="sm" width={i === 1 ? '60%' : '45%'} />
+                    </div>
+                    <SkeletonBadge width="40px" />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         ) : task ? (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">

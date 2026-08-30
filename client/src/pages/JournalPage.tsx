@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Calendar, ArrowRight, CheckCircle2, GitCommit, GitPullRequest, Activity } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { JournalSkeleton } from '../components/ui/Skeleton';
 
 export const JournalPage: React.FC = () => {
   const { token } = useAuth();
@@ -54,9 +55,11 @@ export const JournalPage: React.FC = () => {
         </div>
       </div>
 
-      {/* DAILY PAGE VIEW */}
-      {tab === 'daily' && (
-        <div className="max-w-4xl border border-eink-border rounded-sm bg-eink-surface p-6 sm:p-8 font-technical space-y-8 shadow-eink-card">
+      {/* LOADING SKELETON */}
+      {loading ? (
+        <JournalSkeleton />
+      ) : tab === 'daily' ? (
+        <div className="max-w-4xl border border-eink-border rounded-sm bg-eink-surface p-6 sm:p-8 font-technical space-y-8 shadow-eink-card animate-fade-in">
           {/* Top Date Header */}
           <div className="border-b border-eink-border pb-4 flex items-center justify-between">
             <h2 className="text-lg font-bold uppercase tracking-widest text-eink-text">
@@ -151,11 +154,9 @@ export const JournalPage: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* WEEKLY SUMMARY VIEW */}
-      {tab === 'weekly' && (
-        <div className="max-w-4xl border border-eink-border rounded-sm bg-eink-surface p-6 sm:p-8 font-technical space-y-8 shadow-eink-card">
+      ) : (
+        /* WEEKLY SUMMARY VIEW */
+        <div className="max-w-4xl border border-eink-border rounded-sm bg-eink-surface p-6 sm:p-8 font-technical space-y-8 shadow-eink-card animate-fade-in">
           <div className="border-b border-eink-border pb-4 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold uppercase tracking-widest text-eink-text">

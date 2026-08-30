@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Activity as ActivityIcon, GitCommit, GitPullRequest, Terminal, CheckCircle2, XCircle, CheckSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { GlobalActivity } from '../types';
+import { ActivityLogSkeleton } from '../components/ui/Skeleton';
 
 export const ActivityPage: React.FC = () => {
   const { token } = useAuth();
@@ -48,38 +49,40 @@ export const ActivityPage: React.FC = () => {
       <div className="max-w-3xl border border-eink-border rounded-sm bg-eink-surface p-6 font-technical space-y-6 shadow-eink-card">
         <div className="flex items-center justify-between border-b border-eink-border pb-2">
           <span className="text-xs font-bold text-eink-text uppercase">TODAY & RECENT CHRONOLOGY</span>
-          <span className="text-[11px] text-eink-textMuted">{activities.length} events recorded</span>
+          <span className="text-[11px] text-eink-textMuted">{loading ? '...' : `${activities.length} events recorded`}</span>
         </div>
 
-        <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-eink-border">
-          {(activities.length > 0 ? activities : [
-            { id: '1', category: 'TASK', icon_symbol: '○', title: 'Task created: Fix compiler error handling', meta_text: 'TASK-042', created_at: '09:12' },
-            { id: '2', category: 'COMMIT', icon_symbol: '⎇', title: 'Commit pushed a83f21c', meta_text: 'fix: compiler error rendering (feature/error-page)', created_at: '10:02' },
-            { id: '3', category: 'PR', icon_symbol: '→', title: 'Pull request opened #31', meta_text: 'Improve compiler error handling', created_at: '10:41' },
-            { id: '4', category: 'CI', icon_symbol: '✕', title: 'CI failed on feature/error-page', meta_text: '3 tests failed in parser_nested_test.rs', created_at: '11:42' },
-            { id: '5', category: 'COMMIT', icon_symbol: '⎇', title: 'Fix pushed a91d203', meta_text: 'fix: parser AST token recovery', created_at: '12:03' },
-            { id: '6', category: 'CI', icon_symbol: '✓', title: 'CI passed on feature/error-page', meta_text: 'All 48 checks passed', created_at: '12:07' },
-            { id: '7', category: 'PR', icon_symbol: '✓', title: 'Pull request #31 merged', meta_text: 'Merged into main', created_at: '12:31' },
-            { id: '8', category: 'TASK', icon_symbol: '✓', title: 'Task completed: Fix compiler error handling', meta_text: 'TASK-042', created_at: '12:32' },
-          ]).map((act, idx) => (
-            <div key={act.id || idx} className="relative group">
-              {/* Timeline dot */}
-              <div className="absolute -left-6 top-0.5 w-5 h-5 bg-eink-bg border border-eink-border rounded-sm flex items-center justify-center font-bold text-[10px] text-eink-text shadow-eink-sm">
-                {act.icon_symbol}
-              </div>
-
-              <div className="p-3 bg-eink-bg border border-eink-border rounded-sm space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-eink-text">{act.title}</span>
-                  <span className="text-[11px] text-eink-textMuted">{act.created_at}</span>
+        {loading ? (
+          <ActivityLogSkeleton rows={5} />
+        ) : activities.length === 0 ? (
+          <div className="p-8 text-center text-xs text-eink-textMuted">
+            No activity events recorded yet. Perform Git commits or task updates to see live audit logs.
+          </div>
+        ) : (
+          <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-eink-border animate-fade-in">
+            {activities.map((act) => (
+              <div key={act.id} className="relative flex items-start justify-between gap-4 group">
+                <div className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-eink-bg border-2 border-eink-text flex items-center justify-center text-[8px] font-bold text-eink-text">
+                  •
                 </div>
-                {act.meta_text && (
-                  <p className="text-[11px] text-eink-textSecondary">{act.meta_text}</p>
-                )}
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded">
+                      {act.category}
+                    </span>
+                    <span className="font-bold text-xs text-eink-text">{act.title}</span>
+                  </div>
+                  {act.meta_text && (
+                    <p className="text-[11px] text-eink-textSecondary">{act.meta_text}</p>
+                  )}
+                </div>
+                <span className="text-[10px] text-eink-textMuted font-mono shrink-0">
+                  {act.created_at}
+                </span>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ import { Task, TaskStatus } from '../types';
 import { KanbanBoard } from '../components/tasks/KanbanBoard';
 import { TaskCreateModal } from '../components/tasks/TaskCreateModal';
 import { DevelopmentEvidenceBadge } from '../components/tasks/DevelopmentEvidenceBadge';
+import { TodoListSkeleton, KanbanBoardSkeleton } from '../components/ui/Skeleton';
 
 export const TasksPage: React.FC = () => {
   const { token, user } = useAuth();
@@ -302,7 +303,13 @@ export const TasksPage: React.FC = () => {
       </div>
 
       {/* 4. Main Content: List or Kanban */}
-      {viewMode === 'kanban' ? (
+      {loading ? (
+        viewMode === 'kanban' ? (
+          <KanbanBoardSkeleton />
+        ) : (
+          <TodoListSkeleton rows={5} />
+        )
+      ) : viewMode === 'kanban' ? (
         <KanbanBoard
           tasks={filteredTasks}
           onSelectTask={(task: Task) => openTaskModal(task.id)}
@@ -313,7 +320,7 @@ export const TasksPage: React.FC = () => {
           }}
         />
       ) : (
-        <div className="space-y-4 font-technical">
+        <div className="space-y-4 font-technical animate-fade-in">
           {/* Quick Add Input Form */}
           <form onSubmit={handleQuickAdd} className="flex gap-2 text-xs">
             <input
@@ -335,22 +342,7 @@ export const TasksPage: React.FC = () => {
 
           {/* List Table */}
           <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border overflow-hidden shadow-eink-card">
-            {loading ? (
-              <div className="p-4 space-y-3">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="flex items-center justify-between gap-4 p-2 animate-pulse">
-                    <div className="flex items-center gap-3">
-                      <div className="w-4 h-4 bg-eink-border/40 rounded-xs" />
-                      <div className="space-y-1.5">
-                        <div className="h-4 w-52 bg-eink-border/50 rounded-xs" />
-                        <div className="h-3 w-36 bg-eink-border/30 rounded-xs" />
-                      </div>
-                    </div>
-                    <div className="h-6 w-24 bg-eink-border/35 rounded-xs" />
-                  </div>
-                ))}
-              </div>
-            ) : filteredTasks.length === 0 ? (
+            {filteredTasks.length === 0 ? (
               <div className="p-12 text-center text-xs text-eink-textMuted font-technical">
                 No to-do tasks found for this repository. Click <strong>+ ADD TODO</strong> to create one.
               </div>

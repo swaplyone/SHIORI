@@ -26,6 +26,7 @@ import { CodeRecoveryModal } from '../components/recovery/CodeRecoveryModal';
 import { GitHistoryModal } from '../components/github/GitHistoryModal';
 import { DevelopmentEvidenceBadge } from '../components/tasks/DevelopmentEvidenceBadge';
 import { fetchJson } from '../utils/api';
+import { Skeleton, SkeletonTitle, SkeletonBadge, SkeletonButton, TodoListSkeleton } from '../components/ui/Skeleton';
 
 export const ProjectDetailPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -199,10 +200,47 @@ export const ProjectDetailPage: React.FC = () => {
 
   if (loading && !project) {
     return (
-      <div className="min-h-[400px] flex flex-col items-center justify-center font-technical text-xs space-y-2 select-none text-eink-text">
-        <div className="w-2.5 h-2.5 rounded-full bg-eink-text animate-pulse" />
-        <span className="font-bold tracking-widest text-xs uppercase">SHIORI</span>
-        <span className="text-[10px] text-eink-textMuted">Loading project workspace...</span>
+      <div className="space-y-6 select-none font-sans pb-12" aria-busy="true" aria-label="Loading project workspace...">
+        {/* Top Breadcrumb & Project Header */}
+        <div className="border-b border-eink-border pb-4 space-y-3 font-technical">
+          <Skeleton variant="text" className="h-3 w-32" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1.5 flex-1">
+              <div className="flex items-center gap-2">
+                <Skeleton variant="rounded" className="w-4 h-4" />
+                <SkeletonTitle size="lg" width="220px" />
+              </div>
+              <div className="flex items-center gap-3">
+                <Skeleton variant="text" className="h-2.5 w-36" />
+                <Skeleton variant="text" className="h-2.5 w-24" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <SkeletonButton width="110px" />
+              <SkeletonButton width="105px" />
+            </div>
+          </div>
+        </div>
+
+        {/* Overview Stats Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-technical text-xs">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="p-3 bg-eink-surface border border-eink-border rounded-sm space-y-1">
+              <Skeleton variant="text" className="h-2 w-20" />
+              <SkeletonTitle size="md" width="45px" />
+            </div>
+          ))}
+        </div>
+
+        {/* Tabs & Content List */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 border-b border-eink-border pb-2">
+            <SkeletonButton width="80px" size="sm" />
+            <SkeletonButton width="90px" size="sm" />
+            <SkeletonButton width="75px" size="sm" />
+          </div>
+          <TodoListSkeleton rows={4} />
+        </div>
       </div>
     );
   }

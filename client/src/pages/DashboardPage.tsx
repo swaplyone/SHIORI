@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { fetchJson } from '../utils/api';
+import { DashboardSkeleton } from '../components/ui/Skeleton';
 
 export const DashboardPage: React.FC = () => {
   const { token, user } = useAuth();
@@ -100,44 +101,38 @@ export const DashboardPage: React.FC = () => {
   const totalCompletedTodos = projects.reduce((sum, p) => sum + (p.completed_tasks || 0), 0);
   const totalCommitsToday = projects.reduce((sum, p) => sum + (p.commitsTodayCount || 0), 0);
 
+  if (loading) {
+    return <DashboardSkeleton />;
+  }
+
   return (
-    <div className="space-y-8 select-none font-sans pb-12">
+    <div className="space-y-8 select-none font-sans pb-12 animate-fade-in">
       {/* 1. TODAY SUMMARY STRIP */}
-      {loading ? (
-        <div className="p-4 bg-eink-surface border-2 border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-technical shadow-eink-sm animate-pulse">
-          <div className="space-y-2">
-            <div className="h-2.5 w-32 bg-eink-border/40 rounded-xs" />
-            <div className="h-4 w-64 bg-eink-border/50 rounded-xs" />
-          </div>
-          <div className="h-8 w-28 bg-eink-border/40 rounded-xs" />
+      <div className="p-4 bg-eink-surface border-2 border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-technical shadow-eink-sm">
+        <div>
+          <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider block">
+            SHIORI HOME • TODAY
+          </span>
+          <h2 className="text-sm sm:text-base font-bold text-eink-text uppercase mt-0.5">
+            {totalActiveTodos} TODOs remaining · {totalCompletedTodos} completed · {totalCommitsToday} commits recorded
+          </h2>
         </div>
-      ) : (
-        <div className="p-4 bg-eink-surface border-2 border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-technical shadow-eink-sm">
-          <div>
-            <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider block">
-              SHIORI HOME • TODAY
-            </span>
-            <h2 className="text-sm sm:text-base font-bold text-eink-text uppercase mt-0.5">
-              {totalActiveTodos} TODOs remaining · {totalCompletedTodos} completed · {totalCommitsToday} commits recorded
-            </h2>
+
+        <div className="flex items-center gap-2">
+          {/* User Points Badge */}
+          <div className="px-2.5 py-1 bg-eink-bg border border-eink-border rounded-sm font-mono text-xs font-bold text-eink-text">
+            {user?.points ?? 120} SHIORI POINTS
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* User Points Badge */}
-            <div className="px-2.5 py-1 bg-eink-bg border border-eink-border rounded-sm font-mono text-xs font-bold text-eink-text">
-              {user?.points ?? 120} SHIORI POINTS
-            </div>
-
-            <button
-              onClick={() => setIsAddProjectOpen(true)}
-              className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99] text-xs font-technical cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ ADD PROJECT</span>
-            </button>
-          </div>
+          <button
+            onClick={() => setIsAddProjectOpen(true)}
+            className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99] text-xs font-technical cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ ADD PROJECT</span>
+          </button>
         </div>
-      )}
+      </div>
 
       {/* 2. MY PROJECTS CARDS GRID (Project = GitHub Repository) */}
       <div className="space-y-4 font-technical">
@@ -145,7 +140,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <FolderGit2 className="w-4 h-4 text-eink-text" />
             <h3 className="font-bold text-xs uppercase text-eink-text tracking-wider">
-              MY PROJECTS ({loading ? '...' : projects.length})
+              MY PROJECTS ({projects.length})
             </h3>
           </div>
           <span className="text-[11px] text-eink-textSecondary">
@@ -153,21 +148,7 @@ export const DashboardPage: React.FC = () => {
           </span>
         </div>
 
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="p-5 bg-eink-surface border-2 border-eink-border rounded-sm space-y-3 animate-pulse">
-                <div className="flex justify-between">
-                  <div className="h-4 w-32 bg-eink-border/40 rounded-xs" />
-                  <div className="h-4 w-14 bg-eink-border/30 rounded-xs" />
-                </div>
-                <div className="h-16 bg-eink-border/20 rounded-xs" />
-                <div className="h-3 w-24 bg-eink-border/30 rounded-xs" />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {projects.map((proj) => (
               <div
                 key={proj.id}
@@ -227,7 +208,6 @@ export const DashboardPage: React.FC = () => {
               </p>
             </div>
           </div>
-        )}
       </div>
 
       {/* 3. YOUR INTENTIONAL SHIORI ID */}

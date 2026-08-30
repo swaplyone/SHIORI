@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, UserPlus, Search, Check, X, Shield, GitCommit, GitPullRequest, CheckSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { FriendProgress } from '../types';
+import { ConnectionsGridSkeleton } from '../components/ui/Skeleton';
 
 export const FriendsPage: React.FC = () => {
   const { token } = useAuth();
@@ -175,7 +176,18 @@ export const FriendsPage: React.FC = () => {
       )}
 
       {/* Friends Accountability Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {loading ? (
+        <ConnectionsGridSkeleton count={3} />
+      ) : friends.length === 0 ? (
+        <div className="p-12 text-center border-2 border-dashed border-eink-border rounded-sm space-y-3 bg-eink-surface/30 font-technical">
+          <Users className="w-8 h-8 text-eink-textMuted mx-auto" />
+          <h3 className="font-bold text-sm text-eink-text uppercase">NO FRIENDS CONNECTED</h3>
+          <p className="text-xs text-eink-textSecondary max-w-sm mx-auto font-sans">
+            Use the search bar above to look up teammates by username or SHIORI ID.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
         {friends.map((friend) => (
           <div
             key={friend.id}
@@ -257,6 +269,7 @@ export const FriendsPage: React.FC = () => {
           </div>
         ))}
       </div>
-    </div>
+    )}
+  </div>
   );
 };

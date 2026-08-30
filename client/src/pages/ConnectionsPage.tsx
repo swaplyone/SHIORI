@@ -20,6 +20,7 @@ import { useNotifications } from '../context/NotificationContext';
 import { Connection, ConnectionRequest } from '../types';
 import { ExactIdLookupModal } from '../components/connections/ExactIdLookupModal';
 import { TwoSidedOtpModal } from '../components/connections/TwoSidedOtpModal';
+import { ConnectionsGridSkeleton } from '../components/ui/Skeleton';
 
 export const ConnectionsPage: React.FC = () => {
   const { token, user } = useAuth();
@@ -291,14 +292,25 @@ export const ConnectionsPage: React.FC = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between border-b border-eink-border pb-2 font-technical">
           <h2 className="text-xs font-bold uppercase tracking-wider text-eink-text">
-            ACTIVE CONNECTIONS ({connections.length})
+            ACTIVE CONNECTIONS ({loading ? '...' : connections.length})
           </h2>
           <span className="text-[11px] text-eink-textMuted">
             Mutual two-sided verified relationships
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-technical">
+        {loading ? (
+          <ConnectionsGridSkeleton count={3} />
+        ) : connections.length === 0 ? (
+          <div className="p-12 text-center border-2 border-dashed border-eink-border rounded-sm space-y-3 bg-eink-surface/30 font-technical">
+            <Users className="w-8 h-8 text-eink-textMuted mx-auto" />
+            <h3 className="font-bold text-sm text-eink-text uppercase">NO ACTIVE CONNECTIONS</h3>
+            <p className="text-xs text-eink-textSecondary max-w-sm mx-auto font-sans">
+              Enter an exact SHIORI ID above to initiate a verified, two-sided mutual connection.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-technical">
           {connections.map((conn) => (
             <div
               key={conn.connectionId}
@@ -373,14 +385,8 @@ export const ConnectionsPage: React.FC = () => {
               </div>
             </div>
           ))}
-
-          {connections.length === 0 && !loading && (
-            <div className="col-span-full p-12 text-center text-xs text-eink-textMuted border border-dashed border-eink-border rounded-sm space-y-2">
-              <p className="font-bold text-eink-text">No active connections yet.</p>
-              <p>Enter a colleague's exact SHIORI ID to connect with intentional two-sided verification.</p>
-            </div>
-          )}
         </div>
+      )}
       </div>
 
       {/* Remove Connection Confirmation Modal */}

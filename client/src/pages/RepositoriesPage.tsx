@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { SkeletonCard, SkeletonTitle, SkeletonBadge, Skeleton } from '../components/ui/Skeleton';
 
 export const RepositoriesPage: React.FC = () => {
   const { token, user } = useAuth();
@@ -144,19 +145,37 @@ export const RepositoriesPage: React.FC = () => {
 
       {/* Repositories Cards Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-technical">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-technical" aria-busy="true" aria-label="Loading repositories...">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="p-5 bg-eink-surface border-2 border-eink-border rounded-sm space-y-4 shadow-eink-sm animate-pulse"
-            >
-              <div className="flex justify-between">
-                <div className="h-4 w-32 bg-eink-border/40 rounded-xs" />
-                <div className="h-4 w-12 bg-eink-border/30 rounded-xs" />
+            <SkeletonCard key={i} className="space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2 flex-1">
+                  <Skeleton variant="rounded" className="w-4 h-4 shrink-0" />
+                  <SkeletonTitle size="sm" width="60%" />
+                </div>
+                <SkeletonBadge width="50px" />
               </div>
-              <div className="h-16 bg-eink-border/20 rounded-xs" />
-              <div className="h-8 bg-eink-border/25 rounded-xs" />
-            </div>
+
+              <div className="space-y-2 border-t border-b border-eink-border/50 py-2.5">
+                <div className="flex justify-between">
+                  <Skeleton variant="text" className="h-2.5 w-16" />
+                  <Skeleton variant="text" className="h-2.5 w-20" />
+                </div>
+                <div className="flex justify-between">
+                  <Skeleton variant="text" className="h-2.5 w-24" />
+                  <Skeleton variant="text" className="h-2.5 w-16" />
+                </div>
+                <div className="flex justify-between">
+                  <Skeleton variant="text" className="h-2.5 w-28" />
+                  <Skeleton variant="text" className="h-2.5 w-18" />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <Skeleton variant="rounded" className="h-7 w-32" />
+                <Skeleton variant="rounded" className="h-7 w-7" />
+              </div>
+            </SkeletonCard>
           ))}
         </div>
       ) : repositories.length === 0 ? (

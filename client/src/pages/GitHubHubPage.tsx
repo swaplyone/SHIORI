@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { GitHubHubSkeleton } from '../components/ui/Skeleton';
 
 export const GitHubHubPage: React.FC = () => {
   const { token, user, updateUser } = useAuth();
@@ -28,6 +29,7 @@ export const GitHubHubPage: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [showTokenInput, setShowTokenInput] = useState(false);
   const [selectedLogs, setSelectedLogs] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const fetchStatus = async () => {
     if (!token) return;
@@ -60,8 +62,9 @@ export const GitHubHubPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchStatus();
-    fetchRepos();
+    if (!token) return;
+    setLoading(true);
+    Promise.all([fetchStatus(), fetchRepos()]).finally(() => setLoading(false));
   }, [token]);
 
   const handleConnectDemo = async () => {
@@ -88,25 +91,25 @@ export const GitHubHubPage: React.FC = () => {
     }
   };
 
-  const handleConnectToken = async (e: React.FormEvent) => {
+  const handleConnectPat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!patToken || !token) return;
+    if (!token || !patToken.trim()) return;
     setIsConnecting(true);
     try {
-      const res = await fetch('/api/github/connect-token', {
+      const res = await fetch('/api/github/connect-pat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ token: patToken, username: customUsername || 'developer' })
+        body: JSON.stringify({ patToken: patToken.trim() })
       });
       if (res.ok) {
         triggerEInkRefresh();
         fetchStatus();
         setShowTokenInput(false);
         setPatToken('');
-        updateUser({ github_connected: 1, github_username: customUsername || 'developer' });
+        updateUser({ github_connected: 1 });
       }
     } catch (err) {
       console.error(err);
@@ -144,25 +147,29 @@ export const GitHubHubPage: React.FC = () => {
         </div>
       </div>
 
-      {/* GitHub Account Connection Screen */}
-      <div className="p-6 bg-eink-surface border border-eink-border rounded-sm font-technical space-y-4 shadow-eink-card">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-eink-border pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-eink-text text-eink-bg flex items-center justify-center rounded-sm font-bold text-lg">
-              <Github className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[10px] text-eink-textMuted uppercase font-bold block">
-                GITHUB INTEGRATION
-              </span>
-              <h2 className="text-sm font-bold text-eink-text">
-                {ghStatus?.connected ? '✓ CONNECTED' : 'Not Connected'}
-              </h2>
-              {ghStatus?.connected && (
-                <p className="text-xs text-eink-textSecondary">@{ghStatus.username}</p>
-              )}
-            </div>
-          </div>
+      {loading ? (
+        <GitHubHubSkeleton />
+      ) : (
+        <div className="space-y-8 animate-fade-in">
+          {/* GitHub Account Connection Screen */}
+          <div className="p-6 bg-eink-surface border border-eink-border rounded-sm font-technical space-y-4 shadow-eink-card">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-eink-border pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-eink-text text-eink-bg flex items-center justify-center rounded-sm font-bold text-lg">
+                  <Github className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-[10px] text-eink-textMuted uppercase font-bold block">
+                    GITHUB INTEGRATION
+                  </span>
+                  <h2 className="text-sm font-bold text-eink-text">
+                    {ghStatus?.connected ? '✓ CONNECTED' : 'Not Connected'}
+                  </h2>
+                  {ghStatus?.connected && (
+                    <p className="text-xs text-eink-textSecondary">@{ghStatus.username}</p>
+                  )}
+                </div>
+              </div>
 
           <div className="flex items-center gap-2">
             {ghStatus?.connected ? (
@@ -194,7 +201,7 @@ export const GitHubHubPage: React.FC = () => {
 
         {/* Token Form if toggled */}
         {showTokenInput && !ghStatus?.connected && (
-          <form onSubmit={handleConnectToken} className="p-4 bg-eink-bg border border-eink-border rounded-sm space-y-3 text-xs">
+          <form onSubmit={handleConnectPat} className="p-4 bg-eink-bg border border-eink-border rounded-sm space-y-3 text-xs">
             <h4 className="font-bold text-eink-text uppercase">CONNECT WITH PERSONAL ACCESS TOKEN</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -314,5 +321,7 @@ export const GitHubHubPage: React.FC = () => {
         </div>
       </div>
     </div>
+    )}
+  </div>
   );
 };
