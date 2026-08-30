@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useSocket } from './SocketContext';
 import { reminderManager } from '../utils/reminderManager';
 import { shioriAudio } from '../utils/shioriAudio';
+import { iosLockScreenTimer } from '../utils/iosLockScreenTimer';
 
 export type MorphBarStateType =
   | 'IDLE'
@@ -170,7 +171,18 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Timestamp-based Countdown & Background/Lock-Screen Accuracy Sync
   useEffect(() => {
-    if (!focusTimer.isActive || focusTimer.isPaused) return;
+    if (!focusTimer.isActive || focusTimer.isPaused) {
+      if (focusTimer.isPaused) {
+        iosLockScreenTimer.update(
+          focusTimer.secondsRemaining,
+          focusTimer.totalSeconds,
+          true,
+          focusTimer.taskTitle,
+          focusTimer.projectName
+        );
+      }
+      return;
+    }
 
     const updateTimerFromTimestamp = () => {
       setFocusTimer((prev) => {
@@ -180,7 +192,10 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const totalElapsed = prev.elapsedSeconds + currentSegmentSeconds;
         const remaining = Math.max(0, prev.totalSeconds - totalElapsed);
 
+        iosLockScreenTimer.update(remaining, prev.totalSeconds, false, prev.taskTitle, prev.projectName);
+
         if (remaining === 0) {
+          iosLockScreenTimer.stop();
           if (!hasPlayedCompletionSoundRef.current) {
             hasPlayedCompletionSoundRef.current = true;
             shioriAudio.playFocusChime();
@@ -229,6 +244,10 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       projectName = 'SHIORI',
       durationMinutes = 25
     ) => {
+      if (reminderManager.getPermission() === 'default') {
+        reminderManager.requestPermission().catch(() => {});
+      }
+
       hasPlayedCompletionSoundRef.current = false;
       const totalSec = Math.max(1, durationMinutes) * 60;
 
@@ -244,6 +263,16 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         projectName,
       });
 
+      iosLockScreenTimer.start({
+        taskTitle,
+        projectName,
+        secondsRemaining: totalSec,
+        totalSeconds: totalSec,
+        onPause: () => pauseFocusTimer(),
+        onResume: () => resumeFocusTimer(),
+        onStop: () => stopFocusTimer(),
+      });
+
       dispatchEvent('FOCUS_TIMER', { taskTitle, projectName });
     },
     [dispatchEvent]
@@ -254,6 +283,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const deltaSec = deltaMinutes * 60;
       const newTotal = Math.max(60, prev.totalSeconds + deltaSec);
       const newRemaining = Math.max(1, prev.secondsRemaining + deltaSec);
+      iosLockScreenTimer.update(newRemaining, newTotal, prev.isPaused, prev.taskTitle, prev.projectName);
       return {
         ...prev,
         totalSeconds: newTotal,
@@ -265,6 +295,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setFocusTimerDuration = useCallback((durationMinutes: number) => {
     hasPlayedCompletionSoundRef.current = false;
     const totalSec = Math.max(1, durationMinutes) * 60;
+    iosLockScreenTimer.update(totalSec, totalSec, false, focusTimer.taskTitle, focusTimer.projectName);
     setFocusTimer((prev) => ({
       ...prev,
       totalSeconds: totalSec,
@@ -274,7 +305,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       isPaused: false,
       isCompleted: false,
     }));
-  }, []);
+  }, [focusTimer.taskTitle, focusTimer.projectName]);
 
   const pauseFocusTimer = useCallback(() => {
     setFocusTimer((prev) => {
@@ -282,6 +313,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const currentSegment = Math.max(0, Math.floor((Date.now() - prev.startTime) / 1000));
       const totalElapsed = prev.elapsedSeconds + currentSegment;
       const remaining = Math.max(0, prev.totalSeconds - totalElapsed);
+      iosLockScreenTimer.pause(remaining, prev.totalSeconds, prev.taskTitle, prev.projectName);
       return {
         ...prev,
         isPaused: true,
@@ -294,6 +326,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const resumeFocusTimer = useCallback(() => {
     setFocusTimer((prev) => {
       if (!prev.isActive || !prev.isPaused) return prev;
+      iosLockScreenTimer.resume(prev.secondsRemaining, prev.totalSeconds, prev.taskTitle, prev.projectName);
       return {
         ...prev,
         isPaused: false,
@@ -304,6 +337,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const stopFocusTimer = useCallback(() => {
     hasPlayedCompletionSoundRef.current = false;
+    iosLockScreenTimer.stop();
     setFocusTimer((prev) => ({
       ...prev,
       isActive: false,

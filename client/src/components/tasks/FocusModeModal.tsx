@@ -4,6 +4,7 @@ import { Task, Subtask } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { shioriAudio } from '../../utils/shioriAudio';
 import { reminderManager } from '../../utils/reminderManager';
+import { iosLockScreenTimer } from '../../utils/iosLockScreenTimer';
 
 interface FocusModeModalProps {
   isOpen: boolean;
@@ -61,6 +62,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
     } else if (!isOpen) {
       openedTaskIdRef.current = null;
       setIsActive(false);
+      iosLockScreenTimer.stop();
     }
   }, [isOpen, task?.id, token]);
 
@@ -73,6 +75,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
     hasPlayedChimeRef.current = false;
     elapsedSecondsRef.current = 0;
     startTimeRef.current = 0;
+    iosLockScreenTimer.stop();
   };
 
   const adjustMinutes = (delta: number) => {
@@ -100,6 +103,14 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
       const totalElapsed = elapsedSecondsRef.current + currentSegment;
       const remaining = Math.max(0, totalSec - totalElapsed);
 
+      iosLockScreenTimer.update(
+        remaining,
+        totalSec,
+        false,
+        `${task.task_code}: ${task.title}`,
+        task.github_repo || 'SHIORI'
+      );
+
       // Warning alert near end (1m for normal, 30s for short 5m)
       const warnThreshold = selectedMinutes <= 5 ? 30 : 60;
       if (remaining === warnThreshold && !hasWarnedEnding && task) {
@@ -115,6 +126,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
         setIsActive(false);
         setIsFinished(true);
         setSecondsRemaining(0);
+        iosLockScreenTimer.stop();
 
         // Play completion chime ONCE
         if (!hasPlayedChimeRef.current) {
@@ -153,8 +165,8 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
   }, [isActive, selectedMinutes, task, hasWarnedEnding]);
 
   const handleStartOrPause = async () => {
+    if (!task) return;
     if (!isActive) {
-      // Check notification permission if not prompted yet
       if (reminderManager.getPermission() === 'default') {
         setShowPermissionPrompt(true);
       }
@@ -163,11 +175,42 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
       setIsFinished(false);
       startTimeRef.current = Date.now();
       setIsActive(true);
+
+      const totalSec = selectedMinutes * 60;
+      const currentSegment = Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000));
+      const remaining = Math.max(0, totalSec - (elapsedSecondsRef.current + currentSegment));
+
+      iosLockScreenTimer.start({
+        taskTitle: `${task.task_code}: ${task.title}`,
+        projectName: task.github_repo || 'SHIORI',
+        secondsRemaining: remaining,
+        totalSeconds: totalSec,
+        onPause: () => {
+          const seg = Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000));
+          elapsedSecondsRef.current += seg;
+          setIsActive(false);
+        },
+        onResume: () => {
+          startTimeRef.current = Date.now();
+          setIsActive(true);
+        },
+        onStop: () => {
+          handleReset();
+        },
+      });
     } else {
       // Pause
       const currentSegment = Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000));
       elapsedSecondsRef.current += currentSegment;
       setIsActive(false);
+      const totalSec = selectedMinutes * 60;
+      const remaining = Math.max(0, totalSec - elapsedSecondsRef.current);
+      iosLockScreenTimer.pause(
+        remaining,
+        totalSec,
+        `${task.task_code}: ${task.title}`,
+        task.github_repo || 'SHIORI'
+      );
     }
   };
 
@@ -179,6 +222,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
     elapsedSecondsRef.current = 0;
     startTimeRef.current = 0;
     setSecondsRemaining(selectedMinutes * 60);
+    iosLockScreenTimer.stop();
   };
 
   const handleAllowNotifications = async () => {
