@@ -40,9 +40,15 @@ authRouter.post('/register/send-otp', async (req: Request, res: Response): Promi
     const cleanEmail = email.trim().toLowerCase();
     const cleanUsername = username.trim().toLowerCase();
 
-    const existing = await queryOne('SELECT id FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [cleanEmail, cleanUsername]);
-    if (existing) {
-      res.status(400).json({ error: 'An account with this email or username already exists.' });
+    const existingEmail = await queryOne('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+    if (existingEmail) {
+      res.status(400).json({ error: 'An account with this email already exists.' });
+      return;
+    }
+
+    const existingUsername = await queryOne('SELECT id FROM users WHERE LOWER(username) = LOWER(?)', [cleanUsername]);
+    if (existingUsername) {
+      res.status(400).json({ error: 'This username is already taken. Please choose another.' });
       return;
     }
 
