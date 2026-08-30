@@ -21,6 +21,7 @@ import { KanbanBoard } from '../components/tasks/KanbanBoard';
 import { TaskCreateModal } from '../components/tasks/TaskCreateModal';
 import { DevelopmentEvidenceBadge } from '../components/tasks/DevelopmentEvidenceBadge';
 import { TodoListSkeleton, KanbanBoardSkeleton } from '../components/ui/Skeleton';
+import { AiDeveloperHandoffModal } from '../components/tasks/AiDeveloperHandoffModal';
 
 export const TasksPage: React.FC = () => {
   const { token, user } = useAuth();
@@ -37,6 +38,7 @@ export const TasksPage: React.FC = () => {
   const [quickTaskTitle, setQuickTaskTitle] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createInitialStatus, setCreateInitialStatus] = useState<TaskStatus>('TODO');
+  const [createdHandoffTask, setCreatedHandoffTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Sync selectedRepo with searchParams when searchParams change
@@ -180,6 +182,7 @@ export const TasksPage: React.FC = () => {
         const data = await res.json();
         if (data?.task) {
           setTasks((prev) => [data.task, ...prev]);
+          setCreatedHandoffTask(data.task);
         }
         setQuickTaskTitle('');
         triggerEInkRefresh();
@@ -440,6 +443,12 @@ export const TasksPage: React.FC = () => {
           triggerEInkRefresh();
           fetchTasks();
         }}
+      />
+
+      <AiDeveloperHandoffModal
+        isOpen={Boolean(createdHandoffTask)}
+        task={createdHandoffTask}
+        onClose={() => setCreatedHandoffTask(null)}
       />
     </div>
   );

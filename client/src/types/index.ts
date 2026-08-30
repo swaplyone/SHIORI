@@ -211,6 +211,28 @@ export interface GitHubCommit {
   pushed_at: string;
 }
 
+export interface TaskCommit {
+  id: string;
+  task_id: string;
+  commit_sha: string;
+  commit_message: string;
+  author: string;
+  author_username?: string;
+  author_avatar?: string;
+  branch: string;
+  files_changed: number;
+  insertions: number;
+  deletions: number;
+  status: 'success' | 'failed' | 'warning';
+  tests_status: 'passed' | 'failed' | 'not run';
+  error_count: number;
+  error_details?: string;
+  warnings?: string;
+  ai_source?: string;
+  committed_at: string;
+  created_at: string;
+}
+
 export interface GitHubWorkflowRun {
   id: string;
   task_id?: string;

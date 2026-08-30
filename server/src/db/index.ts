@@ -201,6 +201,28 @@ async function initPgSchema(pool: pg.Pool) {
       UNIQUE (user_id, github_id)
     );
 
+    CREATE TABLE IF NOT EXISTS task_commits (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      commit_sha TEXT NOT NULL,
+      commit_message TEXT NOT NULL,
+      author TEXT,
+      author_username TEXT,
+      author_avatar TEXT,
+      branch TEXT DEFAULT 'main',
+      files_changed INTEGER DEFAULT 1,
+      insertions INTEGER DEFAULT 0,
+      deletions INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'success',
+      tests_status TEXT DEFAULT 'passed',
+      error_count INTEGER DEFAULT 0,
+      error_details TEXT,
+      warnings TEXT,
+      ai_source TEXT,
+      committed_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS github_commits (
       id TEXT PRIMARY KEY,
       task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,

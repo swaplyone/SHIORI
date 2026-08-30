@@ -25,6 +25,8 @@ import { DevelopmentEvidenceBadge } from './DevelopmentEvidenceBadge';
 import { CodeRecoveryModal } from '../recovery/CodeRecoveryModal';
 import { GitHistoryModal } from '../github/GitHistoryModal';
 import { Skeleton, SkeletonTitle, SkeletonText, SkeletonBadge } from '../ui/Skeleton';
+import { AiDeveloperHandoffModal } from './AiDeveloperHandoffModal';
+import { TaskCommitHistory } from './TaskCommitHistory';
 
 interface TaskDetailModalProps {
   taskId: string | null;
@@ -47,6 +49,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
   const [showLogs, setShowLogs] = useState(false);
   const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHandoffOpen, setIsHandoffOpen] = useState(false);
 
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [newCommentText, setNewCommentText] = useState('');
@@ -187,19 +190,34 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
         {/* Header Bar */}
         <div className="p-4 border-b border-eink-border flex items-center justify-between bg-eink-surface">
           <div className="flex items-center gap-3">
-            <span className="font-technical text-sm font-bold px-2 py-0.5 bg-eink-text text-eink-bg rounded-sm">
+            <span className="font-mono text-sm font-bold px-2 py-0.5 bg-eink-text text-eink-bg rounded-sm tracking-wider">
               {task?.task_code || 'TASK'}
             </span>
             <span className="font-technical text-xs text-eink-textMuted uppercase">
               {task?.project_name || 'Project'}
             </span>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 border border-eink-border hover:bg-eink-surfaceHover rounded text-eink-text"
-          >
-            <X className="w-4 h-4" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {task && (
+              <button
+                type="button"
+                onClick={() => setIsHandoffOpen(true)}
+                className="px-2.5 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm text-[11px] font-mono font-bold text-eink-text flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Open AI Developer Handoff"
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                <span>AI PROMPT</span>
+              </button>
+            )}
+
+            <button
+              onClick={onClose}
+              className="p-1 border border-eink-border hover:bg-eink-surfaceHover rounded text-eink-text cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Content Container */}
@@ -435,29 +453,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                 </div>
               )}
 
-              {/* Commits List */}
-              {commits.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-[11px] font-technical font-bold text-eink-textMuted uppercase">
-                    COMMITS ({commits.length})
-                  </h4>
-                  <div className="border border-eink-border rounded-sm divide-y divide-eink-border/50 bg-eink-surface/30">
-                    {commits.map((c) => (
-                      <div key={c.id} className="p-2.5 flex items-center justify-between text-xs font-technical">
-                        <div className="flex items-center gap-2 truncate">
-                          <span className="px-1.5 py-0.2 bg-eink-surface border border-eink-border font-bold rounded">
-                            {c.commit_hash}
-                          </span>
-                          <span className="text-eink-text truncate">{c.message}</span>
-                        </div>
-                        <span className="text-[10px] text-eink-textMuted shrink-0 ml-2">
-                          {c.author_name} • {c.files_changed} files
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Task Commit History Section */}
+              <TaskCommitHistory taskId={task.id} taskCode={task.task_code} />
 
               {/* CI Workflow Logs toggle */}
               {workflowRuns.length > 0 && (
@@ -601,6 +598,12 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           onClose={() => setIsRecoveryOpen(false)}
           defaultRepo={task?.github_repo || 'swaply-one-compiler'}
           taskId={task?.id}
+        />
+
+        <AiDeveloperHandoffModal
+          isOpen={isHandoffOpen}
+          task={task}
+          onClose={() => setIsHandoffOpen(false)}
         />
       </div>
     </div>

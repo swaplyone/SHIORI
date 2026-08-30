@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, GitBranch, Github, Users, Calendar } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { TaskStatus, TaskPriority } from '../../types';
+import { TaskStatus, TaskPriority, Task } from '../../types';
+import { AiDeveloperHandoffModal } from './AiDeveloperHandoffModal';
 
 interface TaskCreateModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [dueDate, setDueDate] = useState('Tomorrow');
   const [assigneeId, setAssigneeId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [createdTask, setCreatedTask] = useState<Task | null>(null);
 
   useEffect(() => {
     if (isOpen && token) {
@@ -64,7 +66,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     setStatus(initialStatus);
   }, [initialStatus]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !createdTask) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,18 +94,28 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       });
 
       if (res.ok) {
+        const data = await res.json();
         setTitle('');
         setDescription('');
         setGithubBranch('main');
         window.dispatchEvent(new Event('shiori-refresh'));
         onTaskCreated();
-        onClose();
+        if (data.task) {
+          setCreatedTask(data.task);
+        } else {
+          onClose();
+        }
       }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCloseHandoff = () => {
+    setCreatedTask(null);
+    onClose();
   };
 
   return (
@@ -275,6 +287,12 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           </div>
         </form>
       </div>
+
+      <AiDeveloperHandoffModal
+        isOpen={Boolean(createdTask)}
+        task={createdTask}
+        onClose={handleCloseHandoff}
+      />
     </div>
   );
 };

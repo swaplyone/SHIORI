@@ -27,6 +27,7 @@ import { GitHistoryModal } from '../components/github/GitHistoryModal';
 import { DevelopmentEvidenceBadge } from '../components/tasks/DevelopmentEvidenceBadge';
 import { fetchJson } from '../utils/api';
 import { Skeleton, SkeletonTitle, SkeletonBadge, SkeletonButton, TodoListSkeleton } from '../components/ui/Skeleton';
+import { AiDeveloperHandoffModal } from '../components/tasks/AiDeveloperHandoffModal';
 
 export const ProjectDetailPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -43,6 +44,7 @@ export const ProjectDetailPage: React.FC = () => {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isAddTodoOpen, setIsAddTodoOpen] = useState(false);
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
+  const [createdHandoffTask, setCreatedHandoffTask] = useState<Task | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
 
@@ -154,6 +156,7 @@ export const ProjectDetailPage: React.FC = () => {
       if (ok) {
         if (data?.task) {
           setTodos((prev) => [data.task, ...prev]);
+          setCreatedHandoffTask(data.task);
         }
         setNewTodoTitle('');
         setNewTodoDescription('');
@@ -760,6 +763,13 @@ export const ProjectDetailPage: React.FC = () => {
         isOpen={isRecoveryOpen}
         onClose={() => setIsRecoveryOpen(false)}
         defaultRepo={project.github_repo_name || 'swaply-one-compiler'}
+      />
+
+      {/* AI Developer Handoff Modal */}
+      <AiDeveloperHandoffModal
+        isOpen={Boolean(createdHandoffTask)}
+        task={createdHandoffTask}
+        onClose={() => setCreatedHandoffTask(null)}
       />
     </div>
   );

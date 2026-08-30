@@ -151,11 +151,11 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     if (!finalGithubRepo) finalGithubRepo = project.github_repo_name || project.name;
   }
 
-  // Get next task number (starts from 1 per project/workspace)
-  const maxRow = await queryOne('SELECT MAX(task_number) as max_num FROM tasks WHERE project_id = ? OR workspace_id = ?', [projectId, finalWorkspaceId]);
-  const countRow = await queryOne('SELECT COUNT(*) as total FROM tasks WHERE project_id = ? OR workspace_id = ?', [projectId, finalWorkspaceId]);
-  const nextNum = (maxRow?.max_num || countRow?.total || 0) + 1;
-  const taskCode = `TASK-${String(nextNum).padStart(3, '0')}`;
+  // Get next task number (starts from 1, format SHR-0001, SHR-0042)
+  const maxRow = await queryOne('SELECT MAX(task_number) as max_num FROM tasks');
+  const countRow = await queryOne('SELECT COUNT(*) as total FROM tasks');
+  const nextNum = Math.max(Number(maxRow?.max_num || 0), Number(countRow?.total || 0)) + 1;
+  const taskCode = `SHR-${String(nextNum).padStart(4, '0')}`;
   const taskId = uuidv4();
 
   await runQuery(`
@@ -189,6 +189,166 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   emitToWorkspace(finalWorkspaceId, 'task:created', { task: createdTask });
 
   res.status(201).json({ task: createdTask });
+});
+
+// GET task commit history
+tasksRouter.get('/:id/commits', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const task = await queryOne(`
+      SELECT t.*, p.github_repo_name as project_github_repo
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id
+      WHERE t.id = ? OR t.task_code = ?
+    `, [id, id.toUpperCase()]);
+
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+
+    // 1. Direct task_commits
+    const directCommits = await queryAll(`
+      SELECT tc.*, 
+             tc.commit_sha as commit_hash,
+             tc.commit_message as message,
+             tc.author as author_name,
+             tc.committed_at as pushed_at
+      FROM task_commits tc
+      WHERE tc.task_id = ?
+      ORDER BY tc.committed_at DESC
+    `, [task.id]);
+
+    // 2. Linked github_commits matching task ID or SHR-XXXX code in commit message
+    const repoCommits = await queryAll(`
+      SELECT gc.*,
+             gc.commit_hash as commit_sha,
+             gc.message as commit_message,
+             gc.author_name as author,
+             gc.pushed_at as committed_at,
+             'success' as status,
+             'passed' as tests_status,
+             0 as error_count
+      FROM github_commits gc
+      WHERE gc.task_id = ? 
+         OR gc.message LIKE ? 
+         OR gc.message LIKE ?
+      ORDER BY gc.pushed_at DESC
+    `, [task.id, `%${task.task_code}%`, `%${task.id}%`]);
+
+    // Merge and deduplicate by SHA/hash
+    const seenShas = new Set<string>();
+    const allCommits: any[] = [];
+
+    for (const c of [...directCommits, ...repoCommits]) {
+      const sha = (c.commit_sha || c.commit_hash || '').toLowerCase();
+      if (sha && !seenShas.has(sha)) {
+        seenShas.add(sha);
+        allCommits.push({
+          id: c.id,
+          task_id: task.id,
+          commit_sha: c.commit_sha || c.commit_hash,
+          commit_message: c.commit_message || c.message,
+          author: c.author || c.author_name || 'Developer',
+          author_username: c.author_username || null,
+          author_avatar: c.author_avatar || null,
+          branch: c.branch || c.branch_name || 'main',
+          files_changed: Number(c.files_changed || 1),
+          insertions: Number(c.insertions || 0),
+          deletions: Number(c.deletions || 0),
+          status: c.status || 'success',
+          tests_status: c.tests_status || 'passed',
+          error_count: Number(c.error_count || 0),
+          error_details: c.error_details || null,
+          warnings: c.warnings || null,
+          ai_source: c.ai_source || null,
+          committed_at: c.committed_at || c.pushed_at || new Date().toISOString(),
+          created_at: c.created_at || c.pushed_at || new Date().toISOString()
+        });
+      }
+    }
+
+    // Sort newest first
+    allCommits.sort((a, b) => new Date(b.committed_at).getTime() - new Date(a.committed_at).getTime());
+
+    res.json({ commits: allCommits });
+  } catch (err: any) {
+    console.error('[TASK COMMITS ERROR]', err);
+    res.status(500).json({ error: 'Failed to fetch task commits', commits: [] });
+  }
+});
+
+// POST record a commit for a task
+tasksRouter.post('/:id/commits', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const {
+      commit_sha,
+      commit_message,
+      author,
+      author_username,
+      author_avatar,
+      branch = 'main',
+      files_changed = 1,
+      insertions = 0,
+      deletions = 0,
+      status = 'success',
+      tests_status = 'passed',
+      error_count = 0,
+      error_details,
+      warnings,
+      ai_source
+    } = req.body;
+
+    if (!commit_sha || !commit_message) {
+      res.status(400).json({ error: 'commit_sha and commit_message are required' });
+      return;
+    }
+
+    const task = await queryOne('SELECT * FROM tasks WHERE id = ? OR task_code = ?', [id, id.toUpperCase()]);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+
+    const commitId = uuidv4();
+    await runQuery(`
+      INSERT INTO task_commits (
+        id, task_id, commit_sha, commit_message, author, author_username, author_avatar,
+        branch, files_changed, insertions, deletions, status, tests_status,
+        error_count, error_details, warnings, ai_source, committed_at, created_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, datetime('now'), datetime('now')
+      )
+    `, [
+      commitId, task.id, commit_sha, commit_message, author || req.user!.name, author_username || req.user!.username,
+      author_avatar || (req.user as any)?.avatar_url || null, branch, files_changed, insertions, deletions, status, tests_status,
+      error_count, error_details || null, warnings || null, ai_source || null
+    ]);
+
+    // Update task's latest commit info
+    await runQuery(`
+      UPDATE tasks SET
+        github_last_commit_hash = ?,
+        github_last_commit_msg = ?,
+        github_last_commit_author = ?,
+        github_last_commit_time = datetime('now'),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `, [commit_sha.slice(0, 7), commit_message, author || req.user!.name, task.id]);
+
+    const createdCommit = await queryOne('SELECT * FROM task_commits WHERE id = ?', [commitId]);
+    await recalculateTaskEvidence(task.id);
+    emitToTask(task.id, 'task:commit_added', { commit: createdCommit });
+
+    res.status(201).json({ commit: createdCommit });
+  } catch (err: any) {
+    console.error('[POST TASK COMMIT ERROR]', err);
+    res.status(500).json({ error: 'Failed to record commit' });
+  }
 });
 
 // PATCH Update task
