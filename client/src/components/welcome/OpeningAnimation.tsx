@@ -1,383 +1,214 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  ArrowRight,
-  Square,
-  Code,
-  CheckCircle2,
-  RotateCcw,
-  UserPlus,
-  LogIn,
-  Sun,
-  Moon,
-  X
-} from 'lucide-react';
+import { ArrowRight, Check } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useMorphBar } from '../../context/MorphBarContext';
-import { EInkTheme } from '../../types';
-
-import { WorkstationSvg } from './WorkstationSvg';
 
 export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComplete }) => {
-  const { user, setTheme, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
   const { setIsBarVisible } = useMorphBar();
   const navigate = useNavigate();
 
-  // Initialize theme from user profile or document attribute or default to dark
-  const [currentTheme, setCurrentTheme] = useState<EInkTheme>(() => {
-    if (user?.theme) return user.theme;
-    const docTheme = document.documentElement.getAttribute('data-theme') as EInkTheme;
-    if (docTheme) return docTheme;
-    const saved = localStorage.getItem('shiori_theme') as EInkTheme;
-    return saved || 'dark';
-  });
-
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  // Animation Sequence Stages:
+  // 0 (0.0s): Blank warm paper
+  // 1 (0.3s): Fine ink baseline appears
+  // 2 (0.5s - 1.5s): Progressive e-ink waveform / line drawing of Japanese desk scene
+  // 3 (1.5s): Desk complete
+  // 4 (2.0s): SHIORI identity appears
+  // 5 (2.3s): "Work. Remembered." tagline appears
+  // 6 (2.5s): Micro task "□ Fix authentication" appears
+  // 7 (2.8s): Micro git activity "✓ 8f42c1" resolves into "✓ Fix authentication"
+  // 8 (3.0s): Settle into calm static state with "OPEN SHIORI →"
+  const [animStage, setAnimStage] = useState<number>(0);
   const [inkFlash, setInkFlash] = useState<boolean>(false);
-
-  const isDark = currentTheme === 'dark';
+  const [isEntering, setIsEntering] = useState<boolean>(false);
 
   const triggerInkRefresh = () => {
     setInkFlash(true);
-    setTimeout(() => setInkFlash(false), 120);
-  };
-
-  const toggleTheme = () => {
-    const nextTheme: EInkTheme = isDark ? 'light' : 'dark';
-    setCurrentTheme(nextTheme);
-    localStorage.setItem('shiori_theme', nextTheme);
-    document.documentElement.setAttribute('data-theme', nextTheme);
-    if (nextTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    if (setTheme) {
-      setTheme(nextTheme);
-    }
-    triggerInkRefresh();
+    setTimeout(() => setInkFlash(false), 90);
   };
 
   useEffect(() => {
+    // Keep floating MorphBar hidden on the quiet welcome page
     setIsBarVisible(false);
+
+    // Sequence timing
+    const t1 = setTimeout(() => setAnimStage(1), 300);
+    const t2 = setTimeout(() => {
+      setAnimStage(2);
+      triggerInkRefresh();
+    }, 500);
+    const t3 = setTimeout(() => setAnimStage(3), 1500);
+    const t4 = setTimeout(() => setAnimStage(4), 2000);
+    const t5 = setTimeout(() => setAnimStage(5), 2300);
+    const t6 = setTimeout(() => setAnimStage(6), 2500);
+    const t7 = setTimeout(() => {
+      setAnimStage(7);
+      triggerInkRefresh();
+    }, 2850);
+    const t8 = setTimeout(() => setAnimStage(8), 3100);
+
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+      clearTimeout(t5);
+      clearTimeout(t6);
+      clearTimeout(t7);
+      clearTimeout(t8);
       setIsBarVisible(true);
     };
   }, [setIsBarVisible]);
 
-  const handleEnterClick = () => {
+  const handleOpenShiori = () => {
+    if (isEntering) return;
+    setIsEntering(true);
     triggerInkRefresh();
-    if (isAuthenticated) {
-      navigate('/home');
+
+    setTimeout(() => {
+      if (isAuthenticated) {
+        navigate('/home');
+      } else {
+        navigate('/login');
+      }
       if (onComplete) onComplete();
-    } else {
-      setShowAuthModal(true);
-    }
+    }, 140);
   };
 
   return (
-    <div
-      className={`min-h-screen transition-colors duration-300 flex items-center justify-center p-4 sm:p-8 md:p-12 font-sans select-none overflow-x-hidden relative ${
-        isDark ? 'bg-[#000000] text-white' : 'bg-[#FFFFFF] text-[#111111]'
-      }`}
-    >
-      {/* Subtle E-Ink Screen Flash Waveform */}
+    <div className="relative w-full min-h-screen bg-[#F5F4EE] text-[#111111] font-sans select-none overflow-hidden flex flex-col justify-between p-6 sm:p-10 md:p-14">
+      {/* Subtle E-Ink Screen Flash Waveform on refreshes */}
       {inkFlash && (
-        <div
-          className={`absolute inset-0 pointer-events-none z-50 transition-opacity duration-75 ${
-            isDark ? 'bg-white/20' : 'bg-black/20'
-          }`}
-        />
+        <div className="fixed inset-0 bg-[#111111]/12 pointer-events-none z-50 transition-opacity duration-75" />
       )}
 
-      {/* Top Header Controls: Theme Switcher Toggle */}
-      <div className="absolute top-6 right-6 sm:top-8 sm:right-8 flex items-center gap-3 z-20">
-        <button
-          onClick={toggleTheme}
-          title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
-          className={`px-3 py-1.5 rounded-sm border font-technical text-xs flex items-center gap-2 transition-all cursor-pointer ${
-            isDark
-              ? 'border-white/20 hover:border-white/60 bg-white/5 text-white/90 hover:text-white'
-              : 'border-black/20 hover:border-black/60 bg-black/5 text-black/90 hover:text-black'
-          }`}
-        >
-          {isDark ? (
-            <>
-              <Sun className="w-3.5 h-3.5 text-yellow-400" />
-              <span className="text-[11px] tracking-wider uppercase">LIGHT MODE</span>
-            </>
-          ) : (
-            <>
-              <Moon className="w-3.5 h-3.5 text-slate-700" />
-              <span className="text-[11px] tracking-wider uppercase">DARK MODE</span>
-            </>
-          )}
-        </button>
-      </div>
+      {/* Subtle paper grain texture overlay */}
+      <div
+        className="fixed inset-0 pointer-events-none opacity-[0.035] mix-blend-multiply"
+        style={{
+          backgroundImage: `radial-gradient(#111111 1px, transparent 1px)`,
+          backgroundSize: '16px 16px'
+        }}
+      />
 
-      {/* Main Split Grid Container */}
-      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-        {/* Left Column: Exact Isometric Desk Artwork (100% Transparent, Zero Box Borders) */}
-        <div className="lg:col-span-7 flex items-center justify-center p-2 sm:p-4">
-          <div className="relative w-full max-w-lg lg:max-w-xl aspect-4/3 flex items-center justify-center transition-all duration-300">
-            {isDark ? (
-              <img
-                src="/exact-desk-dark.png"
-                alt="SHIORI Developer Workstation Dark"
-                className="w-full h-full object-contain filter drop-shadow-[0_0_20px_rgba(255,255,255,0.06)] select-none pointer-events-none"
-              />
-            ) : (
-              <img
-                src="/exact-desk-light.png"
-                alt="SHIORI Developer Workstation Light"
-                className="w-full h-full object-contain filter drop-shadow-[0_0_20px_rgba(0,0,0,0.06)] select-none pointer-events-none"
-              />
+      {/* TOP: Subtle Japanese Editorial Header Tag */}
+      <header className="relative z-10 w-full flex items-center justify-between text-[11px] font-mono tracking-widest text-[#777770] uppercase">
+        <div className="flex items-center gap-2">
+          <span>栞</span>
+          <span>·</span>
+          <span>SHIORI</span>
+        </div>
+        <span className="text-[10px] tracking-widest text-[#999990]">A SwaplyOne product</span>
+      </header>
+
+      {/* CENTER: Main Cohesive Full-Screen Editorial Composition */}
+      <main className="relative z-10 w-full max-w-6xl mx-auto my-auto flex flex-col lg:flex-row items-center justify-center lg:justify-between gap-10 lg:gap-16 py-4">
+        {/* Left / Center-Left: Delicate Japanese Workspace Line-Art Artwork */}
+        <div className="w-full max-w-md sm:max-w-lg lg:max-w-xl flex items-center justify-center relative">
+          {/* Initial Baseline Guide during 0.3s–0.5s */}
+          {animStage >= 1 && (
+            <div
+              className={`absolute bottom-6 left-10 right-10 h-[1px] bg-[#111111]/15 transition-all duration-700 ${
+                animStage >= 2 ? 'opacity-0 scale-x-105' : 'opacity-100 scale-x-100'
+              }`}
+            />
+          )}
+
+          {/* Line-Art Illustration with Progressive E-Ink Refresh Waveform Reveal */}
+          <div
+            className={`relative w-full aspect-4/3 flex items-center justify-center transition-all duration-700 ease-out ${
+              animStage >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+            }`}
+          >
+            <img
+              src="/exact-desk-light.png"
+              alt="SHIORI Quiet Workspace Illustration"
+              className={`w-full h-full object-contain filter contrast-125 select-none pointer-events-none transition-all duration-500 ${
+                animStage === 2 ? 'filter blur-[0.4px] opacity-80' : 'filter blur-0 opacity-100'
+              }`}
+            />
+
+            {/* Subtle E-Ink Scanline refresh effect during drawing phase */}
+            {animStage === 2 && (
+              <div className="absolute inset-0 pointer-events-none bg-linear-to-b from-transparent via-[#F5F4EE]/40 to-transparent animate-pulse" />
             )}
           </div>
         </div>
 
-        {/* Right Column: Technical Typography, Features & Action */}
-        <div className="lg:col-span-5 flex flex-col justify-center px-4 sm:px-8 max-w-md mx-auto lg:max-w-none w-full">
-          {/* Header Branding */}
-          <div className="text-center lg:text-left space-y-3 mb-8">
-            <h1
-              className={`font-technical text-3xl sm:text-4xl lg:text-5xl font-bold tracking-[0.35em] uppercase ${
-                isDark ? 'text-white' : 'text-[#111111]'
-              }`}
-            >
-              S H I O R I
+        {/* Right / Center-Right: Editorial Typography & Minimal Entrance Interaction */}
+        <div className="w-full max-w-sm lg:max-w-md flex flex-col items-center lg:items-start text-center lg:text-left space-y-6">
+          {/* SHIORI Single-Line Title */}
+          <div
+            className={`transition-all duration-500 ease-out ${
+              animStage >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+            }`}
+          >
+            <h1 className="font-mono text-3xl sm:text-4xl md:text-5xl font-bold tracking-[0.28em] uppercase text-[#111111] whitespace-nowrap leading-none">
+              SHIORI
             </h1>
+          </div>
 
-            {/* Thin divider with centered dot */}
-            <div className="flex items-center justify-center lg:justify-start gap-3 my-2 w-full">
-              <div
-                className={`h-[1px] flex-1 max-w-[120px] lg:max-w-[160px] ${
-                  isDark ? 'bg-white/25' : 'bg-black/25'
-                }`}
-              />
-              <span
-                className={`w-1.5 h-1.5 rounded-full inline-block ${
-                  isDark ? 'bg-white' : 'bg-black'
-                }`}
-              />
-              <div
-                className={`h-[1px] flex-1 max-w-[120px] lg:max-w-[160px] ${
-                  isDark ? 'bg-white/25' : 'bg-black/25'
-                }`}
-              />
-            </div>
-
-            {/* Sub-tagline */}
-            <p
-              className={`font-technical text-xs sm:text-sm tracking-[0.25em] uppercase ${
-                isDark ? 'text-white/80' : 'text-black/80'
-              }`}
-            >
-              W O R K . &nbsp; R E M E M B E R E D .
+          {/* Tagline: Work. Remembered. */}
+          <div
+            className={`transition-all duration-500 ease-out ${
+              animStage >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+            }`}
+          >
+            <p className="font-serif italic text-sm sm:text-base tracking-widest text-[#555550]">
+              Work. Remembered.
             </p>
           </div>
 
-          {/* Feature List with Subtle Horizontal Separators */}
-          <div className="space-y-4 font-technical">
-            {/* Feature 1: Plan Your Work */}
-            <div className="flex items-start gap-4 group">
-              <div className={`mt-0.5 shrink-0 ${isDark ? 'text-white/90' : 'text-black/90'}`}>
-                <Square className="w-5 h-5 stroke-[1.5]" />
-              </div>
-              <div className="space-y-0.5 flex-1">
-                <h3
-                  className={`font-bold text-xs tracking-wider uppercase ${
-                    isDark ? 'text-white' : 'text-[#111111]'
-                  }`}
-                >
-                  PLAN YOUR WORK
-                </h3>
-                <p
-                  className={`font-sans text-xs leading-relaxed ${
-                    isDark ? 'text-white/60' : 'text-black/60'
-                  }`}
-                >
-                  Write your tasks. Stay focused.
-                </p>
-              </div>
-            </div>
-
-            <div className={`h-[1px] w-full ${isDark ? 'bg-white/10' : 'bg-black/10'}`} />
-
-            {/* Feature 2: Connect GitHub */}
-            <div className="flex items-start gap-4 group">
-              <div className={`mt-0.5 shrink-0 ${isDark ? 'text-white/90' : 'text-black/90'}`}>
-                <Code className="w-5 h-5 stroke-[1.5]" />
-              </div>
-              <div className="space-y-0.5 flex-1">
-                <h3
-                  className={`font-bold text-xs tracking-wider uppercase ${
-                    isDark ? 'text-white' : 'text-[#111111]'
-                  }`}
-                >
-                  CONNECT GITHUB
-                </h3>
-                <p
-                  className={`font-sans text-xs leading-relaxed ${
-                    isDark ? 'text-white/60' : 'text-black/60'
-                  }`}
-                >
-                  Link your repository.
-                </p>
-              </div>
-            </div>
-
-            <div className={`h-[1px] w-full ${isDark ? 'bg-white/10' : 'bg-black/10'}`} />
-
-            {/* Feature 3: Verify & Remember */}
-            <div className="flex items-start gap-4 group">
-              <div className={`mt-0.5 shrink-0 ${isDark ? 'text-white/90' : 'text-black/90'}`}>
-                <CheckCircle2 className="w-5 h-5 stroke-[1.5]" />
-              </div>
-              <div className="space-y-0.5 flex-1">
-                <h3
-                  className={`font-bold text-xs tracking-wider uppercase ${
-                    isDark ? 'text-white' : 'text-[#111111]'
-                  }`}
-                >
-                  VERIFY & REMEMBER
-                </h3>
-                <p
-                  className={`font-sans text-xs leading-relaxed ${
-                    isDark ? 'text-white/60' : 'text-black/60'
-                  }`}
-                >
-                  Your work. Verified by Git.
-                </p>
-              </div>
-            </div>
-
-            <div className={`h-[1px] w-full ${isDark ? 'bg-white/10' : 'bg-black/10'}`} />
-
-            {/* Feature 4: Recover Anytime */}
-            <div className="flex items-start gap-4 group">
-              <div className={`mt-0.5 shrink-0 ${isDark ? 'text-white/90' : 'text-black/90'}`}>
-                <RotateCcw className="w-5 h-5 stroke-[1.5]" />
-              </div>
-              <div className="space-y-0.5 flex-1">
-                <h3
-                  className={`font-bold text-xs tracking-wider uppercase ${
-                    isDark ? 'text-white' : 'text-[#111111]'
-                  }`}
-                >
-                  RECOVER ANYTIME
-                </h3>
-                <p
-                  className={`font-sans text-xs leading-relaxed ${
-                    isDark ? 'text-white/60' : 'text-black/60'
-                  }`}
-                >
-                  Go back. Restore. Continue.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Action Button: ENTER SHIORI */}
-          <div className="mt-10">
-            <button
-              onClick={handleEnterClick}
-              className={`w-full py-3.5 px-6 border font-technical font-bold text-xs tracking-[0.25em] uppercase transition-all duration-200 flex items-center justify-center gap-3 group shadow-lg cursor-pointer ${
-                isDark
-                  ? 'border-white/80 hover:border-white bg-transparent hover:bg-white text-white hover:text-black hover:shadow-white/10'
-                  : 'border-black/80 hover:border-black bg-transparent hover:bg-black text-black hover:text-white hover:shadow-black/10'
-              }`}
-            >
-              <span>ENTER SHIORI</span>
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Interactive Auth Modal when clicking ENTER SHIORI */}
-      {showAuthModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in font-technical">
+          {/* Micro Task Demonstration: TODO → Git activity → verified work */}
           <div
-            className={`w-full max-w-sm border p-6 rounded-sm space-y-6 shadow-2xl relative ${
-              isDark
-                ? 'bg-[#0a0a0a] border-white/30 text-white'
-                : 'bg-[#ffffff] border-black/30 text-[#111111]'
+            className={`min-h-[28px] flex items-center transition-all duration-500 ease-out ${
+              animStage >= 6 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
             }`}
           >
-            {/* Close button */}
-            <button
-              onClick={() => setShowAuthModal(false)}
-              className={`absolute top-4 right-4 transition-colors ${
-                isDark ? 'text-white/50 hover:text-white' : 'text-black/50 hover:text-black'
-              }`}
-            >
-              <X className="w-4 h-4" />
-            </button>
+            {animStage === 6 && (
+              <div className="flex items-center gap-2 text-xs font-mono text-[#666660] animate-fade-in">
+                <span className="w-3 h-3 border border-[#666660] inline-block rounded-[1px]" />
+                <span>Fix authentication</span>
+              </div>
+            )}
 
-            <div
-              className={`space-y-1 text-center border-b pb-4 ${
-                isDark ? 'border-white/15' : 'border-black/15'
-              }`}
-            >
-              <h2 className="text-sm font-bold tracking-widest uppercase">
-                SHIORI WORKSPACE
-              </h2>
-              <p
-                className={`text-[11px] font-sans ${
-                  isDark ? 'text-white/60' : 'text-black/60'
-                }`}
-              >
-                Select an option to enter your development workspace
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <button
-                onClick={() => {
-                  setShowAuthModal(false);
-                  navigate('/login');
-                }}
-                className={`w-full py-3 px-4 font-bold text-xs tracking-wider uppercase rounded-sm flex items-center justify-between transition-all shadow-md ${
-                  isDark
-                    ? 'bg-white text-black hover:bg-white/90'
-                    : 'bg-black text-white hover:bg-black/90'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <LogIn className="w-4 h-4" />
-                  <span>SIGN IN TO WORKSPACE</span>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowAuthModal(false);
-                  navigate('/register');
-                }}
-                className={`w-full py-3 px-4 bg-transparent border font-bold text-xs tracking-wider uppercase rounded-sm flex items-center justify-between transition-all ${
-                  isDark
-                    ? 'border-white/30 hover:border-white text-white hover:bg-white/5'
-                    : 'border-black/30 hover:border-black text-black hover:bg-black/5'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <UserPlus className="w-4 h-4" />
-                  <span>CREATE NEW ACCOUNT</span>
-                </div>
-                <span
-                  className={`text-[10px] font-mono ${
-                    isDark ? 'text-white/50' : 'text-black/50'
-                  }`}
-                >
-                  FREE
+            {animStage >= 7 && (
+              <div className="flex items-center gap-2 text-xs font-mono text-[#111111] animate-fade-in">
+                <span className="w-3.5 h-3.5 bg-[#111111] text-[#F5F4EE] rounded-[1px] flex items-center justify-center text-[10px]">
+                  <Check className="w-2.5 h-2.5 stroke-[2.5]" />
                 </span>
-              </button>
-            </div>
+                <span className="font-semibold">Fix authentication</span>
+                <span className="text-[10px] text-[#777770] font-mono tracking-tight">· 8f42c1</span>
+              </div>
+            )}
+          </div>
+
+          {/* Minimal Printed Entrance Control: OPEN SHIORI → */}
+          <div
+            className={`pt-3 transition-all duration-700 ease-out ${
+              animStage >= 8 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'
+            }`}
+          >
+            <button
+              onClick={handleOpenShiori}
+              disabled={isEntering}
+              className="group relative inline-flex items-center gap-3 py-2 text-xs sm:text-sm font-mono tracking-[0.22em] uppercase font-bold text-[#111111] hover:text-[#000000] cursor-pointer transition-all duration-150"
+            >
+              <span className="border-b border-[#111111]/40 group-hover:border-[#111111] pb-0.5 transition-colors">
+                OPEN SHIORI
+              </span>
+              <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-1.5" />
+            </button>
           </div>
         </div>
-      )}
+      </main>
+
+      {/* BOTTOM: Minimal Editorial Footer */}
+      <footer className="relative z-10 w-full flex items-center justify-between text-[10px] font-mono text-[#999990] tracking-widest uppercase">
+        <span>Quiet Workspace</span>
+        <span>Electronic Paper</span>
+      </footer>
     </div>
   );
 };
