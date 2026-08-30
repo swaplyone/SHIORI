@@ -37,11 +37,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSimulator, onOpenCom
           <img
             src="/nav-logo.png"
             alt="SHIORI"
-            className="w-6 h-6 object-contain bg-transparent border-0 shrink-0 select-none"
+            className="w-7 h-7 object-contain bg-transparent border-0 shrink-0 select-none"
           />
           <div className="flex flex-col justify-center">
-            <h1 className="font-abask font-bold text-sm tracking-[0.16em] uppercase leading-none">SHIORI</h1>
-            <p className="text-[8px] text-eink-textMuted uppercase tracking-wider font-mono mt-0.5">A SwaplyOne product</p>
+            <h1 className="font-abask font-bold text-sm tracking-[0.18em] uppercase leading-none text-eink-text">SHIORI</h1>
+            <p className="text-[8px] text-eink-textMuted uppercase tracking-wider font-mono mt-0.5 font-semibold">A SwaplyOne product</p>
           </div>
         </div>
 

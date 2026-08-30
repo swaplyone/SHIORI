@@ -43,17 +43,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSimulator, onOpenCommand
         {/* Brand & Identity */}
         <div className="border-b border-eink-border pb-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-3">
               <img
                 src="/nav-logo.png"
                 alt="SHIORI"
-                className="w-7 h-7 object-contain bg-transparent border-0 shrink-0 select-none"
+                className="w-8 h-8 object-contain bg-transparent border-0 shrink-0 select-none"
               />
               <div className="flex flex-col justify-center">
-                <h1 className="font-abask font-bold text-base tracking-[0.16em] text-eink-text uppercase leading-none">
+                <h1 className="font-abask font-bold text-base tracking-[0.18em] text-eink-text uppercase leading-none">
                   SHIORI
                 </h1>
-                <p className="text-[9px] text-eink-textMuted tracking-wider font-mono uppercase mt-0.5">
+                <p className="text-[8px] text-eink-textMuted tracking-wider font-mono uppercase mt-1 font-semibold">
                   A SwaplyOne product
                 </p>
               </div>
