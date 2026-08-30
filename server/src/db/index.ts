@@ -380,6 +380,27 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_evidence_pr_merged INTEGER DEFAULT 0;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dev_confidence_score INTEGER DEFAULT 0;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS has_ci_discrepancy INTEGER DEFAULT 0;`,
+      `ALTER TABLE task_activity ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`,
+      `ALTER TABLE task_activity ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE SET NULL;`,
+      `ALTER TABLE task_activity ADD COLUMN IF NOT EXISTS action_type TEXT NOT NULL DEFAULT 'ACTION';`,
+      `ALTER TABLE task_activity ADD COLUMN IF NOT EXISTS summary TEXT;`,
+      `ALTER TABLE task_activity ADD COLUMN IF NOT EXISTS details TEXT;`,
+      `ALTER TABLE task_activity ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();`,
+      `ALTER TABLE global_activities ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;`,
+      `ALTER TABLE global_activities ADD COLUMN IF NOT EXISTS workspace_id TEXT;`,
+      `ALTER TABLE global_activities ADD COLUMN IF NOT EXISTS project_id TEXT;`,
+      `ALTER TABLE global_activities ADD COLUMN IF NOT EXISTS task_id TEXT;`,
+      `ALTER TABLE global_activities ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'TASK';`,
+      `ALTER TABLE global_activities ADD COLUMN IF NOT EXISTS icon_symbol TEXT DEFAULT '○';`,
+      `ALTER TABLE global_activities ADD COLUMN IF NOT EXISTS title TEXT;`,
+      `ALTER TABLE global_activities ADD COLUMN IF NOT EXISTS meta_text TEXT;`,
+      `ALTER TABLE task_subtasks ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`,
+      `ALTER TABLE task_subtasks ADD COLUMN IF NOT EXISTS title TEXT;`,
+      `ALTER TABLE task_subtasks ADD COLUMN IF NOT EXISTS completed INTEGER DEFAULT 0;`,
+      `ALTER TABLE task_subtasks ADD COLUMN IF NOT EXISTS position INTEGER DEFAULT 0;`,
+      `ALTER TABLE task_comments ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`,
+      `ALTER TABLE task_comments ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;`,
+      `ALTER TABLE task_comments ADD COLUMN IF NOT EXISTS content TEXT;`,
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`,
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read INTEGER DEFAULT 0;`,
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read INTEGER DEFAULT 0;`,
@@ -527,15 +548,16 @@ export async function queryOne<T = any>(sql: string, params: any[] = []): Promis
   if (pgPool) {
     try {
       const { sql: pgSql, params: pgParams } = translateSqlForPostgres(sql, params);
-      const result = await pgPool.query(pgSql, pgParams);
-      return (result.rows[0] as T) || null;
+      const res = await pgPool.query(pgSql, pgParams);
+      return (res.rows[0] as T) || null;
     } catch (err: any) {
       console.error('[DATABASE PG ERROR queryOne]', err.message);
-      // Graceful fallback to SQLite
+      return null;
     }
   }
 
   const database = await getDb();
+  if (!database) return null;
   const sanitizedParams = params.map((p) => (p === undefined ? null : p));
   const stmt = database.prepare(sql);
   stmt.bind(sanitizedParams);
@@ -555,14 +577,16 @@ export async function runQuery(sql: string, params: any[] = []): Promise<void> {
       return;
     } catch (err: any) {
       console.error('[DATABASE PG ERROR runQuery]', err.message);
-      // Graceful fallback to SQLite
+      return;
     }
   }
 
   const database = await getDb();
-  const sanitizedParams = params.map((p) => (p === undefined ? null : p));
-  database.run(sql, sanitizedParams);
-  saveDb();
+  if (database) {
+    const sanitizedParams = params.map((p) => (p === undefined ? null : p));
+    database.run(sql, sanitizedParams);
+    saveDb();
+  }
 }
 
 /**
