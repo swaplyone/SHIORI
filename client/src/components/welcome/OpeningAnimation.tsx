@@ -264,33 +264,6 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
             </p>
           </div>
 
-          {/* Micro Task & Git Demonstration */}
-          <div
-            className={`min-h-[26px] flex items-center transition-all duration-500 ease-out ${
-              stage >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-            }`}
-          >
-            {stage === 5 && (
-              <div className="flex items-center gap-2 text-xs font-mono text-[#555550] animate-fade-in">
-                <span className="w-3 h-3 border border-[#666660] inline-block rounded-[1px]" />
-                <span>Fix authentication</span>
-                <span className="text-[10px] text-[#777770] font-mono">· 8f42c1</span>
-              </div>
-            )}
-
-            {stage >= 6 && (
-              <div className="flex items-center gap-2 text-xs font-mono text-[#111111] animate-fade-in">
-                <span className="w-3.5 h-3.5 bg-[#111111] text-[#EBE9E1] rounded-[1px] flex items-center justify-center text-[10px]">
-                  <Check className="w-2.5 h-2.5 stroke-[2.5]" />
-                </span>
-                <span className="font-semibold">Fix authentication</span>
-                <span className="text-[10px] text-[#111111] font-mono font-bold tracking-tight bg-[#111111]/[0.08] px-1 py-0.2 rounded-xs">
-                  · 8f42c1
-                </span>
-              </div>
-            )}
-          </div>
-
           {/* Minimal Printed Entrance Control: OPEN SHIORI → in Abask font */}
           <div
             className={`pt-2 sm:pt-4 transition-all duration-700 ease-out ${
