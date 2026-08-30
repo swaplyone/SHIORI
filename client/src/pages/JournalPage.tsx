@@ -147,7 +147,7 @@ export const JournalPage: React.FC = () => {
       {/* Header */}
       <div className="border-b border-eink-border pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-technical text-xl font-bold tracking-tight text-eink-text uppercase">
+          <h1 className="font-abask font-bold text-xl sm:text-2xl tracking-tight text-eink-text uppercase">
             DAILY PAGE & WORK JOURNAL
           </h1>
           <p className="text-xs text-eink-textSecondary font-technical">
@@ -156,16 +156,16 @@ export const JournalPage: React.FC = () => {
         </div>
 
         {/* Tab switcher */}
-        <div className="flex border border-eink-border rounded-sm bg-eink-surface p-0.5 font-technical text-xs self-start sm:self-auto">
+        <div className="flex border border-eink-border rounded-sm bg-eink-surface p-0.5 font-mono text-xs self-start sm:self-auto">
           <button
             onClick={() => setTab('daily')}
-            className={`px-3 py-1 rounded-sm ${tab === 'daily' ? 'bg-eink-darkSurface text-eink-darkText font-bold' : 'text-eink-text'}`}
+            className={`px-3 py-1 rounded-sm transition-colors ${tab === 'daily' ? 'bg-eink-darkSurface text-eink-darkText font-bold' : 'text-eink-text hover:bg-eink-bg'}`}
           >
             DAILY PAGE
           </button>
           <button
             onClick={() => setTab('weekly')}
-            className={`px-3 py-1 rounded-sm ${tab === 'weekly' ? 'bg-eink-darkSurface text-eink-darkText font-bold' : 'text-eink-text'}`}
+            className={`px-3 py-1 rounded-sm transition-colors ${tab === 'weekly' ? 'bg-eink-darkSurface text-eink-darkText font-bold' : 'text-eink-text hover:bg-eink-bg'}`}
           >
             WEEKLY SUMMARY
           </button>
@@ -180,10 +180,10 @@ export const JournalPage: React.FC = () => {
           {/* Top Date Header */}
           <div className="border-b border-eink-border pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <span className="text-[10px] text-eink-textMuted uppercase tracking-widest block">
+              <span className="text-[10px] text-eink-textMuted uppercase tracking-widest block font-mono">
                 SHIORI DAILY DISPATCH
               </span>
-              <h2 className="text-lg sm:text-xl font-bold uppercase tracking-widest text-eink-text">
+              <h2 className="text-lg sm:text-xl font-abask font-bold uppercase tracking-widest text-eink-text">
                 {formattedDate}
               </h2>
             </div>
