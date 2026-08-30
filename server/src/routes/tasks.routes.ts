@@ -12,6 +12,13 @@ tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Pr
   try {
     const { workspaceId, projectId, status, search, repo } = req.query;
 
+    // Trigger live GitHub sync if repo is requested or project is connected
+    try {
+      const syncRepo = (repo as string) || 'SHIORI';
+      const { syncRepoLiveFromGitHub } = await import('./github.routes.js');
+      await syncRepoLiveFromGitHub(req.user!.id, syncRepo);
+    } catch {}
+
     let sql = `
       SELECT t.*, 
              p.name as project_name, p.slug as project_slug,

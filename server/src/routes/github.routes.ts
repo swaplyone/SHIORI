@@ -557,26 +557,36 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
           `, [repoName, repoName, repoName, `%${repoName}%`]);
 
           for (const task of matchingTasks) {
-            const taskCodeLower = (task.task_code || '').toLowerCase();
+            const taskCodeLower = (task.task_code || '').trim().toLowerCase();
             const taskTitleLower = (task.title || '').trim().toLowerCase();
             const msgLower = (c.message || '').trim().toLowerCase();
 
-            // 1. Commit timestamp check: commit must have occurred AFTER or around when task was created
+            // 1. Commit timestamp check: commit must have occurred AFTER or around when task was created (allow 60s skew)
             const commitTime = new Date(c.date || c.pushedAt).getTime();
             const taskCreatedTime = new Date(task.created_at || 0).getTime();
-            const isCommitAfterTask = commitTime >= (taskCreatedTime - 30000);
+            const isCommitAfterTask = commitTime >= (taskCreatedTime - 60000);
 
-            // 2. Strict matching rules (prevent loose 1-word accidental completions)
-            const hasCodeMatch = taskCodeLower && msgLower.includes(taskCodeLower);
+            // 2. Strict matching & Stem/Topic Extraction
+            const hasCodeMatch = taskCodeLower.length >= 4 && msgLower.includes(taskCodeLower);
             const hasFullTitleMatch = taskTitleLower.length >= 6 && msgLower.includes(taskTitleLower);
 
-            // Check conventional commit pattern, e.g. fix(welcome): or feat(welcome): matching title phrase
-            const cleanTitleWords = taskTitleLower
-              .replace(/^(fix|feat|chore|refactor|add|update|build|docs|test)[:\s\(\)]+/i, '')
-              .trim();
-            const hasPhraseMatch = cleanTitleWords.length >= 8 && msgLower.includes(cleanTitleWords);
+            // Extract stems from task title and commit message
+            const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'this', 'that', 'from', 'into', 'page', 'todo', 'task']);
+            const taskWords = taskTitleLower
+              .replace(/[^a-z0-9]/g, ' ')
+              .split(/\s+/)
+              .filter((w: string) => w.length >= 4 && !STOP_WORDS.has(w));
+            const msgWords = msgLower
+              .replace(/[^a-z0-9]/g, ' ')
+              .split(/\s+/)
+              .filter((w: string) => w.length >= 4 && !STOP_WORDS.has(w));
 
-            if (isCommitAfterTask && (hasCodeMatch || hasFullTitleMatch || hasPhraseMatch)) {
+            const taskStems = taskWords.map((w: string) => w.replace(/(ing|ed|es|s|tion|ly)$/, ''));
+            const msgStems = msgWords.map((w: string) => w.replace(/(ing|ed|es|s|tion|ly)$/, ''));
+
+            const hasStemMatch = taskStems.some((s: string) => s.length >= 4 && msgStems.some((ms: string) => ms.includes(s) || s.includes(ms)));
+
+            if (isCommitAfterTask && (hasCodeMatch || hasFullTitleMatch || hasStemMatch)) {
               // Task was genuinely completed by this new commit!
               await runQuery('UPDATE github_commits SET task_id = ? WHERE commit_hash = ?', [task.id, c.fullHash]);
 
