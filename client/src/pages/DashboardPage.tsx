@@ -40,6 +40,7 @@ export const DashboardPage: React.FC = () => {
   });
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [selectedRepoName, setSelectedRepoName] = useState('');
+  const [pendingInvitations, setPendingInvitations] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(() => !sessionStorage.getItem('shiori_cached_projects'));
   const [submitting, setSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
@@ -47,14 +48,19 @@ export const DashboardPage: React.FC = () => {
   const fetchHomeData = async () => {
     if (!token) return;
     try {
-      const [projRes, repoRes] = await Promise.all([
+      const [projRes, repoRes, inviteRes] = await Promise.all([
         fetchJson('/api/projects'),
-        fetchJson('/api/github/available-repositories')
+        fetchJson('/api/github/available-repositories'),
+        fetchJson('/api/projects/invitations/pending')
       ]);
 
       if (projRes.ok && projRes.data?.projects) {
         setProjects(projRes.data.projects);
         sessionStorage.setItem('shiori_cached_projects', JSON.stringify(projRes.data.projects));
+      }
+
+      if (inviteRes.ok && inviteRes.data?.invitations) {
+        setPendingInvitations(inviteRes.data.invitations);
       }
 
       if (repoRes.ok && repoRes.data?.repositories) {
@@ -112,6 +118,22 @@ export const DashboardPage: React.FC = () => {
     setTimeout(() => setCopiedId(false), 2000);
   };
 
+  const handleRespondInvitation = async (inviteId: string, action: 'ACCEPT' | 'DECLINE') => {
+    if (!token) return;
+    try {
+      const { ok } = await fetchJson(`/api/projects/invitations/${inviteId}/respond`, {
+        method: 'POST',
+        body: JSON.stringify({ action })
+      });
+      if (ok) {
+        triggerEInkRefresh();
+        fetchHomeData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const totalActiveTodos = projects.reduce((sum, p) => sum + (p.active_todos || 0), 0);
   const totalCompletedTodos = projects.reduce((sum, p) => sum + (p.completed_tasks || 0), 0);
   const totalCommitsToday = projects.reduce((sum, p) => sum + (p.commitsTodayCount || 0), 0);
@@ -148,6 +170,62 @@ export const DashboardPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* PENDING PROJECT INVITATIONS BANNER */}
+      {pendingInvitations.length > 0 && (
+        <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 shadow-eink-card animate-fade-in font-technical">
+          <div className="flex items-center justify-between border-b border-eink-border pb-2">
+            <span className="font-bold text-xs uppercase text-eink-text tracking-wider flex items-center gap-2">
+              <span>✉️</span>
+              <span>PENDING PROJECT INVITATIONS ({pendingInvitations.length})</span>
+            </span>
+            <span className="text-[11px] text-eink-textSecondary">
+              Click Accept to join workspace & collaborate
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {pendingInvitations.map((inv) => (
+              <div
+                key={inv.id}
+                className="p-3.5 bg-eink-bg border border-eink-border rounded-sm space-y-2 flex flex-col justify-between"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-bold text-sm text-eink-text uppercase truncate">
+                      {inv.project_name}
+                    </span>
+                    <span className="text-[10px] bg-eink-surface px-1.5 py-0.2 border border-eink-border rounded font-mono font-bold shrink-0">
+                      ROLE: {inv.role || 'MEMBER'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-eink-textSecondary">
+                    Invited by <strong className="text-eink-text font-mono">{inv.inviter_name}</strong> ({inv.inviter_shiori_id})
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-eink-border/50">
+                  <button
+                    type="button"
+                    onClick={() => handleRespondInvitation(inv.id, 'DECLINE')}
+                    className="px-3 py-1.5 border border-eink-border hover:bg-eink-surface text-xs text-eink-textSecondary hover:text-eink-text rounded-sm cursor-pointer"
+                  >
+                    DECLINE
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRespondInvitation(inv.id, 'ACCEPT')}
+                    className="px-4 py-1.5 bg-eink-text text-eink-bg font-bold text-xs rounded-sm shadow-eink-sm hover:opacity-90 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>ACCEPT INVITATION</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 2. MY PROJECTS CARDS GRID (Project = GitHub Repository) */}
       <div className="space-y-4 font-technical">
