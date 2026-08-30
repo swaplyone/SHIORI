@@ -203,6 +203,30 @@ export const ProjectDetailPage: React.FC = () => {
     }
   };
 
+  const handleRemoveMember = async (memberId: string, memberName: string) => {
+    if (!project || !token) return;
+    const isSelf = memberId === user?.id;
+    const confirmed = window.confirm(
+      isSelf
+        ? `Are you sure you want to leave ${project.name}?`
+        : `Are you sure you want to remove ${memberName} from ${project.name}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/projects/${project.id}/members/${memberId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchProjectData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   if (loading && !project) {
     return (
       <div className="space-y-6 select-none font-sans pb-12" aria-busy="true" aria-label="Loading project workspace...">
@@ -561,6 +585,20 @@ export const ProjectDetailPage: React.FC = () => {
                   <p>SHIORI ID: <strong className="text-eink-text">{m.shiori_id || 'SHI-8F42K'}</strong></p>
                   <p className="text-[10px] text-eink-textMuted">{m.email}</p>
                 </div>
+
+                {/* Remove / Leave member option */}
+                {(project.created_by === user?.id || m.id === user?.id) && m.id !== project.created_by && (
+                  <div className="pt-2 border-t border-eink-border flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMember(m.id, m.name)}
+                      className="px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-500/10 border border-red-300 rounded-sm flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>{m.id === user?.id ? 'LEAVE PROJECT' : 'REMOVE'}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

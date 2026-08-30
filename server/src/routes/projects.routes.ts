@@ -421,9 +421,77 @@ projectsRouter.post('/:id/members', authMiddleware, async (req: AuthRequest, res
 // DELETE Member or Cancel Invitation from project
 projectsRouter.delete('/:id/members/:userId', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id, userId } = req.params;
+  const currentUserId = req.user!.id;
+
+  const project = await queryOne('SELECT * FROM projects WHERE id = ?', [id]);
+  if (!project) {
+    res.status(404).json({ error: 'Project not found.' });
+    return;
+  }
+
+  // Permission: Project owner, workspace admin, or user removing themselves
+  const isOwner = project.created_by === currentUserId;
+  const isSelf = userId === currentUserId;
+  
+  if (!isOwner && !isSelf) {
+    const isWorkspaceAdmin = await queryOne(
+      'SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ? AND role IN ("owner", "admin")',
+      [project.workspace_id, currentUserId]
+    );
+    if (!isWorkspaceAdmin) {
+      res.status(403).json({ error: 'You do not have permission to remove members from this project.' });
+      return;
+    }
+  }
+
+  // Prevent removing the project creator/owner
+  if (project.created_by === userId) {
+    res.status(400).json({ error: 'Cannot remove the project owner. Ownership must be transferred first.' });
+    return;
+  }
+
+  const targetUser = await queryOne('SELECT name, email FROM users WHERE id = ?', [userId]);
 
   await runQuery('DELETE FROM project_members WHERE project_id = ? AND user_id = ?', [id, userId]);
   await runQuery('DELETE FROM project_invitations WHERE project_id = ? AND invitee_id = ?', [id, userId]);
-  
-  res.json({ success: true, message: 'Member or invitation removed from project.' });
+
+  // Log activity
+  await runQuery(`
+    INSERT INTO global_activities (id, user_id, workspace_id, project_id, category, icon_symbol, title, meta_text, created_at)
+    VALUES (?, ?, ?, ?, 'PROJECT', '✕', ?, ?, datetime('now'))
+  `, [
+    uuidv4(),
+    currentUserId,
+    project.workspace_id,
+    id,
+    isSelf ? `${req.user!.name} left the project` : `Removed member ${targetUser?.name || 'User'} from project`,
+    project.name
+  ]);
+
+  // If removed by owner/admin, notify the member
+  if (!isSelf && targetUser) {
+    const notifId = uuidv4();
+    await runQuery(`
+      INSERT INTO notifications (id, user_id, title, message, type, is_read, read, created_at)
+      VALUES (?, ?, ?, ?, 'PROJECT_MEMBER_REMOVED', 0, 0, datetime('now'))
+    `, [
+      notifId,
+      userId,
+      `Removed from Project`,
+      `You were removed from project "${project.name}" by ${req.user!.name}.`
+    ]);
+
+    emitToUser(userId, 'notification:new', {
+      id: notifId,
+      title: `Removed from Project`,
+      message: `You were removed from project "${project.name}" by ${req.user!.name}.`,
+      type: 'PROJECT_MEMBER_REMOVED',
+      project_id: project.id
+    });
+  }
+
+  res.json({
+    success: true,
+    message: isSelf ? `You have left ${project.name}.` : `Member ${targetUser?.name || ''} removed from project.`
+  });
 });
