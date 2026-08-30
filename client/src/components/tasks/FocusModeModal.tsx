@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Pause, RotateCcw, Check, X, CheckSquare, Square, Clock, Sparkles, Bell, Coffee } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, RotateCcw, Check, X, CheckSquare, Square, Clock, Sparkles, Bell, Coffee, AlertCircle } from 'lucide-react';
 import { Task, Subtask } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { shioriAudio } from '../../utils/shioriAudio';
@@ -23,32 +23,44 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
   const [secondsRemaining, setSecondsRemaining] = useState<number>(25 * 60);
   const [isActive, setIsActive] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
+  const [hasWarnedEnding, setHasWarnedEnding] = useState(false);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [customInputOpen, setCustomInputOpen] = useState(false);
   const [customInputVal, setCustomInputVal] = useState('10');
 
+  const openedTaskIdRef = useRef<string | null>(null);
   const DURATION_PRESETS = [5, 15, 25, 45, 60];
 
   useEffect(() => {
     if (isOpen && task && token) {
-      setSelectedMinutes(25);
-      setSecondsRemaining(25 * 60);
-      setIsActive(false);
-      setIsFinished(false);
+      // Only reset timer state if this is a newly opened task
+      if (openedTaskIdRef.current !== task.id) {
+        openedTaskIdRef.current = task.id;
+        setSelectedMinutes(25);
+        setSecondsRemaining(25 * 60);
+        setIsActive(false);
+        setIsFinished(false);
+        setHasWarnedEnding(false);
+      }
+      
       fetch(`/api/tasks/${task.id}/subtasks`, {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then((r) => r.json())
         .then((data) => setSubtasks(data.subtasks || []))
         .catch((err) => console.error(err));
+    } else if (!isOpen) {
+      openedTaskIdRef.current = null;
+      setIsActive(false);
     }
-  }, [isOpen, task, token]);
+  }, [isOpen, task?.id, token]);
 
   const handleSelectDuration = (minutes: number) => {
     setSelectedMinutes(minutes);
     setSecondsRemaining(minutes * 60);
     setIsActive(false);
     setIsFinished(false);
+    setHasWarnedEnding(false);
   };
 
   const handleCustomSubmit = (e: React.FormEvent) => {
@@ -64,7 +76,31 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
     let interval: any = null;
     if (isActive && secondsRemaining > 0) {
       interval = setInterval(() => {
-        setSecondsRemaining((prev) => prev - 1);
+        setSecondsRemaining((prev) => {
+          const nextSec = prev - 1;
+
+          // Warning alert when 1 minute (or 30s for 5m timer) is remaining
+          const warnThreshold = selectedMinutes <= 5 ? 30 : 60;
+          if (nextSec === warnThreshold && !hasWarnedEnding && task) {
+            setHasWarnedEnding(true);
+            shioriAudio.playSoftClick(0.12);
+            reminderManager.showNotification('Focus Session Ending Soon ⏳', {
+              body: `${warnThreshold === 60 ? '1 minute' : '30 seconds'} left on ${task.task_code}: ${task.title}. Prepare to wrap up.`,
+              tag: `shiori-focus-warning-${task.id}`,
+            });
+            window.dispatchEvent(
+              new CustomEvent('shiori-inapp-reminder', {
+                detail: {
+                  taskId: task.id,
+                  taskCode: task.task_code,
+                  taskTitle: `Focus session ending in ${warnThreshold === 60 ? '1 minute' : '30 seconds'} ⏳`,
+                },
+              })
+            );
+          }
+
+          return nextSec;
+        });
       }, 1000);
     } else if (secondsRemaining === 0 && isActive) {
       setIsActive(false);
@@ -93,7 +129,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
       );
     }
     return () => clearInterval(interval);
-  }, [isActive, secondsRemaining, task, selectedMinutes]);
+  }, [isActive, secondsRemaining, task, selectedMinutes, hasWarnedEnding]);
 
   if (!isOpen || !task) return null;
 
