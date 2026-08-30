@@ -1,16 +1,18 @@
-const CACHE_NAME = 'shiori-pwa-v1';
+const CACHE_NAME = 'shiori-pwa-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icons/shiori-icon.svg',
+  '/logo.png',
+  '/favicon-shiori.png',
+  '/icons/shiori-icon.svg'
 ];
 
 // Install Event
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      return cache.addAll(ASSETS_TO_CACHE).catch(() => {});
     })
   );
   self.skipWaiting();
@@ -32,33 +34,50 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch Event - Network First with Cache Fallback for dynamic dev work
+// Fetch Event - Network First with resilient Fallback
 self.addEventListener('fetch', (event) => {
-  // Skip API or WebSocket calls from cache
-  if (event.request.url.includes('/api/') || event.request.url.includes('/socket.io/')) {
+  const url = event.request.url;
+
+  // Only intercept GET requests, skip API, webhooks, and websockets
+  if (
+    event.request.method !== 'GET' ||
+    url.includes('/api/') ||
+    url.includes('/socket.io/') ||
+    url.includes('chrome-extension:')
+  ) {
     return;
   }
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cache clone if valid GET request
-        if (event.request.method === 'GET' && response.status === 200) {
+        if (response && response.status === 200 && response.type === 'basic') {
           const responseToCache = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
+            cache.put(event.request, responseToCache).catch(() => {});
           });
         }
         return response;
       })
-      .catch(() => {
-        return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
-          }
+      .catch(async () => {
+        // Cache match
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+
+        // SPA Navigation Fallback
+        if (
+          event.request.mode === 'navigate' ||
+          (event.request.headers.get('accept') && event.request.headers.get('accept').includes('text/html'))
+        ) {
+          const indexCached = (await caches.match('/index.html')) || (await caches.match('/'));
+          if (indexCached) return indexCached;
+        }
+
+        // Guaranteed Response fallback (prevents TypeError: Failed to convert value to Response)
+        return new Response('Network unavailable', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain' }
         });
       })
   );
@@ -67,18 +86,20 @@ self.addEventListener('fetch', (event) => {
 // Push Notification Listener
 self.addEventListener('push', (event) => {
   if (event.data) {
-    const data = event.data.json();
-    const options = {
-      body: data.body || 'New development update in SHIORI',
-      icon: '/icons/shiori-icon.svg',
-      badge: '/icons/shiori-icon.svg',
-      data: {
-        url: data.url || '/'
-      }
-    };
-    event.waitUntil(
-      self.registration.showNotification(data.title || 'SHIORI Notice', options)
-    );
+    try {
+      const data = event.data.json();
+      const options = {
+        body: data.body || 'New development update in SHIORI',
+        icon: '/logo.png',
+        badge: '/icons/shiori-icon.svg',
+        data: {
+          url: data.url || '/'
+        }
+      };
+      event.waitUntil(
+        self.registration.showNotification(data.title || 'SHIORI Notice', options)
+      );
+    } catch {}
   }
 });
 
