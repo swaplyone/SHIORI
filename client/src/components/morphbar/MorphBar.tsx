@@ -60,34 +60,34 @@ export const MorphBar: React.FC = () => {
   // Precise discrete dimensions for butter-smooth CSS interpolation
   const getPillDimensions = () => {
     if (isExpanded) {
-      return 'w-[94vw] sm:w-[580px] md:w-[640px] max-w-2xl rounded-lg p-4 shadow-2xl';
+      return 'w-[94vw] sm:w-[580px] md:w-[640px] max-w-[calc(100vw-24px)] rounded-lg p-4 shadow-2xl';
     }
 
     switch (currentEvent.type) {
       case 'IDLE': {
         const isHome = location.pathname === '/';
         return isHome
-          ? 'w-[155px] h-[44px] rounded-full px-3.5 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer'
-          : 'w-[290px] sm:w-[325px] h-[44px] rounded-full px-4 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer';
+          ? 'w-[155px] max-w-[calc(100vw-24px)] h-[44px] rounded-full px-3.5 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer'
+          : 'w-[290px] sm:w-[325px] max-w-[calc(100vw-24px)] h-[44px] rounded-full px-4 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer';
       }
       case 'FOCUS_TIMER':
-        return 'w-[240px] sm:w-[260px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
+        return 'w-[240px] sm:w-[260px] max-w-[calc(100vw-24px)] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
       case 'GITHUB_COMMIT':
-        return 'w-[300px] sm:w-[340px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
+        return 'w-[300px] sm:w-[340px] max-w-[calc(100vw-24px)] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
       case 'BUILD_ERROR':
-        return 'w-[280px] sm:w-[320px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer bg-eink-surface';
+        return 'w-[280px] sm:w-[320px] max-w-[calc(100vw-24px)] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer bg-eink-surface';
       case 'BUILD_SUCCESS':
-        return 'w-[260px] sm:w-[290px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
+        return 'w-[260px] sm:w-[290px] max-w-[calc(100vw-24px)] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
       case 'TASK_VERIFICATION':
-        return 'w-[290px] sm:w-[330px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
+        return 'w-[290px] sm:w-[330px] max-w-[calc(100vw-24px)] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
       case 'CONNECTION_REQUEST':
-        return 'w-[290px] sm:w-[330px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
+        return 'w-[290px] sm:w-[330px] max-w-[calc(100vw-24px)] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
       case 'OTP_VERIFICATION':
-        return 'w-[270px] sm:w-[300px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
+        return 'w-[270px] sm:w-[300px] max-w-[calc(100vw-24px)] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
       case 'WORKSPACE_INVITATION':
-        return 'w-[290px] sm:w-[330px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
+        return 'w-[290px] sm:w-[330px] max-w-[calc(100vw-24px)] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';
       default:
-        return 'w-[220px] h-[42px] rounded-full px-3 shadow-eink-sm cursor-pointer';
+        return 'w-[220px] max-w-[calc(100vw-24px)] h-[42px] rounded-full px-3 shadow-eink-sm cursor-pointer';
     }
   };
 
