@@ -242,8 +242,15 @@ githubRouter.get('/available-repositories', authMiddleware, async (req: AuthRequ
     });
 
     if (!ghRes.ok) {
+      if (ghRes.status === 401) {
+        console.warn(`[GITHUB API] User ${req.user!.id} token expired or revoked. Resetting status.`);
+        await runQuery('UPDATE users SET github_connected = 0 WHERE id = ?', [req.user!.id]);
+        await runQuery('DELETE FROM github_accounts WHERE user_id = ?', [req.user!.id]);
+        res.json({ connected: false, repositories: [], message: 'GitHub connection expired. Please reconnect.' });
+        return;
+      }
       console.error(`[GITHUB API ERROR] Status ${ghRes.status} while fetching repositories.`);
-      res.status(ghRes.status).json({ error: 'Failed to fetch repositories from GitHub.', connected: true, repositories: [] });
+      res.json({ connected: false, repositories: [], error: 'Unable to fetch repositories from GitHub.' });
       return;
     }
 

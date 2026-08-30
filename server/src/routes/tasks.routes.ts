@@ -9,56 +9,61 @@ export const tasksRouter = Router();
 
 // GET all tasks (filtered by workspace, project, status, search, repo)
 tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { workspaceId, projectId, status, search, repo } = req.query;
+  try {
+    const { workspaceId, projectId, status, search, repo } = req.query;
 
-  let sql = `
-    SELECT t.*, 
-           p.name as project_name, p.slug as project_slug,
-           u.name as assignee_name, u.avatar_url as assignee_avatar,
-           (SELECT COUNT(*) FROM task_subtasks WHERE task_id = t.id) as subtasks_count,
-           (SELECT COUNT(*) FROM task_subtasks WHERE task_id = t.id AND completed = 1) as subtasks_completed,
-           (SELECT COUNT(*) FROM task_comments WHERE task_id = t.id) as comments_count
-    FROM tasks t
-    LEFT JOIN projects p ON t.project_id = p.id
-    LEFT JOIN users u ON t.assignee_id = u.id
-    WHERE (
-      t.workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = ?)
-      OR t.created_by = ?
-      OR t.assignee_id = ?
-    )
-  `;
-  const params: any[] = [req.user!.id, req.user!.id, req.user!.id];
+    let sql = `
+      SELECT t.*, 
+             p.name as project_name, p.slug as project_slug,
+             u.name as assignee_name, u.avatar_url as assignee_avatar,
+             (SELECT COUNT(*) FROM task_subtasks WHERE task_id = t.id) as subtasks_count,
+             (SELECT COUNT(*) FROM task_subtasks WHERE task_id = t.id AND completed = 1) as subtasks_completed,
+             (SELECT COUNT(*) FROM task_comments WHERE task_id = t.id) as comments_count
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id
+      LEFT JOIN users u ON t.assignee_id = u.id
+      WHERE (
+        t.workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = ?)
+        OR t.created_by = ?
+        OR t.assignee_id = ?
+      )
+    `;
+    const params: any[] = [req.user!.id, req.user!.id, req.user!.id];
 
-  if (workspaceId) {
-    sql += ' AND t.workspace_id = ?';
-    params.push(workspaceId);
+    if (workspaceId) {
+      sql += ' AND t.workspace_id = ?';
+      params.push(workspaceId);
+    }
+
+    if (projectId) {
+      sql += ' AND t.project_id = ?';
+      params.push(projectId);
+    }
+
+    if (repo) {
+      sql += ' AND (t.github_repo = ? OR p.github_repo_name = ?)';
+      params.push(repo, repo);
+    }
+
+    if (status) {
+      sql += ' AND t.status = ?';
+      params.push(status);
+    }
+
+    if (search) {
+      sql += ' AND (t.title LIKE ? OR t.task_code LIKE ? OR t.description LIKE ?)';
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    sql += ' ORDER BY t.task_number DESC';
+
+    const tasks = await queryAll(sql, params);
+    res.json({ tasks: tasks || [] });
+  } catch (err: any) {
+    console.error('[TASKS GET ERROR]', err);
+    res.status(500).json({ error: 'Failed to fetch tasks', tasks: [] });
   }
-
-  if (projectId) {
-    sql += ' AND t.project_id = ?';
-    params.push(projectId);
-  }
-
-  if (repo) {
-    sql += ' AND (t.github_repo = ? OR p.github_repo_name = ?)';
-    params.push(repo, repo);
-  }
-
-  if (status) {
-    sql += ' AND t.status = ?';
-    params.push(status);
-  }
-
-  if (search) {
-    sql += ' AND (t.title LIKE ? OR t.task_code LIKE ? OR t.description LIKE ?)';
-    const searchPattern = `%${search}%`;
-    params.push(searchPattern, searchPattern, searchPattern);
-  }
-
-  sql += ' ORDER BY t.task_number DESC';
-
-  const tasks = await queryAll(sql, params);
-  res.json({ tasks });
 });
 
 // GET single task details

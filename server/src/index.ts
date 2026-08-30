@@ -71,6 +71,15 @@ app.get(['/', '/health', '/api/health', '/ping', '/api/ping'], (_req, res) => {
   });
 });
 
+// Global Error Handler Middleware
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[UNHANDLED SERVER ERROR]', err);
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+  res.status(500).json({ error: err?.message || 'Internal Server Error' });
+});
+
 import { verifySmtpConnection } from './services/email.service.js';
 import { initDatabaseConnection } from './db/index.js';
 
