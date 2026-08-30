@@ -64,6 +64,7 @@ export const ProjectDetailPage: React.FC = () => {
   const [memberShioriId, setMemberShioriId] = useState('');
   const [memberError, setMemberError] = useState<string | null>(null);
   const [memberSuccess, setMemberSuccess] = useState<string | null>(null);
+  const [connections, setConnections] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   // Commits & Git history state
@@ -101,6 +102,18 @@ export const ProjectDetailPage: React.FC = () => {
     }
   };
 
+  const fetchConnections = async () => {
+    if (!token) return;
+    try {
+      const { ok, data } = await fetchJson('/api/connections');
+      if (ok && data?.connections) {
+        setConnections(data.connections);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchProjectData();
 
@@ -108,6 +121,12 @@ export const ProjectDetailPage: React.FC = () => {
     window.addEventListener('shiori-refresh', handleRefresh);
     return () => window.removeEventListener('shiori-refresh', handleRefresh);
   }, [projectId, token]);
+
+  useEffect(() => {
+    if (isAddMemberOpen) {
+      fetchConnections();
+    }
+  }, [isAddMemberOpen, token]);
 
   const handleToggleTaskStatus = async (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -952,9 +971,30 @@ export const ProjectDetailPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleAddMember} className="space-y-4 text-xs font-technical">
+              {/* Quick select from active mutual connections */}
+              {connections.length > 0 && (
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-eink-textMuted uppercase">
+                    CHOOSE FROM YOUR CONNECTIONS
+                  </label>
+                  <select
+                    value={memberShioriId}
+                    onChange={(e) => setMemberShioriId(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-eink-surface border border-eink-border rounded-sm text-xs font-mono text-eink-text outline-none cursor-pointer"
+                  >
+                    <option value="">-- Select a Connected Collaborator --</option>
+                    {connections.map((c) => (
+                      <option key={c.userId} value={c.shioriId}>
+                        {c.name} ({c.shioriId})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-bold text-eink-textMuted uppercase mb-1">
-                  ENTER FRIEND'S EXACT SHIORI ID *
+                  ENTER FRIEND'S SHIORI ID *
                 </label>
                 <input
                   type="text"
@@ -965,6 +1005,14 @@ export const ProjectDetailPage: React.FC = () => {
                   required
                   autoFocus
                 />
+              </div>
+
+              {/* Connections-only policy notice */}
+              <div className="p-2.5 bg-eink-surface border border-eink-border rounded text-[11px] font-mono text-eink-textSecondary flex items-start gap-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-eink-text shrink-0 mt-0.5" />
+                <span>
+                  Only verified <strong>Connections</strong> can be invited to projects. Connect with team members under the <strong>Connections</strong> tab first.
+                </span>
               </div>
 
               {memberError && (
@@ -978,10 +1026,6 @@ export const ProjectDetailPage: React.FC = () => {
                   ✓ {memberSuccess}
                 </div>
               )}
-
-              <p className="text-[11px] text-eink-textSecondary font-sans">
-                Project members immediately share all TODOs, Git activity, and recovery features.
-              </p>
 
               <div className="pt-2 flex items-center justify-end gap-2 border-t border-eink-border">
                 <button

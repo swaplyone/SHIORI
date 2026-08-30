@@ -14,6 +14,7 @@ import {
   X,
   Mail,
   Shield,
+  ShieldCheck,
   Clock,
   Send
 } from 'lucide-react';
@@ -57,6 +58,7 @@ export const ProjectsPage: React.FC = () => {
   const [selectedProjectForMembers, setSelectedProjectForMembers] = useState<Project | null>(null);
   const [projectMembers, setProjectMembers] = useState<any[]>([]);
   const [projectPendingInvites, setProjectPendingInvites] = useState<any[]>([]);
+  const [connections, setConnections] = useState<any[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [inviteIdentifier, setInviteIdentifier] = useState('');
   const [inviteRole, setInviteRole] = useState<'member' | 'maintainer'>('member');
@@ -148,13 +150,18 @@ export const ProjectsPage: React.FC = () => {
     if (!token) return;
     try {
       setMembersLoading(true);
-      const res = await fetch(`/api/projects/${proj.id}/members`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const [membersRes, connRes] = await Promise.all([
+        fetch(`/api/projects/${proj.id}/members`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/connections', { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+      if (membersRes.ok) {
+        const data = await membersRes.json();
         setProjectMembers(data.members || []);
         setProjectPendingInvites(data.pendingInvitations || []);
+      }
+      if (connRes.ok) {
+        const connData = await connRes.json();
+        setConnections(connData.connections || []);
       }
     } catch (err) {
       console.error(err);
@@ -474,13 +481,31 @@ export const ProjectsPage: React.FC = () => {
             </div>
 
             {/* Invite New Collaborator Form */}
-            <div className="p-3.5 bg-eink-surface border border-eink-border rounded-sm space-y-2">
+            <div className="p-3.5 bg-eink-surface border border-eink-border rounded-sm space-y-2.5">
               <span className="text-[10px] text-eink-textMuted uppercase font-bold block">
                 INVITE A DEVELOPER TO JOIN THIS PROJECT
               </span>
-              <p className="text-[11px] text-eink-textSecondary font-sans leading-tight">
-                Invitees will receive a notification in their dashboard and must accept the invitation to become a project member.
-              </p>
+
+              {/* Connections Quick Selector */}
+              {connections.length > 0 && (
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-eink-textMuted uppercase">
+                    QUICK SELECT FROM YOUR CONNECTIONS
+                  </label>
+                  <select
+                    value={inviteIdentifier}
+                    onChange={(e) => setInviteIdentifier(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded-sm text-xs font-mono text-eink-text outline-none cursor-pointer"
+                  >
+                    <option value="">-- Choose a Connected Collaborator --</option>
+                    {connections.map((c) => (
+                      <option key={c.userId} value={c.shioriId}>
+                        {c.name} ({c.shioriId})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <form onSubmit={handleSendProjectInvite} className="space-y-2 pt-1">
                 <div className="flex gap-2">
@@ -489,7 +514,7 @@ export const ProjectsPage: React.FC = () => {
                     value={inviteIdentifier}
                     onChange={(e) => setInviteIdentifier(e.target.value)}
                     placeholder="Enter SHIORI ID (e.g. SHI-XXXXX) or Username..."
-                    className="flex-1 px-3 py-2 bg-eink-bg border border-eink-border rounded-sm text-xs font-mono text-eink-text outline-none"
+                    className="flex-1 px-3 py-2 bg-eink-bg border border-eink-border rounded-sm text-xs font-mono text-eink-text outline-none uppercase"
                     required
                   />
                   <select
@@ -500,6 +525,11 @@ export const ProjectsPage: React.FC = () => {
                     <option value="member">MEMBER</option>
                     <option value="maintainer">MAINTAINER</option>
                   </select>
+                </div>
+
+                <div className="p-2 bg-eink-bg border border-eink-border rounded text-[11px] font-mono text-eink-textSecondary flex items-start gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5 text-eink-text shrink-0 mt-0.5" />
+                  <span>Only mutual <strong>Connections</strong> can be invited to projects.</span>
                 </div>
 
                 <div className="flex justify-end pt-1">

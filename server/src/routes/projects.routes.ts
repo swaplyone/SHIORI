@@ -358,6 +358,19 @@ projectsRouter.post('/:id/members', authMiddleware, async (req: AuthRequest, res
     return;
   }
 
+  // Enforce connections-only invitation policy
+  const isConnected = await queryOne(`
+    SELECT 1 FROM connections 
+    WHERE (user_a_id = ? AND user_b_id = ?) OR (user_a_id = ? AND user_b_id = ?)
+  `, [req.user!.id, targetUser.id, targetUser.id, req.user!.id]);
+
+  if (!isConnected) {
+    res.status(403).json({
+      error: `You can only invite members who are in your connections. Please connect with ${targetUser.name} (${targetUser.shiori_id || targetUser.username}) first under Connections.`
+    });
+    return;
+  }
+
   // Check if already an active member
   const existing = await queryOne('SELECT id FROM project_members WHERE project_id = ? AND user_id = ?', [id, targetUser.id]);
   if (existing) {
