@@ -16,6 +16,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useMorphBar } from '../../context/MorphBarContext';
 import { EInkTheme } from '../../types';
 
+import { WorkstationSvg } from './WorkstationSvg';
+
 export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComplete }) => {
   const { user, setTheme, isAuthenticated } = useAuth();
   const { setIsBarVisible } = useMorphBar();
@@ -115,22 +117,10 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
 
       {/* Main Split Grid Container */}
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-        {/* Left Column: Isometric Wireframe Workstation Line Art */}
+        {/* Left Column: Pure Isometric Vector SVG Workstation Line Art */}
         <div className="lg:col-span-7 flex items-center justify-center p-2 sm:p-4">
           <div className="relative w-full max-w-lg lg:max-w-xl aspect-4/3 flex items-center justify-center transition-all duration-300">
-            {isDark ? (
-              <img
-                src="/welcome-desk.jpg"
-                alt="SHIORI Developer Workstation Dark"
-                className="w-full h-full object-contain filter contrast-125 brightness-110 drop-shadow-[0_0_25px_rgba(255,255,255,0.05)] select-none pointer-events-none"
-              />
-            ) : (
-              <img
-                src="/welcome-desk-light.jpg"
-                alt="SHIORI Developer Workstation Light"
-                className="w-full h-full object-contain filter contrast-125 brightness-95 drop-shadow-[0_0_25px_rgba(0,0,0,0.05)] select-none pointer-events-none"
-              />
-            )}
+            <WorkstationSvg isDark={isDark} />
           </div>
         </div>
 
