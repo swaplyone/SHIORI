@@ -173,7 +173,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 select-none font-sans">
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 select-none font-sans">
       <div className="fixed inset-0 bg-black/40 backdrop-blur-[1px]" onClick={onClose} />
 
       <div className="relative w-full max-w-lg bg-eink-bg border border-eink-border shadow-2xl rounded-sm p-6 z-10 space-y-4 font-technical max-h-[90vh] overflow-y-auto">

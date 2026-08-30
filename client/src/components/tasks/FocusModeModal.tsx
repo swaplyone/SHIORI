@@ -226,7 +226,7 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
   const timeFormatted = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
   return (
-    <div className="fixed inset-0 z-50 bg-eink-bg flex flex-col justify-between p-6 sm:p-12 select-none font-technical animate-fade-in">
+    <div className="fixed inset-0 z-[10001] bg-eink-bg flex flex-col justify-between p-6 sm:p-12 select-none font-technical animate-fade-in">
       {/* Top Bar */}
       <div className="flex items-center justify-between border-b border-eink-border pb-4 max-w-4xl mx-auto w-full">
         <div className="flex items-center gap-3">

@@ -369,22 +369,22 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
   if (!taskId) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 select-none font-sans">
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-2 sm:p-4 md:p-6 select-none font-sans">
       <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} />
 
       <div className="relative w-full max-w-4xl max-h-[92vh] bg-eink-bg border border-eink-border shadow-2xl rounded-sm flex flex-col z-10 overflow-hidden">
         {/* Header Bar */}
-        <div className="p-4 border-b border-eink-border flex items-center justify-between bg-eink-surface">
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-sm font-bold px-2 py-0.5 bg-eink-text text-eink-bg rounded-sm tracking-wider">
+        <div className="p-3 sm:p-4 border-b border-eink-border flex items-center justify-between bg-eink-surface gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <span className="font-mono text-xs sm:text-sm font-bold px-2 py-0.5 bg-eink-text text-eink-bg rounded-sm tracking-wider shrink-0">
               {task?.task_code || 'TASK'}
             </span>
-            <span className="font-technical text-xs text-eink-textMuted uppercase">
+            <span className="font-technical text-[11px] sm:text-xs text-eink-textMuted uppercase truncate">
               {task?.project_name || 'Project'}
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {task && (
               <>
                 {task.status !== 'DONE' && task.user_status !== 'COMPLETED' && (
@@ -392,21 +392,23 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                     <button
                       type="button"
                       onClick={() => setIsFocusOpen(true)}
-                      className="px-2.5 py-1 bg-eink-text text-eink-bg rounded-sm text-[11px] font-bold flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+                      className="px-2 sm:px-2.5 py-1 bg-eink-text text-eink-bg rounded-sm text-[11px] font-bold flex items-center gap-1 shadow-eink-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer"
                       title="Open Focus Mode for this task"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>FOCUS MODE</span>
+                      <span className="hidden sm:inline">FOCUS MODE</span>
+                      <span className="sm:hidden text-[10px]">FOCUS</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setIsHandoffOpen(true)}
-                      className="px-2.5 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm text-[11px] font-mono font-bold text-eink-text flex items-center gap-1.5 transition-colors cursor-pointer"
+                      className="px-2 sm:px-2.5 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm text-[11px] font-mono font-bold text-eink-text flex items-center gap-1 transition-colors cursor-pointer"
                       title="Open AI Developer Handoff"
                     >
                       <Terminal className="w-3.5 h-3.5" />
-                      <span>AI PROMPT</span>
+                      <span className="hidden sm:inline">AI PROMPT</span>
+                      <span className="sm:hidden text-[10px]">PROMPT</span>
                     </button>
                   </>
                 )}

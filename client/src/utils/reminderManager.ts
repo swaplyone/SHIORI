@@ -50,17 +50,36 @@ class ReminderManager {
     }
   }
 
-  public showNotification(title: string, options?: NotificationOptions) {
-    if (this.isNotificationSupported() && Notification.permission === 'granted') {
+  public async showNotification(title: string, options?: NotificationOptions) {
+    if (!this.isNotificationSupported() || Notification.permission !== 'granted') {
+      return;
+    }
+
+    const payload: any = {
+      icon: '/favicon-shiori.png',
+      badge: '/favicon-shiori.png',
+      vibrate: [200, 100, 200],
+      ...options,
+    };
+
+    // 1. Try ServiceWorkerRegistration (Required for iPhone iOS 16.4+ lock screen & Android PWA)
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       try {
-        new Notification(title, {
-          icon: '/favicon-shiori.png',
-          badge: '/favicon-shiori.png',
-          ...options,
-        });
-      } catch (err) {
-        console.warn('Notification trigger failed', err);
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && reg.showNotification) {
+          await reg.showNotification(title, payload);
+          return;
+        }
+      } catch (e) {
+        console.warn('[NOTIF] SW notification fallback:', e);
       }
+    }
+
+    // 2. Fallback to standard window Notification constructor
+    try {
+      new Notification(title, payload);
+    } catch (err) {
+      console.warn('[NOTIF] Standard notification fallback:', err);
     }
   }
 
