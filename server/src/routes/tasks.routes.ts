@@ -191,19 +191,76 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     githubBranch
   } = req.body;
 
-  if (!title || !projectId) {
-    res.status(400).json({ error: 'Title and Project are required.' });
+  if (!title) {
+    res.status(400).json({ error: 'Task title is required.' });
     return;
   }
 
-  // Find workspace and repo name if not given
+  // Find workspace, project and repo name
+  let finalProjectId = projectId;
   let finalWorkspaceId = workspaceId;
   let finalGithubRepo = githubRepo;
-  const project = await queryOne('SELECT workspace_id, github_repo_name, name FROM projects WHERE id = ?', [projectId]);
-  if (project) {
-    if (!finalWorkspaceId) finalWorkspaceId = project.workspace_id;
-    if (!finalGithubRepo) finalGithubRepo = project.github_repo_name || project.name;
+
+  let project = null;
+  if (finalProjectId && finalProjectId !== 'default') {
+    project = await queryOne('SELECT id, workspace_id, github_repo_name, name FROM projects WHERE id = ?', [finalProjectId]);
   }
+
+  // If no project found by id, try matching by githubRepo
+  if (!project && finalGithubRepo) {
+    project = await queryOne(`
+      SELECT id, workspace_id, github_repo_name, name 
+      FROM projects 
+      WHERE LOWER(github_repo_name) = LOWER(?) OR LOWER(name) = LOWER(?)
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `, [finalGithubRepo, finalGithubRepo]);
+  }
+
+  // If still no project found, get the user's most recent project
+  if (!project) {
+    project = await queryOne(`
+      SELECT p.id, p.workspace_id, p.github_repo_name, p.name
+      FROM projects p
+      WHERE p.created_by = ? OR p.id IN (SELECT project_id FROM project_members WHERE user_id = ?)
+      ORDER BY p.created_at DESC
+      LIMIT 1
+    `, [req.user!.id, req.user!.id]);
+  }
+
+  // If user has NO project at all, auto-create a default project for this user
+  if (!project) {
+    let workspace = await queryOne('SELECT id FROM workspaces WHERE user_id = ? LIMIT 1', [req.user!.id]);
+    if (!workspace) {
+      const wsId = uuidv4();
+      await runQuery(`
+        INSERT INTO workspaces (id, user_id, name, slug, created_at, updated_at)
+        VALUES (?, ?, 'Personal Workspace', 'personal', datetime('now'), datetime('now'))
+      `, [wsId, req.user!.id]);
+      await runQuery(`
+        INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at)
+        VALUES (?, ?, ?, 'OWNER', datetime('now'))
+      `, [uuidv4(), wsId, req.user!.id]);
+      workspace = { id: wsId };
+    }
+
+    const newProjId = uuidv4();
+    const repoName = finalGithubRepo || 'SHIORI';
+    await runQuery(`
+      INSERT INTO projects (id, workspace_id, name, slug, github_repo_name, default_branch, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'main', ?, datetime('now'), datetime('now'))
+    `, [newProjId, workspace.id, repoName, repoName.toLowerCase().replace(/[^a-z0-9]/g, '-'), repoName, req.user!.id]);
+    await runQuery(`
+      INSERT INTO project_members (id, project_id, user_id, role, joined_at)
+      VALUES (?, ?, ?, 'OWNER', datetime('now'))
+    `, [uuidv4(), newProjId, req.user!.id]);
+
+    project = { id: newProjId, workspace_id: workspace.id, github_repo_name: repoName, name: repoName };
+  }
+
+  finalProjectId = project.id;
+  if (!finalWorkspaceId) finalWorkspaceId = project.workspace_id;
+  if (!finalGithubRepo) finalGithubRepo = project.github_repo_name || project.name;
 
   // Get next task number (starts from 1, format SHR-0001, SHR-0042)
   const maxRow = await queryOne('SELECT COALESCE(MAX(task_number), 0) as max_num FROM tasks');
@@ -229,7 +286,7 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
       0, 0, ?, datetime('now'), datetime('now')
     )
   `, [
-    taskId, nextNum, taskCode, projectId, finalWorkspaceId, title, description || '',
+    taskId, nextNum, taskCode, finalProjectId, finalWorkspaceId, title, description || '',
     status, priority, targetAssigneeId || req.user!.id, req.user!.id, dueDate || 'Tomorrow',
     due_at || null, reminder_at || null, recurrence_rule || null, tags || null,
     finalGithubRepo || null, githubBranch || null, initialAssignmentStatus
@@ -239,7 +296,7 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     id: taskId,
     task_number: nextNum,
     task_code: taskCode,
-    project_id: projectId,
+    project_id: finalProjectId,
     workspace_id: finalWorkspaceId,
     title,
     description: description || '',
