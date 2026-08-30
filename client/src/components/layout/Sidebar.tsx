@@ -44,9 +44,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSimulator, onOpenCommand
         <div className="border-b border-eink-border pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 bg-eink-text text-eink-bg flex items-center justify-center font-technical font-bold text-sm rounded-sm">
-                S
-              </div>
+              <img
+                src="/favicon-shiori.png"
+                alt="SHIORI"
+                className="w-7 h-7 object-contain rounded-sm border border-eink-border bg-eink-bg"
+              />
               <div>
                 <h1 className="font-technical font-bold text-sm tracking-wider text-eink-text uppercase">
                   SHIORI
