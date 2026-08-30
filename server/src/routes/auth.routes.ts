@@ -340,6 +340,77 @@ authRouter.patch('/profile', authMiddleware, async (req: AuthRequest, res: Respo
   res.json({ user });
 });
 
+// 6.5. Update Settings (Appearance, Privacy, Notifications)
+authRouter.patch('/settings', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const {
+    ui_mode,
+    accent_color,
+    font_family,
+    privacy_tasks,
+    privacy_github,
+    privacy_projects,
+    privacy_stats,
+    eink_refresh_interval,
+    sound_effects,
+    web_push_enabled,
+    notify_build_failed,
+    notify_build_passed,
+    notify_pr_review,
+    notify_task_assigned
+  } = req.body;
+
+  const existing = await queryOne('SELECT user_id FROM user_settings WHERE user_id = ?', [userId]);
+  if (!existing) {
+    await runQuery(`
+      INSERT INTO user_settings (
+        user_id, ui_mode, accent_color, font_family,
+        privacy_tasks, privacy_github, privacy_stats
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      userId,
+      ui_mode || 'eink_matte',
+      accent_color || '#2E5A36',
+      font_family || 'geist',
+      privacy_tasks || 'friends',
+      privacy_github || 'workspace',
+      privacy_stats || 'private'
+    ]);
+  } else {
+    await runQuery(`
+      UPDATE user_settings SET
+        ui_mode = COALESCE(?, ui_mode),
+        accent_color = COALESCE(?, accent_color),
+        font_family = COALESCE(?, font_family),
+        privacy_tasks = COALESCE(?, privacy_tasks),
+        privacy_github = COALESCE(?, privacy_github),
+        privacy_stats = COALESCE(?, privacy_stats),
+        eink_refresh_interval = COALESCE(?, eink_refresh_interval),
+        notify_build_failed = COALESCE(?, notify_build_failed),
+        notify_build_passed = COALESCE(?, notify_build_passed),
+        notify_pr_review = COALESCE(?, notify_pr_review),
+        notify_task_assigned = COALESCE(?, notify_task_assigned)
+      WHERE user_id = ?
+    `, [
+      ui_mode ?? null,
+      accent_color ?? null,
+      font_family ?? null,
+      privacy_tasks ?? null,
+      privacy_github ?? null,
+      privacy_stats ?? null,
+      eink_refresh_interval ?? null,
+      notify_build_failed ?? null,
+      notify_build_passed ?? null,
+      notify_pr_review ?? null,
+      notify_task_assigned ?? null,
+      userId
+    ]);
+  }
+
+  const updatedSettings = await queryOne('SELECT * FROM user_settings WHERE user_id = ?', [userId]);
+  res.json({ success: true, settings: updatedSettings });
+});
+
 // 7. Delete User Account Permanently
 authRouter.delete('/account', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.id;

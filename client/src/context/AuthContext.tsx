@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserSettings, EInkTheme } from '../types';
+import { User, UserSettings, EInkTheme, UIMode, FontOption } from '../types';
 import { fetchJson } from '../utils/api';
 
 interface AuthContextType {
@@ -8,11 +8,17 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  uiMode: UIMode;
+  accentColor: string;
+  fontFamily: FontOption;
   login: (token: string, user: User) => void;
   logout: () => void;
   updateUser: (user: Partial<User>) => void;
   updateSettings: (settings: Partial<UserSettings>) => void;
   setTheme: (theme: EInkTheme) => void;
+  setUIMode: (mode: UIMode) => void;
+  setAccentColor: (color: string) => void;
+  setFontFamily: (font: FontOption) => void;
   demoLogin: () => Promise<void>;
 }
 
@@ -41,6 +47,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
+  const [uiMode, setUiModeState] = useState<UIMode>(() => {
+    try {
+      const cached = localStorage.getItem('shiori_settings');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.ui_mode) return parsed.ui_mode;
+      }
+      return (localStorage.getItem('shiori_ui_mode') as UIMode) || 'eink_matte';
+    } catch {
+      return 'eink_matte';
+    }
+  });
+
+  const [accentColor, setAccentColorState] = useState<string>(() => {
+    try {
+      const cached = localStorage.getItem('shiori_settings');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.accent_color) return parsed.accent_color;
+      }
+      return localStorage.getItem('shiori_accent_color') || '#2E5A36';
+    } catch {
+      return '#2E5A36';
+    }
+  });
+
+  const [fontFamily, setFontFamilyState] = useState<FontOption>(() => {
+    try {
+      const cached = localStorage.getItem('shiori_settings');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.font_family) return parsed.font_family;
+      }
+      return (localStorage.getItem('shiori_font_family') as FontOption) || 'geist';
+    } catch {
+      return 'geist';
+    }
+  });
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Apply theme on DOM
@@ -52,6 +97,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       document.documentElement.classList.remove('dark');
     }
   };
+
+  // Apply appearance (UI Mode, Accent Color, Font) on DOM
+  const applyAppearance = (mode: UIMode, accent: string, font: FontOption) => {
+    document.documentElement.setAttribute('data-ui-mode', mode);
+    document.documentElement.setAttribute('data-font', font);
+    document.documentElement.style.setProperty('--eink-accent', accent);
+  };
+
+  // Initial startup: apply cached preferences immediately to prevent flash
+  useEffect(() => {
+    applyAppearance(uiMode, accentColor, fontFamily);
+  }, []);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -68,9 +125,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (data.settings) {
               setSettings(data.settings);
               localStorage.setItem('shiori_settings', JSON.stringify(data.settings));
+              
+              const sMode = data.settings.ui_mode || 'eink_matte';
+              const sAccent = data.settings.accent_color || '#2E5A36';
+              const sFont = data.settings.font_family || 'geist';
+              
+              setUiModeState(sMode);
+              setAccentColorState(sAccent);
+              setFontFamilyState(sFont);
+              applyAppearance(sMode, sAccent, sFont);
             }
           } else if (status === 401) {
-            // Only clear session if server explicitly returned 401 Unauthorized
             localStorage.removeItem('shiori_token');
             localStorage.removeItem('shiori_user');
             localStorage.removeItem('shiori_settings');
@@ -79,7 +144,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setSettings(null);
           }
         } catch {
-          // Network error/offline - keep existing local session intact!
           console.warn('[SHIORI Auth] Validating offline/cached session.');
         }
       }
@@ -102,10 +166,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     localStorage.removeItem('shiori_token');
     localStorage.removeItem('shiori_user');
+    localStorage.removeItem('shiori_settings');
     setToken(null);
     setUser(null);
     setSettings(null);
     applyTheme('light');
+    applyAppearance('eink_matte', '#2E5A36', 'geist');
   };
 
   const demoLogin = async () => {
@@ -136,8 +202,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const syncSettingsToBackend = async (patch: Partial<UserSettings>) => {
+    const currentToken = token || localStorage.getItem('shiori_token');
+    if (!currentToken) return;
+    try {
+      await fetch('/api/auth/settings', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentToken}`,
+        },
+        body: JSON.stringify(patch),
+      });
+    } catch (err) {
+      console.error('Failed to sync settings to server:', err);
+    }
+  };
+
   const updateSettings = (updated: Partial<UserSettings>) => {
-    setSettings((prev) => (prev ? { ...prev, ...updated } : null));
+    setSettings((prev) => {
+      const next = prev ? { ...prev, ...updated } : ({ ...updated } as UserSettings);
+      localStorage.setItem('shiori_settings', JSON.stringify(next));
+      return next;
+    });
+    syncSettingsToBackend(updated);
   };
 
   const setTheme = async (theme: EInkTheme) => {
@@ -159,6 +247,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const setUIMode = (mode: UIMode) => {
+    setUiModeState(mode);
+    localStorage.setItem('shiori_ui_mode', mode);
+    applyAppearance(mode, accentColor, fontFamily);
+    updateSettings({ ui_mode: mode });
+  };
+
+  const setAccentColor = (color: string) => {
+    setAccentColorState(color);
+    localStorage.setItem('shiori_accent_color', color);
+    applyAppearance(uiMode, color, fontFamily);
+    updateSettings({ accent_color: color });
+  };
+
+  const setFontFamily = (font: FontOption) => {
+    setFontFamilyState(font);
+    localStorage.setItem('shiori_font_family', font);
+    applyAppearance(uiMode, accentColor, font);
+    updateSettings({ font_family: font });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -167,11 +276,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         token,
         isAuthenticated: !!user,
         isLoading,
+        uiMode,
+        accentColor,
+        fontFamily,
         login,
         logout,
         updateUser,
         updateSettings,
         setTheme,
+        setUIMode,
+        setAccentColor,
+        setFontFamily,
         demoLogin,
       }}
     >

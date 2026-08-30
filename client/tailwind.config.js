@@ -20,6 +20,8 @@ export default {
           darkSurface: 'var(--eink-dark-surface)',
           darkText: 'var(--eink-dark-text)',
           accent: 'var(--eink-accent)',
+          accentSoft: 'var(--eink-accent-soft)',
+          accentContrast: 'var(--eink-accent-contrast)',
         }
       },
       fontFamily: {

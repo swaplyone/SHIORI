@@ -1,12 +1,108 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Settings, Moon, Sun, Monitor, Shield, Bell, Github, Smartphone, Lock, User, AlertTriangle } from 'lucide-react';
+import {
+  Settings,
+  Moon,
+  Sun,
+  Monitor,
+  Shield,
+  Bell,
+  Github,
+  Smartphone,
+  Lock,
+  User,
+  AlertTriangle,
+  Palette,
+  Type,
+  Sparkles,
+  Check,
+  CheckSquare,
+  GitBranch,
+  Calendar,
+  Tag,
+  Sliders,
+  Eye
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { EInkTheme } from '../types';
+import { EInkTheme, UIMode, FontOption } from '../types';
 import { fetchJson } from '../utils/api';
 
+const ACCENT_PRESETS = [
+  { id: 'forest', name: 'Forest Green', hex: '#2E5A36' },
+  { id: 'teal', name: 'Teal', hex: '#1D5C60' },
+  { id: 'blue', name: 'Blue', hex: '#244E7A' },
+  { id: 'brown', name: 'Brown', hex: '#66442A' },
+  { id: 'purple', name: 'Purple', hex: '#563666' },
+  { id: 'orange', name: 'Orange', hex: '#8C4318' },
+];
+
+const FONT_OPTIONS: { id: FontOption; name: string; category: string; description: string; sample: string; cssFont: string }[] = [
+  {
+    id: 'geist',
+    name: 'Geist Sans',
+    category: 'System Clean',
+    description: 'High legibility, engineered precision and crisp UI structure.',
+    sample: 'The quick brown fox jumps over the lazy dog',
+    cssFont: "'Geist', -apple-system, sans-serif"
+  },
+  {
+    id: 'inter',
+    name: 'Inter',
+    category: 'Modern Minimal',
+    description: 'Balanced, neutral grotesque designed for digital readability.',
+    sample: 'The quick brown fox jumps over the lazy dog',
+    cssFont: "'Inter', -apple-system, sans-serif"
+  },
+  {
+    id: 'plex_sans',
+    name: 'IBM Plex Sans',
+    category: 'Technical Humanist',
+    description: 'Distinctive industrial architecture with human warmth.',
+    sample: 'The quick brown fox jumps over the lazy dog',
+    cssFont: "'IBM Plex Sans', sans-serif"
+  },
+  {
+    id: 'plex_mono',
+    name: 'IBM Plex Mono',
+    category: 'Typewriter Monospace',
+    description: 'Crisp mechanical typewriter aesthetic for engineers.',
+    sample: 'The quick brown fox jumps over the lazy dog',
+    cssFont: "'IBM Plex Mono', monospace"
+  },
+  {
+    id: 'serif',
+    name: 'Instrument Serif',
+    category: 'Editorial Serif',
+    description: 'Literary bookprint elegance and refined editorial rhythm.',
+    sample: 'The quick brown fox jumps over the lazy dog',
+    cssFont: "'Instrument Serif', Georgia, serif"
+  },
+  {
+    id: 'abask',
+    name: 'Abask',
+    category: 'Vintage Display',
+    description: 'Authentic historical typography and Japanese craft spirit.',
+    sample: 'The quick brown fox jumps over the lazy dog',
+    cssFont: "'Abask', 'Instrument Serif', serif"
+  }
+];
+
 export const SettingsPage: React.FC = () => {
-  const { user, settings, setTheme, updateSettings, token, logout } = useAuth();
+  const {
+    user,
+    settings,
+    setTheme,
+    uiMode,
+    accentColor,
+    fontFamily,
+    setUIMode,
+    setAccentColor,
+    setFontFamily,
+    updateSettings,
+    token,
+    logout
+  } = useAuth();
+
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'appearance' | 'privacy' | 'notifications' | 'account' | 'pwa'>('appearance');
 
@@ -15,6 +111,7 @@ export const SettingsPage: React.FC = () => {
   const [privacyTasks, setPrivacyTasks] = useState(settings?.privacy_tasks || 'friends');
   const [privacyGithub, setPrivacyGithub] = useState(settings?.privacy_github || 'workspace');
   const [privacyStats, setPrivacyStats] = useState(settings?.privacy_stats || 'private');
+  const [customHex, setCustomHex] = useState(accentColor || '#2E5A36');
   const [savedNotice, setSavedNotice] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -39,6 +136,13 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleCustomHexChange = (hex: string) => {
+    setCustomHex(hex);
+    if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+      setAccentColor(hex);
+    }
+  };
+
   const handleSaveSettings = async () => {
     if (!token) return;
     try {
@@ -49,6 +153,9 @@ export const SettingsPage: React.FC = () => {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
+          ui_mode: uiMode,
+          accent_color: accentColor,
+          font_family: fontFamily,
           privacy_tasks: privacyTasks,
           privacy_github: privacyGithub,
           privacy_stats: privacyStats,
@@ -65,6 +172,9 @@ export const SettingsPage: React.FC = () => {
       });
 
       updateSettings({
+        ui_mode: uiMode,
+        accent_color: accentColor,
+        font_family: fontFamily,
         privacy_tasks: privacyTasks as any,
         privacy_github: privacyGithub as any,
         privacy_stats: privacyStats as any,
@@ -78,7 +188,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 select-none font-sans max-w-4xl">
+    <div className="space-y-8 select-none font-sans max-w-4xl pb-16">
       {/* Header */}
       <div className="border-b border-eink-border pb-4 flex items-center justify-between">
         <div>
@@ -86,7 +196,7 @@ export const SettingsPage: React.FC = () => {
             WORKSPACE SETTINGS
           </h1>
           <p className="text-xs text-eink-textSecondary font-technical">
-            E-Ink appearance, privacy boundaries, GitHub integration and PWA configuration
+            E-Ink appearance, UI modes, typography, privacy boundaries, and PWA configuration
           </p>
         </div>
 
@@ -100,7 +210,7 @@ export const SettingsPage: React.FC = () => {
       {/* Tabs */}
       <div className="flex flex-wrap gap-2 font-technical text-xs border-b border-eink-border pb-2">
         {[
-          { key: 'appearance', label: 'APPEARANCE' },
+          { key: 'appearance', label: 'APPEARANCE & PERSONALIZATION' },
           { key: 'privacy', label: 'PRIVACY' },
           { key: 'notifications', label: 'NOTIFICATIONS' },
           { key: 'account', label: 'ACCOUNT' },
@@ -109,9 +219,9 @@ export const SettingsPage: React.FC = () => {
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key as any)}
-            className={`px-3 py-1.5 rounded-sm ${
+            className={`px-3 py-1.5 rounded-sm transition-all cursor-pointer ${
               activeTab === t.key
-                ? 'bg-eink-darkSurface text-eink-darkText font-bold'
+                ? 'bg-eink-darkSurface text-eink-darkText font-bold shadow-eink-sm'
                 : 'text-eink-text hover:bg-eink-surface'
             }`}
           >
@@ -120,22 +230,245 @@ export const SettingsPage: React.FC = () => {
         ))}
       </div>
 
-      {/* APPEARANCE TAB */}
+      {/* APPEARANCE & PERSONALIZATION TAB */}
       {activeTab === 'appearance' && (
         <div className="space-y-6 font-technical text-xs">
-          <div className="p-6 bg-eink-surface border border-eink-border rounded-sm space-y-4">
-            <h3 className="font-bold text-sm text-eink-text uppercase">E-INK THEMES</h3>
-            <p className="text-eink-textSecondary leading-relaxed">
-              Designed to emulate reflective electronic paper displays, digital notebooks, and technical documentation.
-            </p>
+          {/* 1. UI MODE SELECTION */}
+          <div className="p-5 sm:p-6 bg-eink-surface border border-eink-border rounded-sm space-y-4 shadow-eink-sm">
+            <div className="flex items-center justify-between border-b border-eink-border pb-2.5">
+              <div>
+                <h3 className="font-bold text-sm text-eink-text uppercase flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-eink-text" />
+                  <span>UI MODE</span>
+                </h3>
+                <p className="text-[11px] text-eink-textSecondary font-sans mt-0.5">
+                  Control visual mood without losing Shiori's core physical paper / E-ink identity.
+                </p>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 bg-eink-bg border border-eink-border rounded font-bold">
+                ACTIVE: {uiMode === 'color_matte' ? 'COLOR MATTE' : 'E-INK MATTE'}
+              </span>
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              {/* E-Ink Matte (Default) */}
+              <div
+                onClick={() => setUIMode('eink_matte')}
+                className={`p-4 border rounded-sm cursor-pointer space-y-2 transition-all ${
+                  uiMode === 'eink_matte'
+                    ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
+                    : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    <span>E-INK MATTE</span>
+                    <span className="text-[9px] bg-eink-text text-eink-bg px-1.5 py-0.2 rounded font-mono">DEFAULT</span>
+                  </span>
+                  {uiMode === 'eink_matte' && <span className="font-bold">✓</span>}
+                </div>
+                <p className="text-[11px] opacity-80 font-sans leading-relaxed">
+                  The original calm, monochrome, paper-like Shiori experience. Pure E-ink minimalism, black borders, zero distractions.
+                </p>
+                <div className="pt-2 flex items-center gap-1 text-[10px] text-eink-textMuted font-mono">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#111111] inline-block" />
+                  <span>Monochrome paper aesthetic</span>
+                </div>
+              </div>
+
+              {/* Color Matte */}
+              <div
+                onClick={() => setUIMode('color_matte')}
+                className={`p-4 border rounded-sm cursor-pointer space-y-2 transition-all ${
+                  uiMode === 'color_matte'
+                    ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
+                    : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    <span>COLOR MATTE</span>
+                    <span className="text-[9px] border border-eink-border px-1.5 py-0.2 rounded font-mono">PERSONALIZED</span>
+                  </span>
+                  {uiMode === 'color_matte' && <span className="font-bold">✓</span>}
+                </div>
+                <p className="text-[11px] opacity-80 font-sans leading-relaxed">
+                  Restrained matte color accents for buttons, priorities, statuses, and tags while strictly preserving paper textures and black borders.
+                </p>
+                <div className="pt-2 flex items-center gap-1.5 text-[10px] font-mono">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-eink-border inline-block"
+                    style={{ backgroundColor: accentColor || '#2E5A36' }}
+                  />
+                  <span className="text-eink-text font-bold">Accent: {accentColor || '#2E5A36'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. ACCENT COLOR SELECTION */}
+          <div className="p-5 sm:p-6 bg-eink-surface border border-eink-border rounded-sm space-y-4 shadow-eink-sm">
+            <div className="flex items-center justify-between border-b border-eink-border pb-2.5">
+              <div>
+                <h3 className="font-bold text-sm text-eink-text uppercase flex items-center gap-2">
+                  <Palette className="w-4 h-4 text-eink-text" />
+                  <span>ACCENT COLOR</span>
+                </h3>
+                <p className="text-[11px] text-eink-textSecondary font-sans mt-0.5">
+                  Applied cleanly through CSS design tokens. In E-ink Matte, monochrome takes priority. In Color Matte, your accent comes to life.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-4 h-4 rounded-xs border border-eink-border inline-block shadow-xs"
+                  style={{ backgroundColor: accentColor }}
+                />
+                <span className="font-mono text-[11px] font-bold text-eink-text uppercase">
+                  {accentColor}
+                </span>
+              </div>
+            </div>
+
+            {/* Presets Grid */}
+            <div className="space-y-2">
+              <span className="text-[10px] uppercase font-bold text-eink-textMuted tracking-wider block">
+                CURATED MATTE PALETTES
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+                {ACCENT_PRESETS.map((preset) => {
+                  const isSelected = accentColor?.toLowerCase() === preset.hex.toLowerCase();
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        setAccentColor(preset.hex);
+                        setCustomHex(preset.hex);
+                      }}
+                      className={`p-2.5 border rounded-sm flex flex-col items-center gap-2 transition-all cursor-pointer text-center ${
+                        isSelected
+                          ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm font-bold'
+                          : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                      }`}
+                    >
+                      <span
+                        className="w-7 h-7 rounded-sm border border-black/20 flex items-center justify-center text-white shadow-xs"
+                        style={{ backgroundColor: preset.hex }}
+                      >
+                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      </span>
+                      <div className="min-w-0">
+                        <span className="text-[11px] block truncate">{preset.name}</span>
+                        <span className="text-[9px] text-eink-textMuted font-mono block">{preset.hex}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Custom Hex Color Picker */}
+            <div className="pt-2 border-t border-eink-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-[11px] font-bold text-eink-text uppercase block">CUSTOM ACCENT COLOR</span>
+                <span className="text-[10px] text-eink-textSecondary font-sans">
+                  Pick any custom hex tone. Sufficient contrast is automatically maintained.
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={accentColor.startsWith('#') ? accentColor : '#2E5A36'}
+                  onChange={(e) => {
+                    setAccentColor(e.target.value);
+                    setCustomHex(e.target.value);
+                  }}
+                  className="w-8 h-8 rounded-sm border border-eink-border cursor-pointer bg-transparent p-0.5"
+                  title="Pick custom color"
+                />
+                <input
+                  type="text"
+                  value={customHex}
+                  onChange={(e) => handleCustomHexChange(e.target.value)}
+                  placeholder="#2E5A36"
+                  maxLength={7}
+                  className="w-24 px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded-sm text-xs font-mono text-eink-text uppercase outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 3. FONT SELECTION */}
+          <div className="p-5 sm:p-6 bg-eink-surface border border-eink-border rounded-sm space-y-4 shadow-eink-sm">
+            <div className="flex items-center justify-between border-b border-eink-border pb-2.5">
+              <div>
+                <h3 className="font-bold text-sm text-eink-text uppercase flex items-center gap-2">
+                  <Type className="w-4 h-4 text-eink-text" />
+                  <span>FONT SELECTION</span>
+                </h3>
+                <p className="text-[11px] text-eink-textSecondary font-sans mt-0.5">
+                  Applied globally across tasks, navigation, modals, and settings while preserving existing weights and spacing.
+                </p>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 bg-eink-bg border border-eink-border rounded font-bold uppercase">
+                ACTIVE: {fontFamily}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {FONT_OPTIONS.map((f) => {
+                const isSelected = fontFamily === f.id;
+                return (
+                  <div
+                    key={f.id}
+                    onClick={() => setFontFamily(f.id)}
+                    className={`p-3.5 border rounded-sm cursor-pointer space-y-2 transition-all ${
+                      isSelected
+                        ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
+                        : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-xs block">{f.name}</span>
+                        <span className="text-[9px] text-eink-textMuted font-mono uppercase">{f.category}</span>
+                      </div>
+                      {isSelected && <span className="font-bold text-xs">✓</span>}
+                    </div>
+
+                    <div
+                      className="p-2 bg-eink-surface/60 border border-eink-border/60 rounded-xs text-xs text-eink-text leading-tight truncate"
+                      style={{ fontFamily: f.cssFont }}
+                    >
+                      Aa Bb Gg 123
+                    </div>
+
+                    <p className="text-[10px] text-eink-textSecondary font-sans leading-tight">
+                      {f.description}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. BASE E-INK LIGHT / DARK PALETTE */}
+          <div className="p-5 sm:p-6 bg-eink-surface border border-eink-border rounded-sm space-y-4 shadow-eink-sm">
+            <div className="border-b border-eink-border pb-2.5">
+              <h3 className="font-bold text-sm text-eink-text uppercase">BASE LIGHTING THEME</h3>
+              <p className="text-[11px] text-eink-textSecondary font-sans mt-0.5">
+                Physical reflective paper lighting balance (Daylight Warm vs Nighttime Charcoal vs Pure Monochrome).
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* E-Ink Light */}
               <div
                 onClick={() => setTheme('light')}
-                className={`p-4 border rounded-sm cursor-pointer space-y-2 ${
+                className={`p-3.5 border rounded-sm cursor-pointer space-y-1.5 transition-all ${
                   user?.theme === 'light' || !user?.theme
-                    ? 'border-2 border-eink-text bg-[#F4F3EE] text-[#111111]'
+                    ? 'border-2 border-eink-text bg-[#F4F3EE] text-[#111111] shadow-eink-sm'
                     : 'border-eink-border bg-eink-bg text-eink-text'
                 }`}
               >
@@ -143,18 +476,18 @@ export const SettingsPage: React.FC = () => {
                   <span className="font-bold text-xs">E-INK LIGHT</span>
                   {(user?.theme === 'light' || !user?.theme) && <span>✓</span>}
                 </div>
-                <p className="text-[11px] opacity-80 font-sans">
+                <p className="text-[10px] opacity-80 font-sans">
                   Warm paper / digital notebook grayscale. Default aesthetic.
                 </p>
-                <div className="text-[10px] text-eink-textMuted">#F4F3EE</div>
+                <div className="text-[9px] text-eink-textMuted font-mono">#F4F3EE</div>
               </div>
 
               {/* E-Ink Dark */}
               <div
                 onClick={() => setTheme('dark')}
-                className={`p-4 border rounded-sm cursor-pointer space-y-2 ${
+                className={`p-3.5 border rounded-sm cursor-pointer space-y-1.5 transition-all ${
                   user?.theme === 'dark'
-                    ? 'border-2 border-eink-text bg-[#141414] text-[#EAE9E3]'
+                    ? 'border-2 border-eink-text bg-[#141414] text-[#EAE9E3] shadow-eink-sm'
                     : 'border-eink-border bg-eink-bg text-eink-text'
                 }`}
               >
@@ -162,18 +495,18 @@ export const SettingsPage: React.FC = () => {
                   <span className="font-bold text-xs">E-INK DARK</span>
                   {user?.theme === 'dark' && <span>✓</span>}
                 </div>
-                <p className="text-[11px] opacity-80 font-sans">
+                <p className="text-[10px] opacity-80 font-sans">
                   Graphite / charcoal dark grayscale for night workspaces.
                 </p>
-                <div className="text-[10px] opacity-60">#141414</div>
+                <div className="text-[9px] opacity-60 font-mono">#141414</div>
               </div>
 
               {/* Pure Monochrome */}
               <div
                 onClick={() => setTheme('monochrome')}
-                className={`p-4 border rounded-sm cursor-pointer space-y-2 ${
+                className={`p-3.5 border rounded-sm cursor-pointer space-y-1.5 transition-all ${
                   user?.theme === 'monochrome'
-                    ? 'border-2 border-black bg-white text-black'
+                    ? 'border-2 border-black bg-white text-black shadow-eink-sm'
                     : 'border-eink-border bg-eink-bg text-eink-text'
                 }`}
               >
@@ -181,11 +514,100 @@ export const SettingsPage: React.FC = () => {
                   <span className="font-bold text-xs">PURE MONOCHROME</span>
                   {user?.theme === 'monochrome' && <span>✓</span>}
                 </div>
-                <p className="text-[11px] opacity-80 font-sans">
+                <p className="text-[10px] opacity-80 font-sans">
                   Strict stark 100% black and white contrast without tints.
                 </p>
-                <div className="text-[10px] opacity-60">#FFFFFF / #000000</div>
+                <div className="text-[9px] opacity-60 font-mono">#FFFFFF / #000000</div>
               </div>
+            </div>
+          </div>
+
+          {/* 5. LIVE INTERACTIVE PREVIEW */}
+          <div className="p-5 sm:p-6 bg-eink-surface border-2 border-eink-text rounded-sm space-y-4 shadow-eink-card">
+            <div className="flex items-center justify-between border-b border-eink-border pb-2.5">
+              <div className="flex items-center gap-2">
+                <Eye className="w-4 h-4 text-eink-text" />
+                <h3 className="font-bold text-xs uppercase text-eink-text tracking-wider">
+                  LIVE INTERACTIVE COMPONENT PREVIEW
+                </h3>
+              </div>
+              <span className="text-[10px] text-eink-textSecondary font-mono">
+                Updates instantly in real-time
+              </span>
+            </div>
+
+            {/* Sample Task Card */}
+            <div className="p-4 bg-eink-bg border border-eink-border rounded-sm space-y-3 shadow-eink-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <button type="button" className="text-eink-text">
+                    <CheckSquare className="w-4 h-4" />
+                  </button>
+                  <span className="font-bold text-[10px] bg-eink-surface px-1.5 py-0.2 border border-eink-border rounded font-mono">
+                    SHR-0042
+                  </span>
+                  <span className="font-bold text-xs text-eink-text">
+                    Optimize compiler pipeline & build performance
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 self-start sm:self-center">
+                  {/* Priority Badge */}
+                  <span
+                    className={`text-[9px] font-mono font-bold px-2 py-0.5 border rounded ${
+                      uiMode === 'color_matte'
+                        ? 'accent-badge'
+                        : 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface'
+                    }`}
+                  >
+                    ⚡ URGENT
+                  </span>
+                  {/* Status Badge */}
+                  <span className="text-[9px] font-mono px-2 py-0.5 bg-eink-surface border border-eink-border rounded text-eink-text font-bold">
+                    IN PROGRESS
+                  </span>
+                </div>
+              </div>
+
+              {/* Task Meta details */}
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-eink-textSecondary font-mono border-t border-eink-border/50 pt-2">
+                <span className="flex items-center gap-1 text-eink-text">
+                  <GitBranch className="w-3 h-3" />
+                  <span>feature/compiler</span>
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  <span>Due Tomorrow</span>
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Tag className="w-3 h-3" />
+                  <span>#v2.4-release</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Sample Action Buttons & Badges */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm text-xs shadow-eink-sm cursor-pointer"
+                >
+                  [ PRIMARY ACTION ]
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-2 bg-eink-surface border border-eink-border text-eink-text hover:bg-eink-surfaceHover font-bold rounded-sm text-xs cursor-pointer"
+                >
+                  [ SECONDARY ]
+                </button>
+              </div>
+
+              <span className="text-[11px] text-eink-textSecondary font-mono">
+                Mode: <strong>{uiMode === 'color_matte' ? 'Color Matte' : 'E-ink Matte'}</strong> · Font: <strong>{fontFamily}</strong>
+              </span>
             </div>
           </div>
         </div>

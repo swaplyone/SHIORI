@@ -42,6 +42,9 @@
   --eink-dark-surface: #1A1A1A;
   --eink-dark-text: #F4F3EE;
   --eink-accent: #222222;
+  --eink-accent-soft: rgba(34, 34, 34, 0.08);
+  --eink-accent-contrast: #F4F3EE;
+  --font-app: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .dark, [data-theme="dark"] {
@@ -57,6 +60,8 @@
   --eink-dark-surface: #EAE9E3;
   --eink-dark-text: #141414;
   --eink-accent: #EAE9E3;
+  --eink-accent-soft: rgba(234, 233, 227, 0.1);
+  --eink-accent-contrast: #141414;
 }
 
 [data-theme="monochrome"] {
@@ -72,6 +77,53 @@
   --eink-dark-surface: #000000;
   --eink-dark-text: #FFFFFF;
   --eink-accent: #000000;
+  --eink-accent-soft: rgba(0, 0, 0, 0.06);
+  --eink-accent-contrast: #FFFFFF;
+}
+
+/* Dynamic Font Configurations */
+html[data-font="geist"], [data-font="geist"] {
+  --font-app: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+html[data-font="inter"], [data-font="inter"] {
+  --font-app: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+html[data-font="plex_sans"], [data-font="plex_sans"] {
+  --font-app: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+html[data-font="plex_mono"], [data-font="plex_mono"] {
+  --font-app: 'IBM Plex Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+html[data-font="serif"], [data-font="serif"] {
+  --font-app: 'Instrument Serif', 'Newsreader', Georgia, serif;
+}
+html[data-font="abask"], [data-font="abask"] {
+  --font-app: 'Abask', 'Instrument Serif', Georgia, serif;
+}
+
+/* COLOR MATTE MODE EXTENSIONS */
+html[data-ui-mode="color_matte"] {
+  --eink-accent-soft: color-mix(in srgb, var(--eink-accent) 14%, transparent);
+}
+
+/* Primary actions and interactive focus in Color Matte */
+html[data-ui-mode="color_matte"] button.bg-eink-text,
+html[data-ui-mode="color_matte"] .btn-primary {
+  background-color: var(--eink-accent) !important;
+  color: var(--eink-accent-contrast) !important;
+  border-color: var(--eink-accent) !important;
+}
+
+/* Active navigation pill & selected indicators in Color Matte */
+html[data-ui-mode="color_matte"] .accent-highlight {
+  border-color: var(--eink-accent) !important;
+  background-color: var(--eink-accent-soft) !important;
+}
+
+html[data-ui-mode="color_matte"] .accent-badge {
+  background-color: var(--eink-accent-soft) !important;
+  color: var(--eink-text) !important;
+  border-color: var(--eink-accent) !important;
 }
 
 html {
@@ -86,7 +138,7 @@ body {
   overflow-x: hidden;
   background-color: var(--eink-bg);
   color: var(--eink-text);
-  font-family: 'Geist', 'Inter', -apple-system, sans-serif;
+  font-family: var(--font-app, 'Geist', 'Inter', -apple-system, sans-serif);
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

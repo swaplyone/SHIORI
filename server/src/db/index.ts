@@ -57,6 +57,9 @@ async function initPgSchema(pool: pg.Pool) {
 
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      ui_mode TEXT DEFAULT 'eink_matte',
+      accent_color TEXT DEFAULT '#2E5A36',
+      font_family TEXT DEFAULT 'geist',
       eink_refresh_interval INTEGER DEFAULT 10,
       privacy_tasks TEXT DEFAULT 'friends',
       privacy_github TEXT DEFAULT 'workspace',
@@ -439,6 +442,9 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE;`,
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS read INTEGER DEFAULT 0;`,
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read INTEGER DEFAULT 0;`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS ui_mode TEXT DEFAULT 'eink_matte';`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS accent_color TEXT DEFAULT '#2E5A36';`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS font_family TEXT DEFAULT 'geist';`,
       `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;`,
       `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS branch_name TEXT DEFAULT 'main';`,
       `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS author_name TEXT;`,

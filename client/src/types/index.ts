@@ -1,4 +1,6 @@
 export type EInkTheme = 'light' | 'dark' | 'monochrome';
+export type UIMode = 'eink_matte' | 'color_matte';
+export type FontOption = 'geist' | 'inter' | 'plex_sans' | 'plex_mono' | 'serif' | 'abask';
 
 export type TaskStatus = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
@@ -20,17 +22,20 @@ export interface User {
 
 export interface UserSettings {
   user_id: string;
-  eink_refresh_effect: number;
-  sound_effects: number;
-  web_push_enabled: number;
-  privacy_github: 'connections' | 'workspace' | 'private';
-  privacy_tasks: 'connections' | 'workspace' | 'private';
-  privacy_projects: 'workspace' | 'private';
-  privacy_stats: 'connections' | 'workspace' | 'private';
-  notify_build_failed: number;
-  notify_build_passed: number;
-  notify_pr_review: number;
-  notify_task_assigned: number;
+  ui_mode?: UIMode;
+  accent_color?: string;
+  font_family?: FontOption;
+  eink_refresh_effect?: number;
+  sound_effects?: number;
+  web_push_enabled?: number;
+  privacy_github?: 'connections' | 'workspace' | 'private';
+  privacy_tasks?: 'connections' | 'workspace' | 'private';
+  privacy_projects?: 'workspace' | 'private';
+  privacy_stats?: 'connections' | 'workspace' | 'private';
+  notify_build_failed?: number;
+  notify_build_passed?: number;
+  notify_pr_review?: number;
+  notify_task_assigned?: number;
 }
 
 export interface Connection {
