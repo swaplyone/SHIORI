@@ -231,14 +231,162 @@ export const TasksPage: React.FC = () => {
     }
   };
 
+  const getPriorityRank = (p?: string): number => {
+    switch ((p || '').toUpperCase()) {
+      case 'URGENT': return 4;
+      case 'HIGH': return 3;
+      case 'MEDIUM': return 2;
+      case 'LOW': return 1;
+      default: return 2;
+    }
+  };
+
   const filteredTasks = tasks.filter((t) => {
     if (selectedRepo && t.github_repo !== selectedRepo) return false;
-    if (tabFilter === 'active' && t.status === 'DONE') return false;
     return true;
   });
 
-  const totalCompletedCount = tasks.filter((t) => t.status === 'DONE').length;
+  const activeTasks = filteredTasks
+    .filter((t) => t.status !== 'DONE' && !t.is_archived)
+    .sort((a, b) => {
+      const pDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
+      if (pDiff !== 0) return pDiff;
+      return (b.task_number || 0) - (a.task_number || 0);
+    });
+
+  const completedTasks = filteredTasks
+    .filter((t) => t.status === 'DONE' && !t.is_archived)
+    .sort((a, b) => {
+      const tA = a.completed_at ? new Date(a.completed_at).getTime() : (a.updated_at ? new Date(a.updated_at).getTime() : 0);
+      const tB = b.completed_at ? new Date(b.completed_at).getTime() : (b.updated_at ? new Date(b.updated_at).getTime() : 0);
+      return tB - tA;
+    });
+
+  const archivedTasks = filteredTasks.filter((t) => Boolean(t.is_archived));
+
+  const totalCompletedCount = completedTasks.length;
   const totalEvidenceCommits = tasks.reduce((sum, t) => sum + (t.dev_evidence_commits_count || (t.github_last_commit_hash ? 1 : 0)), 0);
+
+  const renderTaskRow = (task: Task, isDone: boolean) => {
+    const hasDiscrepancy = Boolean(task.has_ci_discrepancy);
+    const isOverdue =
+      !isDone &&
+      task.due_date &&
+      (task.due_date.toLowerCase().includes('yesterday') ||
+        (task.due_at && new Date(task.due_at).getTime() < Date.now()));
+
+    return (
+      <div
+        key={task.id}
+        onClick={() => openTaskModal(task.id)}
+        className={`p-3.5 flex items-start justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
+          isDone ? 'opacity-75 bg-eink-bg/60' : 'bg-eink-surface'
+        }`}
+      >
+        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={(e) => handleToggleTaskStatus(task, e)}
+            className="mt-0.5 p-0.5 text-eink-text hover:text-eink-textSecondary shrink-0 cursor-pointer"
+            title={isDone ? 'Restore as Active' : 'Mark as Complete'}
+          >
+            {isDone ? (
+              <CheckSquare className="w-4 h-4 text-eink-text" />
+            ) : (
+              <Square className="w-4 h-4 text-eink-textMuted hover:text-eink-text" />
+            )}
+          </button>
+
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-bold text-[11px] bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
+                {task.task_code}
+              </span>
+
+              {/* Priority Badge with Clear Visual Rank */}
+              <span
+                className={`text-[10px] font-mono font-bold px-1.5 py-0.2 border rounded ${
+                  (task.priority || 'MEDIUM') === 'URGENT'
+                    ? 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface'
+                    : task.priority === 'HIGH'
+                    ? 'bg-eink-text text-eink-bg border-eink-text'
+                    : task.priority === 'LOW'
+                    ? 'bg-eink-bg text-eink-textMuted border-eink-border'
+                    : 'bg-eink-bg text-eink-text border-eink-border'
+                }`}
+              >
+                {task.priority === 'URGENT' ? '⚡ URGENT' : task.priority || 'MEDIUM'}
+              </span>
+
+              <h3
+                className={`text-xs font-bold text-eink-text truncate ${
+                  isDone ? 'line-through text-eink-textMuted' : ''
+                }`}
+              >
+                {task.title}
+              </h3>
+
+              {/* Recurring Indicator */}
+              {task.recurrence_rule && (
+                <span className="text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
+                  <Repeat className="w-2.5 h-2.5" />
+                  <span>{task.recurrence_rule}</span>
+                </span>
+              )}
+
+              {/* Subtasks Count Badge */}
+              {Boolean(task.subtasks_count) && (
+                <span className="text-[10px] bg-eink-bg text-eink-textSecondary px-1.5 py-0.2 border border-eink-border rounded font-mono">
+                  {task.subtasks_completed || 0}/{task.subtasks_count} subtasks
+                </span>
+              )}
+
+              {/* Overdue Notice */}
+              {isOverdue && (
+                <span className="text-[10px] font-bold bg-eink-surface text-eink-text px-1.5 py-0.2 border border-eink-text rounded flex items-center gap-1">
+                  <AlertCircle className="w-2.5 h-2.5" />
+                  <span>OVERDUE</span>
+                </span>
+              )}
+
+              {hasDiscrepancy && (
+                <span className="text-[10px] font-bold bg-eink-darkSurface text-eink-darkText px-1.5 py-0.2 rounded flex items-center gap-1">
+                  <ShieldAlert className="w-3 h-3" />
+                  <span>CI ALERT</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-eink-textSecondary font-mono">
+              <span className="font-bold text-eink-text">
+                {task.github_repo || 'SHIORI'}
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1">
+                <GitBranch className="w-3 h-3" />
+                <span>{task.github_branch || 'main'}</span>
+              </span>
+              {task.due_date && <span>📅 {task.due_date}</span>}
+              {task.tags && (
+                <span className="flex items-center gap-0.5 text-eink-textMuted">
+                  <Tag className="w-2.5 h-2.5" />
+                  <span>{task.tags}</span>
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="shrink-0">
+          <DevelopmentEvidenceBadge
+            confidenceScore={task.dev_confidence_score}
+            ciStatus={task.github_ci_status}
+            hasDiscrepancy={task.has_ci_discrepancy}
+          />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6 select-none font-sans pb-12">
@@ -420,20 +568,20 @@ export const TasksPage: React.FC = () => {
         />
       ) : (
         <div className="space-y-4 font-technical animate-fade-in">
-          {/* Smart NLP Quick Add Input Form */}
-          <div className="space-y-1.5">
-            <form onSubmit={handleQuickAdd} className="flex gap-2 text-xs">
+          {/* Smart NLP Quick Add Input Form with Priority Selector */}
+          <div className="space-y-2 p-3 bg-eink-surface border border-eink-border rounded-sm shadow-eink-sm">
+            <form onSubmit={handleQuickAdd} className="flex flex-col sm:flex-row gap-2 text-xs">
               <input
                 type="text"
                 value={quickTaskTitle}
                 onChange={(e) => setQuickTaskTitle(e.target.value)}
-                placeholder={`+ Quick add with NLP: e.g. "Review compiler Friday at 7pm #career high" (press Enter)...`}
-                className="flex-1 px-3 py-2 bg-eink-surface border border-eink-border rounded-sm text-eink-text outline-none focus:border-eink-text text-xs font-sans"
+                placeholder={`+ Quick add to-do: e.g. "Fix auth bug tomorrow at 5pm #security" (press Enter)...`}
+                className="flex-1 px-3 py-2 bg-eink-bg border border-eink-border rounded-sm text-eink-text outline-none focus:border-eink-text text-xs font-sans"
               />
               <button
                 type="submit"
                 disabled={!quickTaskTitle.trim()}
-                className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shrink-0"
+                className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>ADD TODO</span>
@@ -442,7 +590,7 @@ export const TasksPage: React.FC = () => {
 
             {/* Smart NLP Interpretation Preview Chips */}
             {quickNlp.hasParsedData && (
-              <div className="p-2 bg-eink-surface border border-eink-border rounded-sm flex items-center justify-between gap-2 text-[11px] font-technical animate-fade-in">
+              <div className="p-2 bg-eink-bg border border-eink-border rounded-sm flex items-center justify-between gap-2 text-[11px] font-technical animate-fade-in">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-eink-textMuted flex items-center gap-1">
                     <Sparkles className="w-3 h-3" />
@@ -450,22 +598,22 @@ export const TasksPage: React.FC = () => {
                   </span>
                   <span className="font-bold text-eink-text">"{quickNlp.title}"</span>
                   {quickNlp.dueDate && (
-                    <span className="px-1.5 py-0.2 bg-eink-bg border border-eink-border rounded text-eink-text">
+                    <span className="px-1.5 py-0.2 bg-eink-surface border border-eink-border rounded text-eink-text">
                       📅 {quickNlp.dueDate}
                     </span>
                   )}
                   {quickNlp.priority !== 'MEDIUM' && (
-                    <span className="px-1.5 py-0.2 bg-eink-bg border border-eink-border rounded text-eink-text font-bold">
+                    <span className="px-1.5 py-0.2 bg-eink-surface border border-eink-border rounded text-eink-text font-bold">
                       ⚡ {quickNlp.priority}
                     </span>
                   )}
                   {quickNlp.recurrenceRule && (
-                    <span className="px-1.5 py-0.2 bg-eink-bg border border-eink-border rounded text-eink-text">
+                    <span className="px-1.5 py-0.2 bg-eink-surface border border-eink-border rounded text-eink-text">
                       ↻ {quickNlp.recurrenceRule}
                     </span>
                   )}
                   {quickNlp.tags.map((t) => (
-                    <span key={t} className="px-1.5 py-0.2 bg-eink-bg border border-eink-border rounded text-eink-text">
+                    <span key={t} className="px-1.5 py-0.2 bg-eink-surface border border-eink-border rounded text-eink-text">
                       #{t}
                     </span>
                   ))}
@@ -474,144 +622,94 @@ export const TasksPage: React.FC = () => {
             )}
           </div>
 
-          {/* List Table */}
-          <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border overflow-hidden shadow-eink-card">
-            {filteredTasks.length === 0 ? (
-              <div className="p-12 text-center text-xs text-eink-textMuted font-technical">
-                {tabFilter === 'archived'
-                  ? 'No archived tasks.'
-                  : 'No to-do tasks found. Type above or click + ADD TODO to create one.'}
-              </div>
-            ) : (
-              filteredTasks.map((task) => {
-                const isDone = task.status === 'DONE';
-                const hasDiscrepancy = Boolean(task.has_ci_discrepancy);
-                const isOverdue =
-                  !isDone &&
-                  task.due_date &&
-                  (task.due_date.toLowerCase().includes('yesterday') ||
-                    (task.due_at && new Date(task.due_at).getTime() < Date.now()));
-
-                return (
-                  <div
-                    key={task.id}
-                    onClick={() => openTaskModal(task.id)}
-                    className={`p-4 flex items-start sm:items-center justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
-                      isDone ? 'opacity-70 bg-eink-bg/50' : ''
-                    }`}
-                  >
-                    <div className="flex items-start sm:items-center gap-3 min-w-0">
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleTaskStatus(task, e)}
-                        className="mt-0.5 sm:mt-0 p-1 text-eink-text hover:text-eink-textSecondary shrink-0"
-                        title={isDone ? 'Mark as Incomplete' : 'Mark as Complete'}
-                      >
-                        {isDone ? (
-                          <CheckSquare className="w-4 h-4 text-eink-text" />
-                        ) : (
-                          <Square className="w-4 h-4 text-eink-textMuted" />
-                        )}
-                      </button>
-
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-xs bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
-                            {task.task_code}
-                          </span>
-
-                          {/* Priority Badge */}
-                          {task.priority && task.priority !== 'MEDIUM' && (
-                            <span
-                              className={`text-[10px] font-mono font-bold px-1.5 py-0.2 border rounded ${
-                                task.priority === 'URGENT'
-                                  ? 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface'
-                                  : task.priority === 'HIGH'
-                                  ? 'bg-eink-bg text-eink-text border-eink-text'
-                                  : 'bg-eink-bg text-eink-textMuted border-eink-border'
-                              }`}
-                            >
-                              {task.priority}
-                            </span>
-                          )}
-
-                          <h3
-                            className={`text-xs font-bold text-eink-text truncate ${
-                              isDone ? 'line-through text-eink-textMuted' : ''
-                            }`}
-                          >
-                            {task.title}
-                          </h3>
-
-                          {/* Recurring Indicator */}
-                          {task.recurrence_rule && (
-                            <span className="text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
-                              <Repeat className="w-2.5 h-2.5" />
-                              <span>{task.recurrence_rule}</span>
-                            </span>
-                          )}
-
-                          {/* Subtasks Count Badge */}
-                          {Boolean(task.subtasks_count) && (
-                            <span className="text-[10px] bg-eink-bg text-eink-textSecondary px-1.5 py-0.2 border border-eink-border rounded font-mono">
-                              {task.subtasks_completed || 0}/{task.subtasks_count} subtasks
-                            </span>
-                          )}
-
-                          {/* Overdue Notice */}
-                          {isOverdue && (
-                            <span className="text-[10px] font-bold bg-eink-surface text-eink-text px-1.5 py-0.2 border border-eink-text rounded flex items-center gap-1">
-                              <AlertCircle className="w-2.5 h-2.5" />
-                              <span>OVERDUE</span>
-                            </span>
-                          )}
-
-                          {Boolean(task.auto_completed) && (
-                            <span className="text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
-                              ✓ AUTO COMPLETED • GitHub activity detected
-                            </span>
-                          )}
-
-                          {hasDiscrepancy && (
-                            <span className="text-[10px] font-bold bg-eink-darkSurface text-eink-darkText px-1.5 py-0.2 rounded flex items-center gap-1">
-                              <ShieldAlert className="w-3 h-3" />
-                              <span>CI DISCREPANCY</span>
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-eink-textSecondary font-mono">
-                          <span className="font-bold text-eink-text">
-                            {task.github_repo || 'swaply-one-compiler'}
-                          </span>
-                          <span>•</span>
-                          <span className="flex items-center gap-1">
-                            <GitBranch className="w-3 h-3" />
-                            <span>{task.github_branch || 'main'}</span>
-                          </span>
-                          {task.due_date && <span>Due: {task.due_date}</span>}
-                          {task.tags && (
-                            <span className="flex items-center gap-1 text-eink-textMuted">
-                              <Tag className="w-2.5 h-2.5" />
-                              <span>{task.tags}</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="shrink-0">
-                      <DevelopmentEvidenceBadge
-                        confidenceScore={task.dev_confidence_score}
-                        ciStatus={task.github_ci_status}
-                        hasDiscrepancy={task.has_ci_discrepancy}
-                      />
-                    </div>
+          {/* Dedicated Active vs Completed Columns */}
+          {tabFilter === 'active' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              {/* Left Column: Active To-Dos Arranged by Priority */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b border-eink-border pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-eink-text shrink-0" />
+                    <h3 className="font-bold text-xs uppercase text-eink-text tracking-wider">
+                      ACTIVE TO-DOS ({activeTasks.length})
+                    </h3>
                   </div>
-                );
-              })
-            )}
-          </div>
+                  <span className="text-[10px] text-eink-textSecondary uppercase font-mono">
+                    Priority Sorted (Urgent → Low)
+                  </span>
+                </div>
+
+                <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border overflow-hidden shadow-eink-card">
+                  {activeTasks.length === 0 ? (
+                    <div className="p-10 text-center text-xs text-eink-textMuted font-technical">
+                      No active to-do tasks. Add one above to get started!
+                    </div>
+                  ) : (
+                    activeTasks.map((task) => renderTaskRow(task, false))
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Completed To-Dos */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b border-eink-border pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-eink-textMuted shrink-0" />
+                    <h3 className="font-bold text-xs uppercase text-eink-textSecondary tracking-wider">
+                      COMPLETED TO-DOS ({completedTasks.length})
+                    </h3>
+                  </div>
+                  <span className="text-[10px] text-eink-textMuted uppercase font-mono">
+                    Moved When Done
+                  </span>
+                </div>
+
+                <div className="border border-eink-border rounded-sm bg-eink-surface/70 divide-y divide-eink-border overflow-hidden shadow-eink-sm">
+                  {completedTasks.length === 0 ? (
+                    <div className="p-10 text-center text-xs text-eink-textMuted font-technical">
+                      No completed to-dos yet. Check an active to-do to move it here!
+                    </div>
+                  ) : (
+                    completedTasks.map((task) => renderTaskRow(task, true))
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : tabFilter === 'completed' ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between border-b border-eink-border pb-2">
+                <h3 className="font-bold text-xs uppercase text-eink-text tracking-wider">
+                  ALL COMPLETED TO-DOS ({completedTasks.length})
+                </h3>
+              </div>
+              <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border overflow-hidden shadow-eink-card">
+                {completedTasks.length === 0 ? (
+                  <div className="p-12 text-center text-xs text-eink-textMuted font-technical">
+                    No completed tasks found.
+                  </div>
+                ) : (
+                  completedTasks.map((task) => renderTaskRow(task, true))
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between border-b border-eink-border pb-2">
+                <h3 className="font-bold text-xs uppercase text-eink-text tracking-wider">
+                  ARCHIVED TO-DOS ({archivedTasks.length})
+                </h3>
+              </div>
+              <div className="border border-eink-border rounded-sm bg-eink-surface divide-y divide-eink-border overflow-hidden shadow-eink-card">
+                {archivedTasks.length === 0 ? (
+                  <div className="p-12 text-center text-xs text-eink-textMuted font-technical">
+                    No archived tasks found.
+                  </div>
+                ) : (
+                  archivedTasks.map((task) => renderTaskRow(task, task.status === 'DONE'))
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

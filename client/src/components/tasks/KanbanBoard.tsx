@@ -24,8 +24,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onAddTask,
   onUpdateStatus,
 }) => {
+  const getPriorityRank = (p?: string): number => {
+    switch ((p || '').toUpperCase()) {
+      case 'URGENT': return 4;
+      case 'HIGH': return 3;
+      case 'MEDIUM': return 2;
+      case 'LOW': return 1;
+      default: return 2;
+    }
+  };
+
   const getTasksByStatus = (status: TaskStatus) => {
-    return tasks.filter((t) => t.status === status);
+    return tasks
+      .filter((t) => t.status === status)
+      .sort((a, b) => {
+        const pDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
+        if (pDiff !== 0) return pDiff;
+        return (b.task_number || 0) - (a.task_number || 0);
+      });
   };
 
   const handleDragOver = (e: React.DragEvent) => {
