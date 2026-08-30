@@ -6,12 +6,12 @@ import ActivityKit
 public struct ShioriFocusLiveActivityWidget: Widget {
     public var body: some WidgetConfiguration {
         ActivityConfiguration(for: ShioriFocusActivityAttributes.self) { context in
-            // iPhone Lock Screen & StandBy Live Activity View
+            // iPhone Lock Screen Live Activity View
             LockScreenLiveActivityView(context: context)
-                .activityBackgroundTint(Color(red: 0.96, green: 0.95, blue: 0.93)) // SHIORI Paper Warm E-Ink
+                .activityBackgroundTint(Color(red: 0.96, green: 0.95, blue: 0.93))
                 .activitySystemActionForegroundColor(Color.black)
         } dynamicIsland: { context in
-            // iPhone 14 Pro / 15 / 16 Dynamic Island UI
+            // iPhone Dynamic Island UI
             DynamicIsland {
                 // Expanded Dynamic Island
                 DynamicIslandExpandedRegion(.leading) {
@@ -19,7 +19,7 @@ public struct ShioriFocusLiveActivityWidget: Widget {
                         Image(systemName: "timer")
                             .font(.caption2.bold())
                         Text("SHIORI")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .font(.system(size: 11, weight: .black, design: .monospaced))
                     }
                     .padding(.leading, 8)
                 }
@@ -100,7 +100,7 @@ struct LockScreenLiveActivityView: View {
                     .cornerRadius(2)
             }
             
-            // Large Native Countdown Timer (Updates second-by-second with zero CPU overhead)
+            // Large Native Countdown Timer (Uses Apple's system timer rendering with zero battery drain)
             HStack(alignment: .firstTextBaseline) {
                 if context.state.state == "PAUSED", let pausedSec = context.state.pausedRemainingSeconds {
                     Text(String(format: "%02d:%02d", pausedSec / 60, pausedSec % 60))
@@ -119,14 +119,13 @@ struct LockScreenLiveActivityView: View {
                     .foregroundColor(.gray)
             }
             
-            // Task Title & Minimal Progress Line
+            // Task Title & Native Progress
             VStack(alignment: .leading, spacing: 3) {
                 Text(context.state.sessionName)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.black)
                     .lineLimit(1)
                 
-                // Native Progress View
                 if context.state.state == "RUNNING" {
                     ProgressView(timerInterval: context.state.startTime...context.state.endTime, countsDown: false)
                         .tint(Color.black)

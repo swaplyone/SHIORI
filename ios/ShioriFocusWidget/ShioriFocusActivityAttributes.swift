@@ -3,7 +3,6 @@ import ActivityKit
 
 public struct ShioriFocusActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
-        // Dynamic state updated during session
         public var sessionName: String
         public var projectName: String
         public var startTime: Date
@@ -31,7 +30,6 @@ public struct ShioriFocusActivityAttributes: ActivityAttributes {
         }
     }
     
-    // Static attributes
     public var sessionId: String
     
     public init(sessionId: String) {
