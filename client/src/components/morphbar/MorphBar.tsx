@@ -67,8 +67,8 @@ export const MorphBar: React.FC = () => {
       case 'IDLE': {
         const isHome = location.pathname === '/';
         return isHome
-          ? 'w-[145px] h-[42px] rounded-full px-3.5 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer'
-          : 'w-[270px] sm:w-[295px] h-[42px] rounded-full px-3.5 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer';
+          ? 'w-[155px] h-[44px] rounded-full px-3.5 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer'
+          : 'w-[290px] sm:w-[325px] h-[44px] rounded-full px-4 shadow-eink-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer';
       }
       case 'FOCUS_TIMER':
         return 'w-[240px] sm:w-[260px] h-[42px] rounded-full px-3 shadow-eink-sm hover:scale-[1.03] active:scale-[0.98] cursor-pointer';

@@ -71,24 +71,24 @@ export const IdleCollapsedView: React.FC = () => {
   return (
     <div className="relative flex items-center justify-center w-full h-full px-3 text-eink-text select-none">
       {/* Centered Brand and Section Label */}
-      <div className="flex items-center justify-center gap-2">
-        <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex items-center justify-center gap-2.5">
+        <div className="flex items-center gap-2 shrink-0">
           <img
             src="/favicon-shiori.png"
             alt="SHIORI"
-            className="w-5 h-5 object-contain shrink-0"
+            className="w-6.5 h-6.5 object-contain shrink-0"
           />
-          <span className="font-mono font-bold text-xs tracking-widest text-eink-text uppercase leading-none">
+          <span className="font-mono font-bold text-xs tracking-[0.18em] text-eink-text uppercase leading-none">
             SHIORI
           </span>
         </div>
 
         {label ? (
           <>
-            <span className="h-3 w-[1px] bg-eink-border mx-1 shrink-0 opacity-70" />
+            <span className="h-3.5 w-[1.5px] bg-eink-border mx-1 shrink-0 opacity-60 rounded-full" />
             <div className="flex items-center gap-1.5 min-w-0">
               <PageIcon className="w-3.5 h-3.5 text-eink-textSecondary shrink-0" />
-              <span className="font-mono text-xs font-bold text-eink-text uppercase tracking-wide truncate max-w-[130px] sm:max-w-[180px] leading-none">
+              <span className="font-mono text-xs font-bold text-eink-text uppercase tracking-wide truncate max-w-[140px] sm:max-w-[190px] leading-none">
                 {label}
               </span>
             </div>
@@ -98,7 +98,7 @@ export const IdleCollapsedView: React.FC = () => {
 
       {/* Unread badge if any */}
       {unreadCount > 0 && (
-        <div className="absolute right-2 flex items-center gap-1">
+        <div className="absolute right-2.5 flex items-center gap-1">
           <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-eink-text text-eink-bg text-[9px] font-mono font-bold rounded">
             <Bell className="w-2.5 h-2.5" />
             {unreadCount}

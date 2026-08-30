@@ -1,19 +1,17 @@
 /**
- * SHIORI E-Ink Sound Design Engine
- * Inspired by Japanese stationery: paper, ink, pencil, quiet desk ambience, minimal tactile UI.
+ * SHIORI High-Craft Acoustic Sound Design Engine
+ * Inspired by Japanese stationery: washi paper, fountain pen ink, bamboo/wood desk tactile cues.
  * 
- * Uses Web Audio API for 0ms latency, zero external network dependency, and pristine acoustic control.
+ * Uses Web Audio API with soft harmonic resonance, low-pass smoothing, and gentle acoustic envelopes.
  */
 
 class ShioriAudioEngine {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
-  private initialized: boolean = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('shiori_sound_enabled');
-      // Default to enabled (with browser autoplay gesture handling)
       this.isMuted = stored === 'false';
     }
   }
@@ -29,9 +27,6 @@ class ShioriAudioEngine {
     return this.ctx;
   }
 
-  /**
-   * Unlock / resume AudioContext on user interaction if browser policy suspended it
-   */
   public async unlock(): Promise<boolean> {
     const ctx = this.getContext();
     if (!ctx) return false;
@@ -39,7 +34,6 @@ class ShioriAudioEngine {
       if (ctx.state === 'suspended') {
         await ctx.resume();
       }
-      this.initialized = true;
       return true;
     } catch {
       return false;
@@ -57,7 +51,7 @@ class ShioriAudioEngine {
     }
     if (enabled) {
       this.unlock();
-      this.playSoftClick(0.08);
+      this.playSoftClick(0.06);
     }
   }
 
@@ -68,199 +62,194 @@ class ShioriAudioEngine {
   }
 
   /**
-   * 1. PAPER RUSTLE: Soft washi paper movement / subtle desk rustle
-   * Accompanies illustration reveal (~0.4s - 0.9s)
+   * 1. PAPER RUSTLE: Velvet washi paper glide (smooth, zero harsh static noise)
+   * Plays at stage 2 (~0.4s)
    */
-  public playPaperRustle(volume = 0.11): void {
+  public playPaperRustle(volume = 0.08): void {
     if (this.isMuted) return;
     const ctx = this.getContext();
     if (!ctx || ctx.state === 'suspended') return;
 
     try {
-      const duration = 0.55;
-      const bufferSize = ctx.sampleRate * duration;
+      const duration = 0.45;
+      const bufferSize = Math.floor(ctx.sampleRate * duration);
       const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
       const data = buffer.getChannelData(0);
 
-      // Generate soft brown/pink noise
-      let lastOut = 0.0;
+      // Velvet smooth Brownian noise with triple integration (no harsh white hiss)
+      let b0 = 0, b1 = 0, b2 = 0;
       for (let i = 0; i < bufferSize; i++) {
         const white = Math.random() * 2 - 1;
-        // Low-pass integration for soft paper grain
-        lastOut = (lastOut + (0.04 * white)) / 1.04;
-        data[i] = lastOut * 3.2;
+        b0 = 0.96 * b0 + white * 0.04;
+        b1 = 0.94 * b1 + b0 * 0.06;
+        b2 = 0.92 * b2 + b1 * 0.08;
+        data[i] = b2 * 4.5;
       }
 
       const noise = ctx.createBufferSource();
       noise.buffer = buffer;
 
-      // Bandpass filter to isolate paper friction frequencies
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(800, ctx.currentTime);
-      filter.frequency.exponentialRampToValueAtTime(1400, ctx.currentTime + duration * 0.5);
-      filter.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + duration);
-      filter.Q.setValueAtTime(1.1, ctx.currentTime);
+      // Soft low-pass filter to keep only warm paper textures
+      const lpf = ctx.createBiquadFilter();
+      lpf.type = 'lowpass';
+      lpf.frequency.setValueAtTime(650, ctx.currentTime);
+      lpf.frequency.linearRampToValueAtTime(950, ctx.currentTime + duration * 0.4);
+      lpf.frequency.exponentialRampToValueAtTime(450, ctx.currentTime + duration);
 
-      // Smooth organic envelope
-      const gainNode = ctx.createGain();
-      gainNode.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gainNode.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.15);
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
 
-      noise.connect(filter);
-      filter.connect(gainNode);
-      gainNode.connect(ctx.destination);
+      noise.connect(lpf);
+      lpf.connect(gain);
+      gain.connect(ctx.destination);
 
       noise.start();
       noise.stop(ctx.currentTime + duration);
-    } catch {
-      // Fail silently without breaking UI
-    }
+    } catch {}
   }
 
   /**
-   * 2. INK STROKE: Soft graphite / ink nib drawing onto textured paper
-   * Synchronized with character reveal / logo appearance (~1.3s - 1.8s)
+   * 2. INK STROKE: Delicate calligraphy brush / fountain pen nib glide
+   * Plays at stage 3 (~1.3s)
    */
-  public playInkStroke(volume = 0.13): void {
+  public playInkStroke(volume = 0.09): void {
     if (this.isMuted) return;
     const ctx = this.getContext();
     if (!ctx || ctx.state === 'suspended') return;
 
     try {
-      const duration = 0.35;
-      const bufferSize = ctx.sampleRate * duration;
-      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const data = buffer.getChannelData(0);
+      const duration = 0.32;
 
-      // High-frequency friction grain
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * 0.6;
-      }
-
-      const noise = ctx.createBufferSource();
-      noise.buffer = buffer;
-
-      // Highpass + Peaking filter for nib/brush friction
-      const highpass = ctx.createBiquadFilter();
-      highpass.type = 'highpass';
-      highpass.frequency.setValueAtTime(2200, ctx.currentTime);
-
-      const peakFilter = ctx.createBiquadFilter();
-      peakFilter.type = 'peaking';
-      peakFilter.frequency.setValueAtTime(3200, ctx.currentTime);
-      peakFilter.Q.setValueAtTime(2.0, ctx.currentTime);
-      peakFilter.gain.setValueAtTime(4.0, ctx.currentTime);
-
-      // Soft fundamental harmonic for pen weight
+      // Warm acoustic stroke tone (harmonic resonance)
       const osc = ctx.createOscillator();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(240, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + duration);
+      osc.frequency.setValueAtTime(280, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(190, ctx.currentTime + duration);
 
       const oscGain = ctx.createGain();
       oscGain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      oscGain.gain.linearRampToValueAtTime(volume * 0.35, ctx.currentTime + 0.05);
+      oscGain.gain.linearRampToValueAtTime(volume * 0.4, ctx.currentTime + 0.06);
       oscGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-
-      const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      noiseGain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.04);
-      noiseGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-
-      noise.connect(highpass);
-      highpass.connect(peakFilter);
-      peakFilter.connect(noiseGain);
-      noiseGain.connect(ctx.destination);
 
       osc.connect(oscGain);
       oscGain.connect(ctx.destination);
 
-      noise.start();
+      // Soft paper nib friction
+      const bufferSize = Math.floor(ctx.sampleRate * duration);
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      let smooth = 0;
+      for (let i = 0; i < bufferSize; i++) {
+        const w = Math.random() * 2 - 1;
+        smooth = 0.85 * smooth + w * 0.15;
+        data[i] = smooth * 0.7;
+      }
+
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const bpf = ctx.createBiquadFilter();
+      bpf.type = 'bandpass';
+      bpf.frequency.setValueAtTime(1600, ctx.currentTime);
+      bpf.Q.setValueAtTime(1.8, ctx.currentTime);
+
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      noiseGain.gain.linearRampToValueAtTime(volume * 0.5, ctx.currentTime + 0.05);
+      noiseGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+
+      noise.connect(bpf);
+      bpf.connect(noiseGain);
+      noiseGain.connect(ctx.destination);
+
       osc.start();
-      noise.stop(ctx.currentTime + duration);
+      noise.start();
       osc.stop(ctx.currentTime + duration);
-    } catch {
-      // Fail silently
-    }
+      noise.stop(ctx.currentTime + duration);
+    } catch {}
   }
 
   /**
-   * 3. SOFT TACTILE CLICK / INK SETTLE: Delicate wooden stamp / task checkmark settle
-   * Synchronized with task verification / settlement (~2.6s)
+   * 3. SOFT TACTILE CLICK / INK SETTLE: Quiet Japanese wooden seal / bamboo desk tap
+   * Plays at stage 6 (~2.6s)
    */
-  public playSoftClick(volume = 0.08): void {
+  public playSoftClick(volume = 0.07): void {
     if (this.isMuted) return;
     const ctx = this.getContext();
     if (!ctx || ctx.state === 'suspended') return;
 
     try {
-      const duration = 0.07;
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(1100, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(320, ctx.currentTime + duration);
+      const duration = 0.065;
+
+      // Resonant dual-tone bamboo / wood click
+      const osc1 = ctx.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(760, ctx.currentTime);
+      osc1.frequency.exponentialRampToValueAtTime(280, ctx.currentTime + duration);
+
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(1120, ctx.currentTime);
+      osc2.frequency.exponentialRampToValueAtTime(420, ctx.currentTime + duration);
 
       const gain = ctx.createGain();
       gain.gain.setValueAtTime(volume, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
 
-      osc.connect(gain);
+      osc1.connect(gain);
+      osc2.connect(gain);
       gain.connect(ctx.destination);
 
-      osc.start();
-      osc.stop(ctx.currentTime + duration);
-    } catch {
-      // Fail silently
-    }
+      osc1.start();
+      osc2.start();
+      osc1.stop(ctx.currentTime + duration);
+      osc2.stop(ctx.currentTime + duration);
+    } catch {}
   }
 
   /**
-   * 4. ENTRANCE REFRESH: Subtle page turn + gentle physical e-ink settling sound
-   * Triggered when clicking "OPEN SHIORI →"
+   * 4. ENTRANCE PAGE TURN: Soft notebook page turn + gentle physical e-ink settle
+   * Plays when clicking "OPEN SHIORI →"
    */
-  public playPageTurn(volume = 0.12): void {
+  public playPageTurn(volume = 0.08): void {
     if (this.isMuted) return;
     const ctx = this.getContext();
     if (!ctx || ctx.state === 'suspended') return;
 
     try {
-      const duration = 0.28;
-      const bufferSize = ctx.sampleRate * duration;
+      const duration = 0.22;
+      const bufferSize = Math.floor(ctx.sampleRate * duration);
       const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
       const data = buffer.getChannelData(0);
 
-      let last = 0;
+      let b = 0;
       for (let i = 0; i < bufferSize; i++) {
-        const white = Math.random() * 2 - 1;
-        last = (last + 0.06 * white) / 1.06;
-        data[i] = last * 2.8;
+        b = 0.9 * b + (Math.random() * 2 - 1) * 0.1;
+        data[i] = b * 2.2;
       }
 
       const noise = ctx.createBufferSource();
       noise.buffer = buffer;
 
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(1200, ctx.currentTime);
-      filter.frequency.exponentialRampToValueAtTime(450, ctx.currentTime + duration);
-      filter.Q.setValueAtTime(1.4, ctx.currentTime);
+      const lpf = ctx.createBiquadFilter();
+      lpf.type = 'lowpass';
+      lpf.frequency.setValueAtTime(800, ctx.currentTime);
+      lpf.frequency.exponentialRampToValueAtTime(320, ctx.currentTime + duration);
 
       const gain = ctx.createGain();
       gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.06);
+      gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.04);
       gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
 
-      noise.connect(filter);
-      filter.connect(gain);
+      noise.connect(lpf);
+      lpf.connect(gain);
       gain.connect(ctx.destination);
 
       noise.start();
       noise.stop(ctx.currentTime + duration);
-    } catch {
-      // Fail silently
-    }
+    } catch {}
   }
 }
 

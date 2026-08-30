@@ -9,10 +9,18 @@ export const projectsRouter = Router();
 projectsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const projects = await queryAll(`
     SELECT p.*,
-           (SELECT COUNT(*) FROM tasks WHERE project_id = p.id AND status != 'DONE') as active_todos,
-           (SELECT COUNT(*) FROM tasks WHERE project_id = p.id AND status = 'DONE') as completed_tasks,
-           (SELECT COUNT(*) FROM tasks WHERE project_id = p.id) as total_tasks,
-           (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) as members_count
+           (SELECT COUNT(*) FROM tasks t 
+            WHERE (t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%') 
+              AND (t.status != 'DONE' AND (t.user_status != 'COMPLETED' OR t.user_status IS NULL))
+           ) as active_todos,
+           (SELECT COUNT(*) FROM tasks t 
+            WHERE (t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%') 
+              AND (t.status = 'DONE' OR t.user_status = 'COMPLETED')
+           ) as completed_tasks,
+           (SELECT COUNT(*) FROM tasks t 
+            WHERE t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%'
+           ) as total_tasks,
+           (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) as members_count
     FROM projects p
     WHERE p.created_by = ? OR p.id IN (SELECT project_id FROM project_members WHERE user_id = ?)
     ORDER BY p.created_at DESC
@@ -39,6 +47,9 @@ projectsRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response):
 
       return {
         ...p,
+        active_todos: Number(p.active_todos || 0),
+        completed_tasks: Number(p.completed_tasks || 0),
+        total_tasks: Number(p.total_tasks || 0),
         membersCount: members.length,
         members,
         commitsTodayCount: Number(commitsCountRow?.cnt || 0),
@@ -56,9 +67,17 @@ projectsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Respons
 
   const project = await queryOne(`
     SELECT p.*,
-           (SELECT COUNT(*) FROM tasks WHERE project_id = p.id AND status != 'DONE') as active_todos,
-           (SELECT COUNT(*) FROM tasks WHERE project_id = p.id AND status = 'DONE') as completed_tasks,
-           (SELECT COUNT(*) FROM tasks WHERE project_id = p.id) as total_tasks
+           (SELECT COUNT(*) FROM tasks t 
+            WHERE (t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%') 
+              AND (t.status != 'DONE' AND (t.user_status != 'COMPLETED' OR t.user_status IS NULL))
+           ) as active_todos,
+           (SELECT COUNT(*) FROM tasks t 
+            WHERE (t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%') 
+              AND (t.status = 'DONE' OR t.user_status = 'COMPLETED')
+           ) as completed_tasks,
+           (SELECT COUNT(*) FROM tasks t 
+            WHERE t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%'
+           ) as total_tasks
     FROM projects p
     WHERE p.id = ? OR p.slug = ? OR p.github_repo_name = ?
   `, [id, id, id]);

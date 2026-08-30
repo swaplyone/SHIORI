@@ -142,11 +142,13 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     return;
   }
 
-  // Find workspace if not given
+  // Find workspace and repo name if not given
   let finalWorkspaceId = workspaceId;
-  if (!finalWorkspaceId) {
-    const project = await queryOne('SELECT workspace_id, github_repo_name FROM projects WHERE id = ?', [projectId]);
-    finalWorkspaceId = project?.workspace_id;
+  let finalGithubRepo = githubRepo;
+  const project = await queryOne('SELECT workspace_id, github_repo_name, name FROM projects WHERE id = ?', [projectId]);
+  if (project) {
+    if (!finalWorkspaceId) finalWorkspaceId = project.workspace_id;
+    if (!finalGithubRepo) finalGithubRepo = project.github_repo_name || project.name;
   }
 
   // Get next task number (starts from 1 per project/workspace)
@@ -169,7 +171,7 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   `, [
     taskId, nextNum, taskCode, projectId, finalWorkspaceId, title, description || '',
     status, priority, assigneeId || req.user!.id, req.user!.id, dueDate || 'Tomorrow',
-    githubRepo || null, githubBranch || null
+    finalGithubRepo || null, githubBranch || null
   ]);
 
   // Add creation activity
