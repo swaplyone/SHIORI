@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Check } from 'lucide-react';
+import { ArrowRight, Check, Volume2, VolumeX } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useMorphBar } from '../../context/MorphBarContext';
+import { useShioriWelcomeSound } from '../../hooks/useShioriWelcomeSound';
 
 export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComplete }) => {
   const { isAuthenticated } = useAuth();
@@ -14,6 +15,10 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
     if (typeof window === 'undefined') return false;
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }, []);
+
+  const { soundEnabled, toggleSound, playStageSound, playEntranceSound } = useShioriWelcomeSound({
+    prefersReducedMotion,
+  });
 
   // Animation Timeline States:
   // 0: Initial blank e-ink paper
@@ -47,14 +52,16 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
     // 0.0s: Start E-Ink power-on activation
     setStage(1);
 
-    // 0.4s: Start progressive line-art ink drawing
+    // 0.4s: Start progressive line-art ink drawing + soft paper rustle
     const tIllustration = setTimeout(() => {
       setStage(2);
+      playStageSound(2);
     }, 400);
 
-    // 1.3s - 1.9s: Sequential letter reveal for SHIORI (one char every 110ms)
+    // 1.3s - 1.9s: Sequential letter reveal for SHIORI + delicate ink/pencil stroke
     const tShioriStart = setTimeout(() => {
       setStage(3);
+      playStageSound(3);
       for (let i = 1; i <= 6; i++) {
         setTimeout(() => {
           setShioriCharCount(i);
@@ -72,9 +79,10 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
       setStage(5);
     }, 2100);
 
-    // 2.6s: Task transitions into verified state (✓ Fix authentication)
+    // 2.6s: Task transitions into verified state + tactile ink settle click
     const tTaskVerified = setTimeout(() => {
       setStage(6);
+      playStageSound(6);
       setInkFlash(true);
       setTimeout(() => setInkFlash(false), 90);
     }, 2600);
@@ -99,13 +107,14 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
       clearTimeout(tFinal);
       setIsBarVisible(true);
     };
-  }, [setIsBarVisible, prefersReducedMotion]);
+  }, [setIsBarVisible, prefersReducedMotion, playStageSound]);
 
-  // Handle Entrance Transition: 350-450ms physical e-ink waveform refresh + ghosting
+  // Handle Entrance Transition: 350-450ms physical e-ink waveform refresh + ghosting + page turn sound
   const handleOpenShiori = () => {
     if (isEntering) return;
     setIsEntering(true);
     setEntryPhase('refreshing');
+    playEntranceSound();
 
     // 150ms: Refresh waveform
     setTimeout(() => {
@@ -155,7 +164,7 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
         <div className="fixed inset-0 bg-[#F5F4EE]/90 z-50 pointer-events-none backdrop-blur-[0.5px] transition-all duration-150" />
       )}
 
-      {/* TOP: Subtle Japanese Editorial Header Tag */}
+      {/* TOP: Subtle Japanese Editorial Header Tag + Sound Toggle */}
       <header
         className={`relative z-10 w-full flex items-center justify-between text-[11px] font-mono tracking-widest text-[#777770] uppercase transition-opacity duration-700 ${
           stage >= 2 ? 'opacity-100' : 'opacity-0'
@@ -166,7 +175,18 @@ export const OpeningAnimation: React.FC<{ onComplete?: () => void }> = ({ onComp
           <span>·</span>
           <span>SHIORI</span>
         </div>
-        <span className="text-[10px] tracking-widest text-[#999990]">A SwaplyOne product</span>
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:inline text-[10px] tracking-widest text-[#999990]">A SwaplyOne product</span>
+          <button
+            onClick={toggleSound}
+            className="flex items-center gap-1.5 px-2 py-0.5 border border-[#B8B7B1]/60 hover:border-[#111111] bg-[#F5F4EE] hover:bg-[#EAE9E3] text-[#777770] hover:text-[#111111] rounded-xs transition-colors text-[9px] font-mono tracking-wider cursor-pointer"
+            aria-label={soundEnabled ? "Disable welcome sound effects" : "Enable welcome sound effects"}
+            title={soundEnabled ? "Sound ON (Click to mute)" : "Sound OFF (Click to unmute)"}
+          >
+            {soundEnabled ? <Volume2 className="w-3 h-3 text-[#111111]" /> : <VolumeX className="w-3 h-3 text-[#999990]" />}
+            <span className="hidden sm:inline">{soundEnabled ? 'SOUND ON' : 'SOUND OFF'}</span>
+          </button>
+        </div>
       </header>
 
       {/* CENTER: Main Cohesive Full-Screen Composition */}
