@@ -609,11 +609,12 @@ export async function queryAll<T = any>(sql: string, params: any[] = []): Promis
       return result.rows as T[];
     } catch (err: any) {
       console.error('[DATABASE PG ERROR queryAll]', err.message);
-      // Graceful fallback to SQLite
+      return [];
     }
   }
 
   const database = await getDb();
+  if (!database) return [];
   const sanitizedParams = params.map((p) => (p === undefined ? null : p));
   const stmt = database.prepare(sql);
   stmt.bind(sanitizedParams);

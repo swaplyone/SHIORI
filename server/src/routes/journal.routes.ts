@@ -29,17 +29,17 @@ journalRouter.get('/today', authMiddleware, async (req: AuthRequest, res: Respon
 
   // Fetch recent commits for dynamic activity feed
   const recentCommits = await queryAll(`
-    SELECT message, sha, author_name, committed_at
+    SELECT message, commit_hash, author_name, pushed_at
     FROM github_commits
-    ORDER BY committed_at DESC
+    ORDER BY pushed_at DESC
     LIMIT 6
   `);
 
   const lastActivity = recentCommits.length > 0
     ? recentCommits.map((c: any) => ({
-        time: c.committed_at ? new Date(c.committed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '12:00',
+        time: c.pushed_at ? new Date(c.pushed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '12:00',
         label: c.message ? c.message.substring(0, 32) : 'commit pushed',
-        code: c.sha ? c.sha.substring(0, 7) : 'commit',
+        code: c.commit_hash ? c.commit_hash.substring(0, 7) : 'commit',
         icon: '⎇'
       }))
     : [
