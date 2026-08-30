@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   CheckSquare,
@@ -114,10 +114,30 @@ export const IdleCollapsedView: React.FC = () => {
 export const NavigationExpandedView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isAuthenticated, logout, demoLogin } = useAuth();
+  const { token, user, isAuthenticated, logout, demoLogin } = useAuth();
   const { unreadCount, triggerEInkRefresh } = useNotifications();
   const { startFocusTimer } = useMorphBar();
   const [copiedId, setCopiedId] = useState(false);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = useState<string>('');
+  const [customTaskGoal, setCustomTaskGoal] = useState<string>('');
+  const [focusMinutes, setFocusMinutes] = useState<number>(25);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/tasks?archived=false', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const active = (data.tasks || []).filter((t: any) => t.status !== 'DONE');
+        setTasks(active);
+        if (active.length > 0) {
+          setSelectedTaskId(active[0].id);
+        }
+      })
+      .catch((err) => console.error(err));
+  }, [token]);
 
   const navItems = [
     { to: '/home', label: 'SHIORI HOME', desc: 'Overview & today activity', icon: BookOpen },
@@ -233,7 +253,7 @@ export const NavigationExpandedView: React.FC<{ onClose: () => void }> = ({ onCl
           </div>
           <button
             onClick={handleCopyId}
-            className="px-2 py-1 border border-eink-border hover:bg-eink-bg text-[10px] font-bold rounded flex items-center gap-1 text-eink-text shrink-0 transition-colors"
+            className="px-2 py-1 border border-eink-border hover:bg-eink-bg text-[10px] font-bold rounded flex items-center gap-1 text-eink-text shrink-0 transition-colors cursor-pointer"
             title="Copy SHIORI ID"
           >
             {copiedId ? (
@@ -253,7 +273,7 @@ export const NavigationExpandedView: React.FC<{ onClose: () => void }> = ({ onCl
         {/* Global Quick Search Button */}
         <button
           onClick={openSearch}
-          className="px-3 py-2 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border rounded-sm flex items-center justify-between gap-3 text-left transition-colors sm:w-48"
+          className="px-3 py-2 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border rounded-sm flex items-center justify-between gap-3 text-left transition-colors sm:w-48 cursor-pointer"
         >
           <div className="flex items-center gap-1.5 text-eink-textMuted text-xs">
             <Search className="w-3.5 h-3.5" />
@@ -265,22 +285,100 @@ export const NavigationExpandedView: React.FC<{ onClose: () => void }> = ({ onCl
         </button>
       </div>
 
-      {/* Focus Session Quick Bar */}
-      <div className="p-2.5 bg-eink-surface border border-eink-border rounded-sm flex items-center justify-between">
-        <div>
-          <span className="text-[9px] text-eink-textMuted uppercase font-bold block">POMODORO FOCUS SESSION</span>
-          <p className="font-bold text-eink-text text-[11px]">Start 25-minute uninterrupted sprint</p>
+      {/* Focus Session Config & Start Bar */}
+      <div className="p-3 bg-eink-surface border border-eink-border rounded-sm space-y-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider">
+            POMODORO FOCUS SESSION
+          </span>
+          <span className="text-[10px] text-eink-text font-mono font-bold">
+            {focusMinutes} MIN SPRINT
+          </span>
         </div>
-        <button
-          onClick={() => {
-            startFocusTimer('Finish compiler error diagnostic', 'SWAPLYONE COMPILER', 25);
-            onClose();
-          }}
-          className="px-3 py-1.5 bg-eink-text text-eink-bg font-bold text-[11px] rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 transition-opacity shrink-0"
-        >
-          <Play className="w-3 h-3" />
-          <span>START FOCUS</span>
-        </button>
+
+        {/* To-Do Selection */}
+        <div>
+          <label className="block text-[10px] text-eink-textSecondary uppercase font-bold mb-1">
+            SELECT TO-DO TO FOCUS ON:
+          </label>
+          {tasks.length > 0 ? (
+            <select
+              value={selectedTaskId}
+              onChange={(e) => setSelectedTaskId(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded-sm text-xs font-technical text-eink-text outline-none cursor-pointer"
+            >
+              {tasks.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.task_code ? `[${t.task_code}] ` : ''}{t.title} ({t.priority || 'MEDIUM'})
+                </option>
+              ))}
+              <option value="__custom__">+ Custom Focus Goal...</option>
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={customTaskGoal}
+              onChange={(e) => setCustomTaskGoal(e.target.value)}
+              placeholder="Enter your focus task goal..."
+              className="w-full px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded-sm text-xs font-technical text-eink-text outline-none"
+            />
+          )}
+
+          {selectedTaskId === '__custom__' && tasks.length > 0 && (
+            <input
+              type="text"
+              value={customTaskGoal}
+              onChange={(e) => setCustomTaskGoal(e.target.value)}
+              placeholder="e.g. Design system refinement, API audit..."
+              className="w-full mt-1.5 px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded-sm text-xs font-technical text-eink-text outline-none animate-fade-in"
+              autoFocus
+            />
+          )}
+        </div>
+
+        {/* Duration selector & Start button */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-eink-border/50">
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-eink-textMuted uppercase font-bold mr-1">TIME:</span>
+            {[5, 10, 15, 25, 30, 45, 60].map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setFocusMinutes(m);
+                }}
+                className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded-sm border cursor-pointer transition-all ${
+                  focusMinutes === m
+                    ? 'bg-eink-text text-eink-bg border-eink-text'
+                    : 'bg-eink-bg text-eink-text border-eink-border hover:bg-eink-surfaceHover'
+                }`}
+              >
+                {m}m
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              const matchedTask = tasks.find((t) => t.id === selectedTaskId);
+              const taskTitle =
+                selectedTaskId === '__custom__' || !matchedTask
+                  ? customTaskGoal.trim() || 'General Focus Session'
+                  : `${matchedTask.task_code ? matchedTask.task_code + ': ' : ''}${matchedTask.title}`;
+              const projectName = matchedTask?.github_repo || 'SHIORI';
+
+              startFocusTimer(taskTitle, projectName, focusMinutes);
+              onClose();
+            }}
+            className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold text-xs rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 transition-opacity cursor-pointer ml-auto"
+          >
+            <Play className="w-3.5 h-3.5" />
+            <span>START {focusMinutes}M FOCUS</span>
+          </button>
+        </div>
       </div>
 
       {/* Primary Navigation Grid */}

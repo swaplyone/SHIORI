@@ -62,6 +62,8 @@ interface MorphBarContextType {
   setIsBarVisible: (visible: boolean) => void;
   focusTimer: FocusTimerState;
   startFocusTimer: (taskTitle?: string, projectName?: string, durationMinutes?: number) => void;
+  adjustFocusTimer: (deltaMinutes: number) => void;
+  setFocusTimerDuration: (durationMinutes: number) => void;
   pauseFocusTimer: () => void;
   resumeFocusTimer: () => void;
   stopFocusTimer: () => void;
@@ -91,8 +93,8 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     isPaused: false,
     secondsRemaining: 25 * 60,
     totalSeconds: 25 * 60,
-    taskTitle: 'Finish authentication & JWT rotation',
-    projectName: 'SWAPLYONE COMPILER',
+    taskTitle: 'Focus Session',
+    projectName: 'SHIORI',
   });
 
   const { socket } = useSocket();
@@ -170,7 +172,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             {
               title: prev.taskTitle,
               projectName: prev.projectName,
-              message: 'Focus session completed! 25m logged to development journal.',
+              message: `Focus session completed! ${Math.round(prev.totalSeconds / 60)}m logged to development journal.`,
             },
             6000
           );
@@ -186,11 +188,11 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Start / pause / stop focus timer helpers with useCallback
   const startFocusTimer = useCallback(
     (
-      taskTitle = 'Finish authentication & JWT rotation',
-      projectName = 'SWAPLYONE COMPILER',
+      taskTitle = 'Focus Session',
+      projectName = 'SHIORI',
       durationMinutes = 25
     ) => {
-      const totalSec = durationMinutes * 60;
+      const totalSec = Math.max(1, durationMinutes) * 60;
       setFocusTimer({
         isActive: true,
         isPaused: false,
@@ -203,6 +205,28 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     },
     [dispatchEvent]
   );
+
+  const adjustFocusTimer = useCallback((deltaMinutes: number) => {
+    setFocusTimer((prev) => {
+      const newSec = Math.max(60, prev.secondsRemaining + deltaMinutes * 60);
+      const newTotal = Math.max(newSec, prev.totalSeconds + deltaMinutes * 60);
+      return {
+        ...prev,
+        secondsRemaining: newSec,
+        totalSeconds: newTotal
+      };
+    });
+  }, []);
+
+  const setFocusTimerDuration = useCallback((durationMinutes: number) => {
+    const totalSec = Math.max(1, durationMinutes) * 60;
+    setFocusTimer((prev) => ({
+      ...prev,
+      secondsRemaining: totalSec,
+      totalSeconds: totalSec,
+      isPaused: false
+    }));
+  }, []);
 
   const pauseFocusTimer = useCallback(() => {
     setFocusTimer((prev) => ({ ...prev, isPaused: true }));
@@ -339,6 +363,8 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsBarVisible,
         focusTimer,
         startFocusTimer,
+        adjustFocusTimer,
+        setFocusTimerDuration,
         pauseFocusTimer,
         resumeFocusTimer,
         stopFocusTimer,
