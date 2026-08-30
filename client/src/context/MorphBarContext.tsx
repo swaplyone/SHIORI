@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useSocket } from './SocketContext';
-import { lockScreenTimer } from '../utils/lockScreenTimer';
 import { reminderManager } from '../utils/reminderManager';
+import { shioriAudio } from '../utils/shioriAudio';
 
 export type MorphBarStateType =
   | 'IDLE'
@@ -43,8 +43,11 @@ const PRIORITY_MAP: Record<MorphBarStateType, number> = {
 interface FocusTimerState {
   isActive: boolean;
   isPaused: boolean;
+  isCompleted: boolean;
   secondsRemaining: number;
   totalSeconds: number;
+  startTime: number;
+  elapsedSeconds: number;
   taskTitle: string;
   projectName: string;
 }
@@ -89,16 +92,20 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [barPosition, setBarPosition] = useState<'center' | 'top'>('top');
   const [isBarVisible, setIsBarVisible] = useState<boolean>(true);
 
-  // Focus Timer state
+  // Timestamp-based Focus Timer state
   const [focusTimer, setFocusTimer] = useState<FocusTimerState>({
     isActive: false,
     isPaused: false,
+    isCompleted: false,
     secondsRemaining: 25 * 60,
     totalSeconds: 25 * 60,
+    startTime: 0,
+    elapsedSeconds: 0,
     taskTitle: 'Focus Session',
     projectName: 'SHIORI',
   });
 
+  const hasPlayedCompletionSoundRef = useRef<boolean>(false);
   const { socket } = useSocket();
 
   const dispatchEvent = useCallback(
@@ -148,7 +155,7 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return () => clearTimeout(timer);
       }
     } else {
-      if (focusTimer.isActive) {
+      if (focusTimer.isActive || focusTimer.isCompleted) {
         setCurrentEvent({
           id: 'focus-active',
           type: 'FOCUS_TIMER',
@@ -159,48 +166,61 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setCurrentEvent(DEFAULT_IDLE_EVENT);
       }
     }
-  }, [eventQueue, dismissCurrentEvent, focusTimer.isActive]);
+  }, [eventQueue, dismissCurrentEvent, focusTimer.isActive, focusTimer.isCompleted]);
 
-  // Focus timer countdown tick with Live Lock-Screen Sync
+  // Timestamp-based Countdown & Background/Lock-Screen Accuracy Sync
   useEffect(() => {
-    if (!focusTimer.isActive || focusTimer.isPaused) {
-      if (focusTimer.isPaused) {
-        lockScreenTimer.update(
-          focusTimer.secondsRemaining,
-          focusTimer.totalSeconds,
-          true,
-          focusTimer.taskTitle,
-          focusTimer.projectName
-        );
-      }
-      return;
-    }
+    if (!focusTimer.isActive || focusTimer.isPaused) return;
 
-    const interval = setInterval(() => {
+    const updateTimerFromTimestamp = () => {
       setFocusTimer((prev) => {
-        if (prev.secondsRemaining <= 1) {
-          clearInterval(interval);
-          lockScreenTimer.stop();
-          dispatchEvent(
-            'TASK_VERIFICATION',
-            {
-              title: prev.taskTitle,
-              projectName: prev.projectName,
-              message: `Focus session completed! ${Math.round(prev.totalSeconds / 60)}m logged to development journal.`,
-            },
-            6000
-          );
-          return { ...prev, isActive: false, secondsRemaining: prev.totalSeconds };
+        if (!prev.isActive || prev.isPaused) return prev;
+
+        const currentSegmentSeconds = Math.max(0, Math.floor((Date.now() - prev.startTime) / 1000));
+        const totalElapsed = prev.elapsedSeconds + currentSegmentSeconds;
+        const remaining = Math.max(0, prev.totalSeconds - totalElapsed);
+
+        if (remaining === 0) {
+          if (!hasPlayedCompletionSoundRef.current) {
+            hasPlayedCompletionSoundRef.current = true;
+            shioriAudio.playFocusChime();
+            reminderManager.showNotification('SHIORI Focus Mode', {
+              body: `Focus session complete: ${prev.taskTitle}`,
+              tag: 'shiori-focus-complete',
+            });
+          }
+          return {
+            ...prev,
+            isActive: false,
+            isCompleted: true,
+            secondsRemaining: 0,
+          };
         }
 
-        const nextRemaining = prev.secondsRemaining - 1;
-        lockScreenTimer.update(nextRemaining, prev.totalSeconds, false, prev.taskTitle, prev.projectName);
-        return { ...prev, secondsRemaining: nextRemaining };
+        return {
+          ...prev,
+          secondsRemaining: remaining,
+        };
       });
-    }, 1000);
+    };
 
-    return () => clearInterval(interval);
-  }, [focusTimer.isActive, focusTimer.isPaused, dispatchEvent]);
+    const interval = setInterval(updateTimerFromTimestamp, 500);
+
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        updateTimerFromTimestamp();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [focusTimer.isActive, focusTimer.isPaused]);
 
   // Start / pause / stop focus timer helpers with useCallback
   const startFocusTimer = useCallback(
@@ -209,28 +229,19 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       projectName = 'SHIORI',
       durationMinutes = 25
     ) => {
-      if (reminderManager.getPermission() === 'default') {
-        reminderManager.requestPermission().catch(() => {});
-      }
-
+      hasPlayedCompletionSoundRef.current = false;
       const totalSec = Math.max(1, durationMinutes) * 60;
+
       setFocusTimer({
         isActive: true,
         isPaused: false,
+        isCompleted: false,
         secondsRemaining: totalSec,
         totalSeconds: totalSec,
+        startTime: Date.now(),
+        elapsedSeconds: 0,
         taskTitle,
         projectName,
-      });
-
-      lockScreenTimer.start({
-        taskTitle,
-        projectName,
-        secondsRemaining: totalSec,
-        totalSeconds: totalSec,
-        onPause: () => pauseFocusTimer(),
-        onResume: () => resumeFocusTimer(),
-        onStop: () => stopFocusTimer(),
       });
 
       dispatchEvent('FOCUS_TIMER', { taskTitle, projectName });
@@ -240,47 +251,67 @@ export const MorphBarProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const adjustFocusTimer = useCallback((deltaMinutes: number) => {
     setFocusTimer((prev) => {
-      const newSec = Math.max(60, prev.secondsRemaining + deltaMinutes * 60);
-      const newTotal = Math.max(newSec, prev.totalSeconds + deltaMinutes * 60);
-      lockScreenTimer.update(newSec, newTotal, prev.isPaused, prev.taskTitle, prev.projectName);
+      const deltaSec = deltaMinutes * 60;
+      const newTotal = Math.max(60, prev.totalSeconds + deltaSec);
+      const newRemaining = Math.max(1, prev.secondsRemaining + deltaSec);
       return {
         ...prev,
-        secondsRemaining: newSec,
-        totalSeconds: newTotal
+        totalSeconds: newTotal,
+        secondsRemaining: newRemaining,
       };
     });
   }, []);
 
   const setFocusTimerDuration = useCallback((durationMinutes: number) => {
+    hasPlayedCompletionSoundRef.current = false;
     const totalSec = Math.max(1, durationMinutes) * 60;
-    setFocusTimer((prev) => {
-      lockScreenTimer.update(totalSec, totalSec, false, prev.taskTitle, prev.projectName);
-      return {
-        ...prev,
-        secondsRemaining: totalSec,
-        totalSeconds: totalSec,
-        isPaused: false
-      };
-    });
+    setFocusTimer((prev) => ({
+      ...prev,
+      totalSeconds: totalSec,
+      secondsRemaining: totalSec,
+      elapsedSeconds: 0,
+      startTime: Date.now(),
+      isPaused: false,
+      isCompleted: false,
+    }));
   }, []);
 
   const pauseFocusTimer = useCallback(() => {
     setFocusTimer((prev) => {
-      lockScreenTimer.update(prev.secondsRemaining, prev.totalSeconds, true, prev.taskTitle, prev.projectName);
-      return { ...prev, isPaused: true };
+      if (!prev.isActive || prev.isPaused) return prev;
+      const currentSegment = Math.max(0, Math.floor((Date.now() - prev.startTime) / 1000));
+      const totalElapsed = prev.elapsedSeconds + currentSegment;
+      const remaining = Math.max(0, prev.totalSeconds - totalElapsed);
+      return {
+        ...prev,
+        isPaused: true,
+        elapsedSeconds: totalElapsed,
+        secondsRemaining: remaining,
+      };
     });
   }, []);
 
   const resumeFocusTimer = useCallback(() => {
     setFocusTimer((prev) => {
-      lockScreenTimer.update(prev.secondsRemaining, prev.totalSeconds, false, prev.taskTitle, prev.projectName);
-      return { ...prev, isPaused: false };
+      if (!prev.isActive || !prev.isPaused) return prev;
+      return {
+        ...prev,
+        isPaused: false,
+        startTime: Date.now(),
+      };
     });
   }, []);
 
   const stopFocusTimer = useCallback(() => {
-    lockScreenTimer.stop();
-    setFocusTimer((prev) => ({ ...prev, isActive: false }));
+    hasPlayedCompletionSoundRef.current = false;
+    setFocusTimer((prev) => ({
+      ...prev,
+      isActive: false,
+      isPaused: false,
+      isCompleted: false,
+      secondsRemaining: prev.totalSeconds,
+      elapsedSeconds: 0,
+    }));
     dismissCurrentEvent();
   }, [dismissCurrentEvent]);
 

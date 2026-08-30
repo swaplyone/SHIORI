@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Check, X, CheckSquare, Square, Clock, Sparkles, Bell, Coffee, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, Pause, RotateCcw, Check, X, CheckSquare, Square, Clock, Bell, Coffee } from 'lucide-react';
 import { Task, Subtask } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { shioriAudio } from '../../utils/shioriAudio';
 import { reminderManager } from '../../utils/reminderManager';
-import { lockScreenTimer } from '../../utils/lockScreenTimer';
 
 interface FocusModeModalProps {
   isOpen: boolean;
@@ -25,13 +24,20 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
   const [isActive, setIsActive] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [hasWarnedEnding, setHasWarnedEnding] = useState(false);
+  const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [customInputOpen, setCustomInputOpen] = useState(false);
   const [customInputVal, setCustomInputVal] = useState('10');
 
+  // Timestamp-based accuracy refs (prevents JavaScript background drift on iPhone/iOS Safari)
+  const startTimeRef = useRef<number>(0);
+  const elapsedSecondsRef = useRef<number>(0);
+  const hasPlayedChimeRef = useRef<boolean>(false);
   const openedTaskIdRef = useRef<string | null>(null);
+
   const DURATION_PRESETS = [5, 10, 15, 25, 30, 45, 60];
 
+  // Initialize task focus state on modal open
   useEffect(() => {
     if (isOpen && task && token) {
       if (openedTaskIdRef.current !== task.id) {
@@ -41,8 +47,11 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
         setIsActive(false);
         setIsFinished(false);
         setHasWarnedEnding(false);
+        hasPlayedChimeRef.current = false;
+        elapsedSecondsRef.current = 0;
+        startTimeRef.current = 0;
       }
-      
+
       fetch(`/api/tasks/${task.id}/subtasks`, {
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -61,15 +70,14 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
     setIsActive(false);
     setIsFinished(false);
     setHasWarnedEnding(false);
+    hasPlayedChimeRef.current = false;
+    elapsedSecondsRef.current = 0;
+    startTimeRef.current = 0;
   };
 
   const adjustMinutes = (delta: number) => {
     const newMins = Math.max(1, Math.min(240, selectedMinutes + delta));
-    setSelectedMinutes(newMins);
-    setSecondsRemaining(newMins * 60);
-    setIsActive(false);
-    setIsFinished(false);
-    setHasWarnedEnding(false);
+    handleSelectDuration(newMins);
   };
 
   const handleCustomSubmit = (e: React.FormEvent) => {
@@ -81,109 +89,118 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
     }
   };
 
+  // Timestamp calculation tick and Safari background wakeup listener
   useEffect(() => {
-    let interval: any = null;
-    if (isActive && secondsRemaining > 0 && task) {
-      lockScreenTimer.start({
-        taskTitle: `${task.task_code}: ${task.title}`,
-        projectName: task.github_repo || 'SHIORI',
-        secondsRemaining,
-        totalSeconds: selectedMinutes * 60,
-        onPause: () => setIsActive(false),
-        onResume: () => setIsActive(true),
-        onStop: () => {
-          setIsActive(false);
-          setSecondsRemaining(selectedMinutes * 60);
-        },
-      });
+    if (!isActive || !task) return;
 
-      interval = setInterval(() => {
-        setSecondsRemaining((prev) => {
-          const nextSec = prev - 1;
-          lockScreenTimer.update(
-            nextSec,
-            selectedMinutes * 60,
-            false,
-            `${task.task_code}: ${task.title}`,
-            task.github_repo || 'SHIORI'
-          );
+    const totalSec = selectedMinutes * 60;
 
-          // Warning alert when 1 minute (or 30s for 5m timer) is remaining
-          const warnThreshold = selectedMinutes <= 5 ? 30 : 60;
-          if (nextSec === warnThreshold && !hasWarnedEnding && task) {
-            setHasWarnedEnding(true);
-            shioriAudio.playSoftClick(0.12);
-            reminderManager.showNotification('Focus Session Ending Soon ⏳', {
-              body: `${warnThreshold === 60 ? '1 minute' : '30 seconds'} left on ${task.task_code}: ${task.title}. Prepare to wrap up.`,
-              tag: `shiori-focus-warning-${task.id}`,
-            });
-            window.dispatchEvent(
-              new CustomEvent('shiori-inapp-reminder', {
-                detail: {
-                  taskId: task.id,
-                  taskCode: task.task_code,
-                  taskTitle: `Focus session ending in ${warnThreshold === 60 ? '1 minute' : '30 seconds'} ⏳`,
-                },
-              })
-            );
-          }
+    const updateTimerFromTimestamp = () => {
+      const currentSegment = Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000));
+      const totalElapsed = elapsedSecondsRef.current + currentSegment;
+      const remaining = Math.max(0, totalSec - totalElapsed);
 
-          return nextSec;
-        });
-      }, 1000);
-    } else if (!isActive && secondsRemaining > 0 && task) {
-      lockScreenTimer.update(
-        secondsRemaining,
-        selectedMinutes * 60,
-        true,
-        `${task.task_code}: ${task.title}`,
-        task.github_repo || 'SHIORI'
-      );
-    } else if (secondsRemaining === 0 && isActive) {
-      setIsActive(false);
-      setIsFinished(true);
-      lockScreenTimer.stop();
-
-      // 1. Play soothing Japanese focus chime
-      shioriAudio.playFocusChime();
-
-      // 2. Trigger native browser / PWA notification
-      if (task) {
-        reminderManager.showNotification('Focus Session Completed! 🔔', {
-          body: `Completed ${selectedMinutes}m focus on ${task.task_code}: ${task.title}. Take a break or mark as complete.`,
-          tag: `shiori-focus-completed-${task.id}`,
+      // Warning alert near end (1m for normal, 30s for short 5m)
+      const warnThreshold = selectedMinutes <= 5 ? 30 : 60;
+      if (remaining === warnThreshold && !hasWarnedEnding && task) {
+        setHasWarnedEnding(true);
+        shioriAudio.playSoftClick(0.12);
+        reminderManager.showNotification('Focus Session Ending Soon ⏳', {
+          body: `${warnThreshold === 60 ? '1 minute' : '30 seconds'} remaining on ${task.task_code}: ${task.title}.`,
+          tag: `shiori-focus-warning-${task.id}`,
         });
       }
 
-      // 3. Dispatch in-app notification event for fallback and banner display
-      window.dispatchEvent(
-        new CustomEvent('shiori-inapp-reminder', {
-          detail: {
-            taskId: task?.id,
-            taskCode: task?.task_code,
-            taskTitle: `Focus Session Completed (${selectedMinutes} min)`,
-          },
-        })
-      );
-    }
-    return () => clearInterval(interval);
-  }, [isActive, secondsRemaining, task, selectedMinutes, hasWarnedEnding]);
+      if (remaining === 0) {
+        setIsActive(false);
+        setIsFinished(true);
+        setSecondsRemaining(0);
 
-  // Clean up lock screen timer when modal unmounts
-  useEffect(() => {
-    return () => {
-      lockScreenTimer.stop();
+        // Play completion chime ONCE
+        if (!hasPlayedChimeRef.current) {
+          hasPlayedChimeRef.current = true;
+          shioriAudio.playFocusChime();
+
+          if (task) {
+            reminderManager.showNotification('SHIORI Focus Mode', {
+              body: `Focus session complete: ${task.task_code} - ${task.title}`,
+              tag: `shiori-focus-completed-${task.id}`,
+            });
+          }
+        }
+        return;
+      }
+
+      setSecondsRemaining(remaining);
     };
-  }, []);
 
-  if (!isOpen || !task) return null;
+    const interval = setInterval(updateTimerFromTimestamp, 500);
 
-  const minutes = Math.floor(secondsRemaining / 60);
-  const seconds = secondsRemaining % 60;
-  const timeFormatted = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        updateTimerFromTimestamp();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [isActive, selectedMinutes, task, hasWarnedEnding]);
+
+  const handleStartOrPause = async () => {
+    if (!isActive) {
+      // Check notification permission if not prompted yet
+      if (reminderManager.getPermission() === 'default') {
+        setShowPermissionPrompt(true);
+      }
+
+      hasPlayedChimeRef.current = false;
+      setIsFinished(false);
+      startTimeRef.current = Date.now();
+      setIsActive(true);
+    } else {
+      // Pause
+      const currentSegment = Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000));
+      elapsedSecondsRef.current += currentSegment;
+      setIsActive(false);
+    }
+  };
+
+  const handleReset = () => {
+    setIsActive(false);
+    setIsFinished(false);
+    setHasWarnedEnding(false);
+    hasPlayedChimeRef.current = false;
+    elapsedSecondsRef.current = 0;
+    startTimeRef.current = 0;
+    setSecondsRemaining(selectedMinutes * 60);
+  };
+
+  const handleAllowNotifications = async () => {
+    await reminderManager.requestPermission();
+    setShowPermissionPrompt(false);
+  };
+
+  const handleCompleteTask = () => {
+    if (task) {
+      onTaskCompleted(task.id);
+      onClose();
+    }
+  };
+
+  const handleStartBreak = () => {
+    handleSelectDuration(5);
+    startTimeRef.current = Date.now();
+    setIsActive(true);
+  };
 
   const toggleSubtask = async (sub: Subtask) => {
-    if (!token) return;
+    if (!token || !task) return;
     const newCompleted = !Boolean(sub.completed);
     setSubtasks((prev) =>
       prev.map((s) => (s.id === sub.id ? { ...s, completed: newCompleted ? 1 : 0 } : s))
@@ -202,17 +219,11 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
     }
   };
 
-  const handleCompleteTask = () => {
-    onTaskCompleted(task.id);
-    onClose();
-  };
+  if (!isOpen || !task) return null;
 
-  const handleStartBreak = () => {
-    setSelectedMinutes(5);
-    setSecondsRemaining(5 * 60);
-    setIsFinished(false);
-    setIsActive(true);
-  };
+  const minutes = Math.floor(secondsRemaining / 60);
+  const seconds = secondsRemaining % 60;
+  const timeFormatted = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
   return (
     <div className="fixed inset-0 z-50 bg-eink-bg flex flex-col justify-between p-6 sm:p-12 select-none font-technical animate-fade-in">
@@ -314,9 +325,10 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
           {isFinished ? (
             <div className="space-y-2 p-6 bg-eink-surface border-2 border-eink-text rounded-sm animate-fade-in max-w-md mx-auto">
               <div className="flex items-center justify-center gap-2 text-eink-text font-bold text-sm uppercase tracking-wider">
-                <Bell className="w-4 h-4 animate-bounce" />
-                <span>SESSION COMPLETED!</span>
+                <Bell className="w-4 h-4" />
+                <span>FOCUS COMPLETE</span>
               </div>
+              <div className="font-mono text-3xl font-bold text-eink-text">00:00</div>
               <p className="text-xs text-eink-textSecondary font-sans">
                 {selectedMinutes} minutes focused on {task.task_code}. Great work!
               </p>
@@ -395,71 +407,64 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
           )}
         </div>
 
+        {/* Minimal Notification Permission Explanation */}
+        {showPermissionPrompt && (
+          <div className="p-3 bg-eink-surface border border-eink-border rounded-sm max-w-sm mx-auto text-center space-y-1.5 animate-fade-in">
+            <span className="text-[10px] font-bold text-eink-text uppercase block tracking-wider">
+              FOCUS TIMER NOTIFICATIONS
+            </span>
+            <p className="text-[11px] text-eink-textSecondary font-sans leading-tight">
+              Allow notifications so SHIORI can let you know when your focus session ends.
+            </p>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowPermissionPrompt(false)}
+                className="px-2.5 py-1 text-xs border border-eink-border text-eink-textSecondary hover:text-eink-text rounded-sm cursor-pointer"
+              >
+                DISMISS
+              </button>
+              <button
+                type="button"
+                onClick={handleAllowNotifications}
+                className="px-3 py-1 text-xs bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm hover:opacity-90 cursor-pointer"
+              >
+                ALLOW NOTIFICATIONS
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Timer Controls */}
         {!isFinished && (
-          <div className="space-y-3 pt-2">
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!isActive) {
-                    if (reminderManager.getPermission() === 'default') {
-                      await reminderManager.requestPermission();
-                    }
-                    setIsActive(true);
-                  } else {
-                    setIsActive(false);
-                  }
-                }}
-                className="px-6 py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-card flex items-center gap-2 text-xs hover:opacity-90 active:scale-95 transition-all cursor-pointer"
-              >
-                {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                <span>{isActive ? 'PAUSE' : `START ${selectedMinutes}M FOCUS`}</span>
-              </button>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={handleStartOrPause}
+              className="px-6 py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-card flex items-center gap-2 text-xs hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+            >
+              {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              <span>{isActive ? 'PAUSE' : `START ${selectedMinutes}M FOCUS`}</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setIsActive(false);
-                  setSecondsRemaining(selectedMinutes * 60);
-                  setHasWarnedEnding(false);
-                  lockScreenTimer.stop();
-                }}
-                className="px-4 py-2.5 border border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text rounded-sm text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                title={`Reset timer to ${selectedMinutes}:00`}
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>RESET</span>
-              </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="px-4 py-2.5 border border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text rounded-sm text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              title={`Reset timer to ${selectedMinutes}:00`}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>RESET</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={handleCompleteTask}
-                className="px-5 py-2.5 border border-eink-border bg-eink-surface text-eink-text font-bold rounded-sm flex items-center gap-2 text-xs hover:bg-eink-surfaceHover active:scale-95 transition-all cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                <span>COMPLETE TODO</span>
-              </button>
-            </div>
-
-            {/* Lock-Screen Live Activity & Permission Hint */}
-            <div className="text-[10px] text-eink-textMuted font-mono flex items-center justify-center gap-2">
-              {reminderManager.getPermission() === 'default' ? (
-                <button
-                  type="button"
-                  onClick={() => reminderManager.requestPermission()}
-                  className="px-2 py-0.5 border border-dashed border-eink-border rounded hover:bg-eink-surface text-eink-text flex items-center gap-1 cursor-pointer"
-                >
-                  <Bell className="w-2.5 h-2.5" />
-                  <span>ENABLE LOCK SCREEN LIVE TIMER & ALERTS</span>
-                </button>
-              ) : (
-                <span className="flex items-center gap-1">
-                  <span>📱</span>
-                  <span>{isActive ? 'LOCK SCREEN LIVE TIMER RUNNING' : 'LOCK SCREEN LIVE ACTIVITY READY'}</span>
-                </span>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={handleCompleteTask}
+              className="px-5 py-2.5 border border-eink-border bg-eink-surface text-eink-text font-bold rounded-sm flex items-center gap-2 text-xs hover:bg-eink-surfaceHover active:scale-95 transition-all cursor-pointer"
+            >
+              <Check className="w-4 h-4" />
+              <span>COMPLETE TODO</span>
+            </button>
           </div>
         )}
 
