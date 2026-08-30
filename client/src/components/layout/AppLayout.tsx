@@ -57,7 +57,7 @@ export const AppLayout: React.FC = () => {
       {/* Dynamic Island is globally mounted at top center */}
 
       {/* Main Content Workspace Canvas */}
-      <div className="flex-1 flex flex-col min-w-0 w-full min-h-screen pt-14 sm:pt-16 pb-12 overflow-x-hidden">
+      <div className="flex-1 flex flex-col min-w-0 w-full min-h-screen pt-20 sm:pt-24 pb-16 overflow-x-hidden">
         {/* Real-time E-Ink Development Notice Banner */}
         <EInkNoticeBanner onViewTask={(taskId) => setSelectedTaskId(taskId)} />
 

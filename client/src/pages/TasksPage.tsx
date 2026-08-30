@@ -281,11 +281,11 @@ export const TasksPage: React.FC = () => {
       <div
         key={task.id}
         onClick={() => openTaskModal(task.id)}
-        className={`p-3.5 flex items-start justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
+        className={`p-3 sm:p-3.5 flex items-start justify-between gap-2.5 sm:gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
           isDone ? 'opacity-75 bg-eink-bg/60' : 'bg-eink-surface'
         }`}
       >
-        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+        <div className="flex items-start gap-2 sm:gap-2.5 min-w-0 flex-1">
           <button
             type="button"
             onClick={(e) => handleToggleTaskStatus(task, e)}
@@ -300,14 +300,14 @@ export const TasksPage: React.FC = () => {
           </button>
 
           <div className="space-y-1 min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-bold text-[11px] bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
+            <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
+              <span className="font-bold text-[10px] sm:text-[11px] bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
                 {task.task_code}
               </span>
 
               {/* Priority Badge with Clear Visual Rank */}
               <span
-                className={`text-[10px] font-mono font-bold px-1.5 py-0.2 border rounded ${
+                className={`text-[9px] sm:text-[10px] font-mono font-bold px-1.5 py-0.2 border rounded ${
                   (task.priority || 'MEDIUM') === 'URGENT'
                     ? 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface'
                     : task.priority === 'HIGH'
@@ -321,7 +321,7 @@ export const TasksPage: React.FC = () => {
               </span>
 
               <h3
-                className={`text-xs font-bold text-eink-text truncate ${
+                className={`text-xs font-bold text-eink-text truncate max-w-[150px] sm:max-w-md ${
                   isDone ? 'line-through text-eink-textMuted' : ''
                 }`}
               >
@@ -330,7 +330,7 @@ export const TasksPage: React.FC = () => {
 
               {/* Recurring Indicator */}
               {task.recurrence_rule && (
-                <span className="text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
+                <span className="text-[9px] sm:text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
                   <Repeat className="w-2.5 h-2.5" />
                   <span>{task.recurrence_rule}</span>
                 </span>
@@ -338,52 +338,64 @@ export const TasksPage: React.FC = () => {
 
               {/* Subtasks Count Badge */}
               {Boolean(task.subtasks_count) && (
-                <span className="text-[10px] bg-eink-bg text-eink-textSecondary px-1.5 py-0.2 border border-eink-border rounded font-mono">
+                <span className="text-[9px] sm:text-[10px] bg-eink-bg text-eink-textSecondary px-1.5 py-0.2 border border-eink-border rounded font-mono">
                   {task.subtasks_completed || 0}/{task.subtasks_count} subtasks
                 </span>
               )}
 
               {/* Overdue Notice */}
               {isOverdue && (
-                <span className="text-[10px] font-bold bg-eink-surface text-eink-text px-1.5 py-0.2 border border-eink-text rounded flex items-center gap-1">
+                <span className="text-[9px] sm:text-[10px] font-bold bg-eink-surface text-eink-text px-1.5 py-0.2 border border-eink-text rounded flex items-center gap-1">
                   <AlertCircle className="w-2.5 h-2.5" />
                   <span>OVERDUE</span>
                 </span>
               )}
 
               {hasDiscrepancy && (
-                <span className="text-[10px] font-bold bg-eink-darkSurface text-eink-darkText px-1.5 py-0.2 rounded flex items-center gap-1">
+                <span className="text-[9px] sm:text-[10px] font-bold bg-eink-darkSurface text-eink-darkText px-1.5 py-0.2 rounded flex items-center gap-1">
                   <ShieldAlert className="w-3 h-3" />
                   <span>CI ALERT</span>
                 </span>
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-[10px] text-eink-textSecondary font-mono">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] text-eink-textSecondary font-mono leading-tight">
               <span className="font-bold text-eink-text">
                 {task.github_repo || 'SHIORI'}
               </span>
               <span>•</span>
-              <span className="flex items-center gap-1">
-                <GitBranch className="w-3 h-3" />
+              <span className="flex items-center gap-0.5">
+                <GitBranch className="w-2.5 h-2.5" />
                 <span>{task.github_branch || 'main'}</span>
               </span>
-              {task.due_date && <span>📅 {task.due_date}</span>}
-              {task.tags && (
-                <span className="flex items-center gap-0.5 text-eink-textMuted">
-                  <Tag className="w-2.5 h-2.5" />
-                  <span>{task.tags}</span>
-                </span>
+              {task.assignee_name && (
+                <>
+                  <span>•</span>
+                  <span>@{task.assignee_name}</span>
+                </>
+              )}
+              {Boolean(task.dev_evidence_commits_count) && (
+                <>
+                  <span>•</span>
+                  <span>{task.dev_evidence_commits_count} commits</span>
+                </>
+              )}
+              {task.due_date && (
+                <>
+                  <span>•</span>
+                  <span>📅 {task.due_date}</span>
+                </>
               )}
             </div>
           </div>
         </div>
 
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center pt-0.5">
           <DevelopmentEvidenceBadge
             confidenceScore={task.dev_confidence_score}
             ciStatus={task.github_ci_status}
             hasDiscrepancy={task.has_ci_discrepancy}
+            compact={true}
           />
         </div>
       </div>

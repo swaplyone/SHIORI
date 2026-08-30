@@ -34,9 +34,9 @@ export const DevelopmentEvidenceBadge: React.FC<DevelopmentEvidenceBadgeProps> =
 
   if (compact) {
     return (
-      <div className="flex items-center gap-1.5 font-technical text-[11px]">
+      <div className="flex items-center gap-1 font-technical text-[10px] sm:text-[11px] shrink-0">
         <span
-          className={`px-1.5 py-0.2 rounded-sm border ${
+          className={`px-1.5 py-0.5 rounded-sm border inline-flex items-center gap-1 font-mono ${
             isFailed
               ? 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface font-bold'
               : isPassed
@@ -44,14 +44,16 @@ export const DevelopmentEvidenceBadge: React.FC<DevelopmentEvidenceBadgeProps> =
               : 'bg-transparent text-eink-textMuted border-eink-border'
           }`}
         >
-          {symbol} {ciStatus}
+          <span>{symbol}</span>
+          <span>{isPassed ? 'CI PASS' : isFailed ? 'CI FAIL' : ciStatus}</span>
+          {confidenceScore > 0 && <span className="font-bold">({confidenceScore}%)</span>}
         </span>
         {Boolean(hasDiscrepancy) && (
           <span
-            className="px-1 py-0.2 bg-eink-surface border border-eink-border text-[10px] text-eink-text font-bold rounded-sm"
+            className="px-1 py-0.5 bg-eink-darkSurface text-eink-darkText border border-eink-darkSurface text-[9px] font-bold rounded-sm"
             title="User marked complete, but latest CI failed"
           >
-            DISCREPANCY
+            ALERT
           </span>
         )}
       </div>
