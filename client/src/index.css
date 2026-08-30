@@ -277,31 +277,37 @@ body {
   }
 }
 
-/* Authentic Physical Matte Paper Surface & Tactile Microscopic Grain */
+/* Authentic Physical Matte Paper Surface & Tactile Microscopic Grain (Strictly BEHIND all UI) */
 .eink-paper {
   background-color: var(--eink-bg);
   position: relative;
+  isolation: isolate;
 }
 
 .eink-paper::before {
   content: "";
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   background-image: var(--washi-noise-pattern);
   background-repeat: repeat;
-  background-size: 240px 240px;
-  opacity: var(--eink-matte-grain-opacity, 0.065);
+  background-size: 220px 220px;
+  opacity: var(--eink-matte-grain-opacity, 0.07);
   pointer-events: none;
-  z-index: 9999;
+  z-index: -1;
   mix-blend-mode: multiply;
 }
 
 .dark .eink-paper::before,
 [data-theme="dark"] .eink-paper::before {
   mix-blend-mode: screen;
+}
+
+/* All interactive UI content, text, icons, cards and modals live strictly ABOVE the texture layer */
+.eink-paper > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Microscopic Grain Swatch Preview Utilities */
