@@ -74,7 +74,7 @@ export const InstallPage: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full min-h-screen bg-[#F5F4EE] text-[#111111] font-sans select-none overflow-x-hidden flex flex-col justify-between p-6 sm:p-10 md:p-14">
+    <div className="relative w-full min-h-screen bg-[#EBE9E1] text-[#111111] font-sans select-none overflow-x-hidden flex flex-col justify-between p-6 sm:p-10 md:p-14">
       {/* 1. Subtle Paper Grain Texture Overlay */}
       <div
         className="fixed inset-0 pointer-events-none opacity-[0.035] mix-blend-multiply"
@@ -85,45 +85,45 @@ export const InstallPage: React.FC = () => {
       />
 
       {/* TOP: Header */}
-      <header className="relative z-10 w-full flex items-center justify-between text-[11px] font-mono tracking-widest text-[#777770] uppercase">
+      <header className="relative z-10 w-full flex items-center justify-between text-[11px] font-mono tracking-widest text-[#74726A] uppercase">
         <div className="flex items-center gap-2">
           <span>栞</span>
           <span>·</span>
-          <span>SHIORI</span>
+          <span className="font-abask font-bold text-xs tracking-wider">SHIORI</span>
         </div>
-        <span className="text-[10px] tracking-widest text-[#999990]">A SwaplyOne product</span>
+        <span className="text-[10px] tracking-widest text-[#74726A]">A SwaplyOne product</span>
       </header>
 
       {/* CENTER: Main Installation Card */}
       <main className="relative z-10 w-full max-w-lg mx-auto my-auto py-8">
-        <div className="bg-[#EAE9E3]/70 border-2 border-[#111111] p-6 sm:p-8 rounded-sm shadow-eink-card space-y-6 text-center">
+        <div className="bg-[#DFDDD3]/80 border-2 border-[#111111] p-6 sm:p-8 rounded-sm shadow-eink-card space-y-6 text-center">
           {/* Logo & Identity */}
           <div className="flex flex-col items-center justify-center space-y-2">
-            <div className="w-14 h-14 bg-[#F5F4EE] border border-[#111111] p-1.5 rounded-sm shadow-eink-sm flex items-center justify-center">
+            <div className="w-14 h-14 bg-transparent flex items-center justify-center">
               <img
-                src="/favicon-shiori.png"
+                src="/logo.png"
                 alt="SHIORI"
-                className="w-full h-full object-contain"
+                className="w-full h-full object-contain select-none"
               />
             </div>
-            <h2 className="font-mono font-bold text-base tracking-[0.2em] text-[#111111] uppercase">
+            <h2 className="font-abask font-bold text-lg tracking-[0.2em] text-[#111111] uppercase">
               SHIORI
             </h2>
           </div>
 
           {/* Heading & Explanatory Copy */}
           <div className="space-y-2">
-            <h1 className="font-mono font-bold text-xl sm:text-2xl tracking-tight text-[#111111] uppercase">
+            <h1 className="font-abask font-normal text-2xl sm:text-3xl tracking-tight text-[#111111] uppercase">
               Made for your home screen.
             </h1>
-            <p className="text-xs sm:text-sm text-[#555550] font-sans leading-relaxed max-w-md mx-auto">
+            <p className="text-xs sm:text-sm text-[#42413C] font-sans leading-relaxed max-w-md mx-auto">
               Add Shiori to your home screen for the full app experience.
             </p>
           </div>
 
           {/* Installed State */}
           {isInstalled ? (
-            <div className="p-4 bg-[#F5F4EE] border border-[#111111] rounded-sm space-y-2 text-left font-mono text-xs animate-fade-in">
+            <div className="p-4 bg-[#EBE9E1] border border-[#111111] rounded-sm space-y-2 text-left font-mono text-xs animate-fade-in">
               <div className="flex items-center gap-2 text-[#111111] font-bold">
                 <CheckCircle2 className="w-4 h-4" />
                 <span>SHIORI ADDED</span>
@@ -138,7 +138,7 @@ export const InstallPage: React.FC = () => {
               {(!isIos || deferredPrompt) && (
                 <button
                   onClick={handleInstallClick}
-                  className="w-full py-3 px-6 bg-[#111111] hover:bg-[#000000] text-[#F5F4EE] text-xs sm:text-sm font-mono font-bold tracking-[0.18em] uppercase rounded-sm flex items-center justify-center gap-2 shadow-eink-sm hover:opacity-95 active:scale-[0.99] cursor-pointer transition-all"
+                  className="w-full py-3 px-6 bg-[#111111] hover:bg-[#000000] text-[#EBE9E1] text-xs sm:text-sm font-abask font-bold tracking-[0.18em] uppercase rounded-sm flex items-center justify-center gap-2 shadow-eink-sm hover:opacity-95 active:scale-[0.99] cursor-pointer transition-all"
                 >
                   <Download className="w-4 h-4" />
                   <span>ADD SHIORI</span>
