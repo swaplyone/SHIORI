@@ -294,10 +294,10 @@ export const ProjectDetailPage: React.FC = () => {
       <div className="border-b border-eink-border pb-4 space-y-3 font-technical">
         <button
           onClick={() => navigate('/home')}
-          className="text-xs font-bold text-eink-textSecondary hover:text-eink-text flex items-center gap-1.5 transition-colors"
+          className="text-xs font-bold text-eink-textSecondary hover:text-eink-text flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>← BACK TO PROJECTS</span>
+          <span>BACK TO PROJECTS</span>
         </button>
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -326,10 +326,10 @@ export const ProjectDetailPage: React.FC = () => {
           <div className="flex items-center gap-2 text-xs">
             <button
               onClick={() => setIsAddTodoOpen(true)}
-              className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99]"
+              className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99] cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>+ ADD TODO</span>
+              <span>ADD TODO</span>
             </button>
           </div>
         </div>
@@ -419,15 +419,15 @@ export const ProjectDetailPage: React.FC = () => {
                   <div
                     key={task.id}
                     onClick={() => setSelectedTaskId(task.id)}
-                    className={`p-4 flex items-start sm:items-center justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
+                    className={`p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
                       isDone ? 'opacity-70 bg-eink-bg/50' : ''
                     }`}
                   >
-                    <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
                       <button
                         type="button"
                         onClick={(e) => handleToggleTaskStatus(task, e)}
-                        className="mt-0.5 sm:mt-0 p-1 text-eink-text hover:text-eink-textSecondary shrink-0"
+                        className="mt-0.5 sm:mt-0 p-1 text-eink-text hover:text-eink-textSecondary shrink-0 cursor-pointer"
                       >
                         {isDone ? (
                           <CheckSquare className="w-4 h-4 text-eink-text" />
@@ -436,26 +436,26 @@ export const ProjectDetailPage: React.FC = () => {
                         )}
                       </button>
 
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-xs bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                          <span className="font-bold text-[10px] sm:text-xs bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
                             {task.task_code || 'TODO'}
                           </span>
                           <h4
-                            className={`text-xs font-bold text-eink-text truncate ${
+                            className={`text-xs font-bold text-eink-text truncate max-w-[200px] sm:max-w-md ${
                               isDone ? 'line-through text-eink-textMuted' : ''
                             }`}
                           >
                             {task.title}
                           </h4>
                           {Boolean(task.auto_completed) && (
-                            <span className="text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
+                            <span className="text-[9px] sm:text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
                               ✓ AUTO COMPLETED • GitHub activity detected
                             </span>
                           )}
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-eink-textSecondary font-mono">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] text-eink-textSecondary font-mono">
                           <span>Assigned to: <strong className="text-eink-text">{task.assignee_name || 'Unassigned'}</strong></span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
@@ -470,11 +470,12 @@ export const ProjectDetailPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="shrink-0">
+                    <div className="shrink-0 self-end sm:self-center">
                       <DevelopmentEvidenceBadge
                         confidenceScore={task.dev_confidence_score}
                         ciStatus={task.github_ci_status}
                         hasDiscrepancy={task.has_ci_discrepancy}
+                        compact={true}
                       />
                     </div>
                   </div>
