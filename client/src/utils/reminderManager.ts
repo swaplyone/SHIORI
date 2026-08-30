@@ -50,6 +50,20 @@ class ReminderManager {
     }
   }
 
+  public showNotification(title: string, options?: NotificationOptions) {
+    if (this.isNotificationSupported() && Notification.permission === 'granted') {
+      try {
+        new Notification(title, {
+          icon: '/favicon-shiori.png',
+          badge: '/favicon-shiori.png',
+          ...options,
+        });
+      } catch (err) {
+        console.warn('Notification trigger failed', err);
+      }
+    }
+  }
+
   public scheduleReminder(reminder: ScheduledReminder) {
     // Remove any existing timer for this task
     this.clearReminder(reminder.taskId);

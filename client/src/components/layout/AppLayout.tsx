@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { CommandPalette } from './CommandPalette';
 import { EInkNoticeBanner } from '../common/EInkNoticeBanner';
 import { PwaInstallPrompt } from '../common/PwaInstallPrompt';
+import { NotificationPermissionPrompt } from '../common/NotificationPermissionPrompt';
 import { SimulatorDrawer } from '../simulator/SimulatorDrawer';
 import { TaskDetailModal } from '../tasks/TaskDetailModal';
 import { useNotifications } from '../../context/NotificationContext';
@@ -93,6 +94,9 @@ export const AppLayout: React.FC = () => {
 
       {/* Install PWA Prompt */}
       <PwaInstallPrompt />
+
+      {/* Notification Permission Prompt for First-Time Entry */}
+      <NotificationPermissionPrompt />
     </div>
   );
 };

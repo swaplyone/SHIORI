@@ -1,14 +1,30 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Bell, CheckCircle2, XCircle, MessageSquare, UserCheck, Check } from 'lucide-react';
+import { Bell, CheckCircle2, XCircle, MessageSquare, UserCheck, Check, ShieldCheck } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
+import { reminderManager } from '../utils/reminderManager';
 
 export const NotificationsPage: React.FC = () => {
   const { notifications, markAsRead, markAllAsRead } = useNotifications();
   const { openTaskModal } = useOutletContext<{ openTaskModal: (id: string) => void }>();
+  const [permission, setPermission] = useState<string>(() => reminderManager.getPermission());
+
+  useEffect(() => {
+    setPermission(reminderManager.getPermission());
+  }, []);
+
+  const handleRequestPermission = async () => {
+    const res = await reminderManager.requestPermission();
+    setPermission(res);
+    if (res === 'granted') {
+      reminderManager.showNotification('SHIORI Notifications Active', {
+        body: 'You will receive reminders and build verification notices.',
+      });
+    }
+  };
 
   return (
-    <div className="space-y-6 select-none font-sans max-w-3xl">
+    <div className="space-y-6 select-none font-sans max-w-3xl pb-12">
       <div className="border-b border-eink-border pb-4 flex items-center justify-between">
         <div>
           <h1 className="font-technical text-xl font-bold tracking-tight text-eink-text uppercase">
@@ -25,6 +41,39 @@ export const NotificationsPage: React.FC = () => {
             className="px-3 py-1.5 border border-eink-border hover:bg-eink-surface text-xs font-technical font-bold text-eink-text rounded-sm"
           >
             MARK ALL AS READ
+          </button>
+        )}
+      </div>
+
+      {/* Browser Notification Status Banner */}
+      <div className="p-3.5 bg-eink-surface border border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-technical shadow-eink-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 bg-eink-text text-eink-bg rounded-sm flex items-center justify-center font-bold text-xs shrink-0">
+            <Bell className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <span className="font-bold text-eink-text uppercase block">
+              SYSTEM & BROWSER NOTIFICATIONS
+            </span>
+            <span className="text-[11px] text-eink-textSecondary">
+              Status:{' '}
+              <strong className="font-mono text-eink-text uppercase">
+                {permission === 'granted'
+                  ? 'Active / Allowed ✓'
+                  : permission === 'denied'
+                  ? 'Blocked in Browser Settings ✕'
+                  : 'Not Configured (Default)'}
+              </strong>
+            </span>
+          </div>
+        </div>
+
+        {permission !== 'granted' && permission !== 'unsupported' && (
+          <button
+            onClick={handleRequestPermission}
+            className="px-3 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs shadow-eink-sm hover:opacity-90 active:scale-[0.99] cursor-pointer self-start sm:self-auto"
+          >
+            ENABLE BROWSER ALERTS
           </button>
         )}
       </div>
