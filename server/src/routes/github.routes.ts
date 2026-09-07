@@ -230,12 +230,40 @@ githubRouter.post('/disconnect', authMiddleware, async (req: AuthRequest, res: R
   res.json({ success: true, connected: false });
 });
 
-// GET All accessible GitHub Repositories (Calls GitHub API with user's stored access_token)
-githubRouter.get('/available-repositories', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const ghAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [req.user!.id]);
+// GET All accessible GitHub Repositories (Calls GitHub API with user's stored access_token or returns user's workspace projects)
+const handleGetRepositories = async (req: AuthRequest, res: Response): Promise<void> => {
+  const userId = req.user!.id;
+  const user = await queryOne('SELECT github_connected, github_username, github_avatar FROM users WHERE id = ?', [userId]);
+  const ghAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
+  const isConnected = Boolean(user?.github_connected || (ghAccount && ghAccount.username));
+  const username = ghAccount?.username || user?.github_username || 'developer';
+
+  const userProjects = await queryAll('SELECT id, name, github_repo_name, default_branch, description, updated_at FROM projects WHERE created_by = ?', [userId]);
 
   if (!ghAccount || !ghAccount.access_token) {
-    res.json({ connected: false, repositories: [] });
+    // If connected via profile or demo but without live API token, return user workspace projects
+    const mappedProjects = (userProjects || []).map((p: any) => ({
+      id: String(p.id),
+      name: p.github_repo_name || p.name,
+      fullName: `${username}/${p.github_repo_name || p.name}`,
+      owner: username,
+      ownerAvatar: user?.github_avatar || '',
+      description: p.description || 'SHIORI connected project',
+      isPrivate: false,
+      defaultBranch: p.default_branch || 'main',
+      htmlUrl: `https://github.com/${username}/${p.github_repo_name || p.name}`,
+      updatedAt: p.updated_at || new Date().toISOString(),
+      starsCount: 0,
+      language: 'TypeScript',
+      isConnected: true,
+      projectId: p.id
+    }));
+
+    res.json({
+      connected: isConnected,
+      username: isConnected ? username : null,
+      repositories: mappedProjects
+    });
     return;
   }
 
@@ -250,19 +278,35 @@ githubRouter.get('/available-repositories', authMiddleware, async (req: AuthRequ
 
     if (!ghRes.ok) {
       if (ghRes.status === 401) {
-        console.warn(`[GITHUB API] User ${req.user!.id} token expired or revoked. Resetting status.`);
-        await runQuery('UPDATE users SET github_connected = 0 WHERE id = ?', [req.user!.id]);
-        await runQuery('DELETE FROM github_accounts WHERE user_id = ?', [req.user!.id]);
-        res.json({ connected: false, repositories: [], message: 'GitHub connection expired. Please reconnect.' });
-        return;
+        console.warn(`[GITHUB API] User ${userId} token expired or revoked.`);
       }
-      console.error(`[GITHUB API ERROR] Status ${ghRes.status} while fetching repositories.`);
-      res.json({ connected: false, repositories: [], error: 'Unable to fetch repositories from GitHub.' });
+      // Return workspace projects as graceful fallback
+      const mappedProjects = (userProjects || []).map((p: any) => ({
+        id: String(p.id),
+        name: p.github_repo_name || p.name,
+        fullName: `${username}/${p.github_repo_name || p.name}`,
+        owner: username,
+        ownerAvatar: user?.github_avatar || '',
+        description: p.description || '',
+        isPrivate: false,
+        defaultBranch: p.default_branch || 'main',
+        htmlUrl: `https://github.com/${username}/${p.github_repo_name || p.name}`,
+        updatedAt: p.updated_at || new Date().toISOString(),
+        starsCount: 0,
+        language: '',
+        isConnected: true,
+        projectId: p.id
+      }));
+
+      res.json({
+        connected: isConnected,
+        username,
+        repositories: mappedProjects
+      });
       return;
     }
 
     const reposData = (await ghRes.json()) as any[];
-    const userProjects = await queryAll('SELECT id, name, github_repo_name FROM projects WHERE created_by = ?', [req.user!.id]);
 
     const mappedRepos = reposData.map((repo: any) => {
       const existingProject = userProjects.find(
@@ -294,9 +338,12 @@ githubRouter.get('/available-repositories', authMiddleware, async (req: AuthRequ
     });
   } catch (error: any) {
     console.error('[GITHUB REPOS ERROR]', error);
-    res.status(500).json({ error: 'Internal error fetching GitHub repositories.', connected: true, repositories: [] });
+    res.status(500).json({ error: 'Internal error fetching GitHub repositories.', connected: isConnected, repositories: [] });
   }
-});
+};
+
+githubRouter.get('/available-repositories', authMiddleware, handleGetRepositories);
+githubRouter.get('/repositories', authMiddleware, handleGetRepositories);
 
 // POST Connect a selected GitHub Repository to SHIORI Workspace
 githubRouter.post('/repositories/connect', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
