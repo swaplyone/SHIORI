@@ -281,6 +281,15 @@ async function initPgSchema(pool: pg.Pool) {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS password_reset_otps (
+      email TEXT PRIMARY KEY,
+      otp_hash TEXT NOT NULL,
+      otp_plain TEXT NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS connection_requests (
       id TEXT PRIMARY KEY,
       sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

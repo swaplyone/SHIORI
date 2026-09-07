@@ -5,7 +5,7 @@ try {
   dns.setDefaultResultOrder('ipv4first');
 } catch {}
 
-export type OtpPurpose = 'ACCOUNT_VERIFICATION' | 'FRIEND_REQUEST';
+export type OtpPurpose = 'ACCOUNT_VERIFICATION' | 'FRIEND_REQUEST' | 'PASSWORD_RESET';
 
 export interface SendOtpEmailParams {
   toEmail: string;
@@ -16,6 +16,13 @@ export interface SendOtpEmailParams {
     requesterName?: string;
     requesterShioriId?: string;
   };
+}
+
+export interface SendUsernameEmailParams {
+  toEmail: string;
+  userName?: string;
+  username: string;
+  shioriId: string;
 }
 
 export interface SendEmailResult {
@@ -99,6 +106,10 @@ export async function sendOtpEmail({
     subject = 'SHIORI account verification code';
     headline = 'SHIORI ACCOUNT VERIFICATION';
     description = `Welcome to SHIORI, ${userName || 'Developer'}. Use the verification code below to activate your account and set up your workspace:`;
+  } else if (purpose === 'PASSWORD_RESET') {
+    subject = 'SHIORI password reset code';
+    headline = 'SHIORI PASSWORD RESET';
+    description = `Hello ${userName || 'Developer'}. We received a request to reset your SHIORI account password. Enter this verification code to proceed:`;
   } else if (purpose === 'FRIEND_REQUEST') {
     subject = 'SHIORI connection verification code';
     headline = 'SHIORI CONNECTION VERIFICATION';
@@ -215,7 +226,7 @@ SHIORI — A SwaplyOne product • Plan. Build. Verify.`;
     }
   }
 
-  // Provider 2: Direct SMTP over IPv4 SSL (465)
+  // Provider 3: Direct SMTP over IPv4 SSL (465)
   const transporter = createTransporter();
   if (transporter) {
     try {
@@ -238,5 +249,132 @@ SHIORI — A SwaplyOne product • Plan. Build. Verify.`;
 
   // Local development console delivery
   console.log('[EMAIL NOTICE] No external email provider active. Code logged to console.');
+  return { success: true, messageId: `console-${Date.now()}`, provider: 'console' };
+}
+
+export async function sendUsernameEmail({
+  toEmail,
+  userName,
+  username,
+  shioriId,
+}: SendUsernameEmailParams): Promise<SendEmailResult> {
+  const cleanTo = toEmail.trim().toLowerCase();
+  const rawFrom = process.env.SMTP_FROM || 'SHIORI <founder@swaplyone.in>';
+  const from = rawFrom.includes('<') ? rawFrom : `"SHIORI" <${rawFrom}>`;
+
+  const subject = 'Your SHIORI username and account details';
+  const headline = 'SHIORI ACCOUNT RECOVERY';
+  const description = `Hello ${userName || 'Developer'}. Here are your SHIORI account credentials as requested:`;
+
+  const textContent = `${headline}
+
+${description}
+
+Username: ${username}
+SHIORI ID: ${shioriId}
+Email: ${cleanTo}
+
+You can now sign in at https://swaplyone-shiori.onrender.com/login using your username or email.
+
+SHIORI — A SwaplyOne product • Plan. Build. Verify.`;
+
+  const htmlContent = `
+    <div style="font-family: 'Courier New', Courier, monospace; background-color: #F4F3EE; color: #111111; padding: 28px; border: 1px solid #B8B7B1; max-width: 480px; margin: 0 auto; line-height: 1.5;">
+      <div style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #555555; border-bottom: 1px solid #B8B7B1; padding-bottom: 8px; margin-bottom: 16px;">
+        ${headline}
+      </div>
+      <p style="font-size: 13px; margin: 0 0 16px 0;">
+        ${description}
+      </p>
+      <div style="background-color: #EAE9E3; border: 1px solid #111111; padding: 16px; margin: 20px 0; font-family: monospace;">
+        <div style="font-size: 13px; margin-bottom: 8px;"><strong>Username:</strong> <span style="font-size: 16px; font-weight: bold; color: #111111;">${username}</span></div>
+        <div style="font-size: 13px; margin-bottom: 8px;"><strong>SHIORI ID:</strong> <span style="font-weight: bold;">${shioriId}</span></div>
+        <div style="font-size: 12px; color: #555555;"><strong>Email:</strong> ${cleanTo}</div>
+      </div>
+      <p style="font-size: 11px; color: #555555; margin: 16px 0 0 0;">
+        • If you did not request this recovery email, please secure your account.<br />
+        • Never share your credentials with anyone.
+      </p>
+      <div style="border-top: 1px solid #B8B7B1; margin-top: 24px; padding-top: 12px; font-size: 10px; color: #777777; letter-spacing: 1px;">
+        SHIORI — A SwaplyOne product • Plan. Build. Verify.
+      </div>
+    </div>
+  `;
+
+  console.log(`=========================================`);
+  console.log(`[EMAIL DISPATCH - USERNAME RECOVERY] To: ${cleanTo}`);
+  console.log(`[EMAIL DISPATCH] Username: ${username} | ID: ${shioriId}`);
+  console.log(`=========================================`);
+
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      const resendRes = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM || 'SHIORI <verify@swaplyone.in>',
+          to: [cleanTo],
+          subject,
+          text: textContent,
+          html: htmlContent,
+        }),
+      });
+
+      const resData = (await resendRes.json()) as any;
+      if (resendRes.ok && resData?.id) {
+        return { success: true, messageId: resData.id, provider: 'resend' };
+      }
+    } catch (resendErr: any) {
+      console.warn('[EMAIL NOTICE] Resend username delivery notice:', resendErr.message);
+    }
+  }
+
+  const brevoApiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
+  if (brevoApiKey) {
+    try {
+      const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'SHIORI', email: process.env.BREVO_FROM_EMAIL || 'founder@swaplyone.in' },
+          to: [{ email: cleanTo, name: userName || 'Developer' }],
+          subject,
+          htmlContent,
+          textContent,
+        }),
+      });
+
+      const brevoData = (await brevoRes.json()) as any;
+      if (brevoRes.ok && (brevoData?.messageId || brevoData?.messageIds)) {
+        return { success: true, messageId: brevoData.messageId, provider: 'resend' };
+      }
+    } catch (brevoErr: any) {
+      console.warn('[EMAIL NOTICE] Brevo request failed:', brevoErr.message);
+    }
+  }
+
+  const transporter = createTransporter();
+  if (transporter) {
+    try {
+      const info = await transporter.sendMail({
+        from,
+        to: cleanTo,
+        subject,
+        text: textContent,
+        html: htmlContent,
+      });
+      return { success: true, messageId: info.messageId, provider: 'smtp' };
+    } catch (smtpErr: any) {
+      return { success: false, error: smtpErr.message || 'SMTP delivery failed' };
+    }
+  }
+
   return { success: true, messageId: `console-${Date.now()}`, provider: 'console' };
 }

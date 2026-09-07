@@ -364,3 +364,25 @@ CREATE TABLE IF NOT EXISTS global_activities (
   meta_text TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS registration_otps (
+  email TEXT PRIMARY KEY,
+  otp_hash TEXT NOT NULL,
+  otp_plain TEXT NOT NULL,
+  name TEXT,
+  username TEXT,
+  password_hash TEXT,
+  attempts INTEGER DEFAULT 0,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_otps (
+  email TEXT PRIMARY KEY,
+  otp_hash TEXT NOT NULL,
+  otp_plain TEXT NOT NULL,
+  attempts INTEGER DEFAULT 0,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+

@@ -10,6 +10,7 @@ import { AppLayout } from './components/layout/AppLayout';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { TasksPage } from './pages/TasksPage';
@@ -120,6 +121,24 @@ export const App: React.FC = () => {
                       </PublicOnlyRoute>
                     </StandaloneAppRoute>
                   }
+                />
+                <Route
+                  path="/forgot-password"
+                  element={
+                    <StandaloneAppRoute>
+                      <PublicOnlyRoute>
+                        <ForgotPasswordPage />
+                      </PublicOnlyRoute>
+                    </StandaloneAppRoute>
+                  }
+                />
+                <Route
+                  path="/forgot-username"
+                  element={<Navigate to="/forgot-password" replace />}
+                />
+                <Route
+                  path="/recovery"
+                  element={<Navigate to="/forgot-password" replace />}
                 />
                 <Route
                   path="/onboarding"

@@ -6,7 +6,7 @@ import { queryOne, runQuery } from '../db/index.js';
 import { config } from '../config.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { generateSecureOTP, hashOTP, verifyOTPHash } from '../services/otp.service.js';
-import { sendOtpEmail } from '../services/email.service.js';
+import { sendOtpEmail, sendUsernameEmail } from '../services/email.service.js';
 
 export const authRouter = Router();
 
@@ -311,6 +311,207 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       github_username: user.github_username
     }
   });
+});
+
+// 4.1. Forgot Username (Sends username & SHIORI ID to verified email)
+authRouter.post('/forgot-username', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).json({ error: 'Email address is required.' });
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await queryOne('SELECT username, name, shiori_id, email FROM users WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+
+    // For privacy & safety, always return success message so bad actors cannot probe registered emails
+    if (user) {
+      sendUsernameEmail({
+        toEmail: cleanEmail,
+        userName: user.name,
+        username: user.username,
+        shioriId: user.shiori_id
+      }).catch((err) => console.error('[FORGOT_USERNAME EMAIL ERROR]', err));
+    }
+
+    res.json({
+      success: true,
+      message: `If an account with ${cleanEmail} exists, we have sent the username to your inbox.`
+    });
+  } catch (error: any) {
+    console.error('[FORGOT USERNAME ERROR]', error);
+    res.status(500).json({ error: 'Failed to process username lookup. Please try again.' });
+  }
+});
+
+// 4.2. Forgot Password - Step 1: Send Expiring OTP
+authRouter.post('/forgot-password/send-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { account } = req.body; // email or username
+    if (!account) {
+      res.status(400).json({ error: 'Email address or username is required.' });
+      return;
+    }
+
+    const cleanAccount = account.trim().toLowerCase();
+    const user = await queryOne('SELECT id, email, name, username FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [cleanAccount, cleanAccount]);
+
+    if (!user) {
+      res.status(404).json({ error: 'No SHIORI account found matching that email or username.' });
+      return;
+    }
+
+    const cleanEmail = user.email.toLowerCase();
+    const otp = generateSecureOTP();
+    const otpHash = hashOTP(otp);
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes strict expiry
+
+    // Delete any existing reset OTP for this email first
+    await runQuery('DELETE FROM password_reset_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+
+    // Insert new reset OTP
+    await runQuery(`
+      INSERT INTO password_reset_otps (email, otp_hash, otp_plain, attempts, expires_at)
+      VALUES (?, ?, ?, 0, ?)
+    `, [cleanEmail, otpHash, otp, expiresAt]);
+
+    // Dispatch real email via SMTP / Resend / Brevo
+    sendOtpEmail({
+      toEmail: cleanEmail,
+      userName: user.name,
+      otp,
+      purpose: 'PASSWORD_RESET'
+    }).catch((err) => console.error('[SEND_PASSWORD_RESET_OTP ERROR]', err));
+
+    res.json({
+      success: true,
+      email: cleanEmail,
+      maskedEmail: cleanEmail.replace(/(.{2})(.*)(@.*)/, '$1***$3'),
+      expiresInSeconds: 300,
+      message: `Verification code sent to ${cleanEmail.replace(/(.{2})(.*)(@.*)/, '$1***$3')}. It expires in 5 minutes.`
+    });
+  } catch (error: any) {
+    console.error('[FORGOT PASSWORD /send-otp ERROR]', error);
+    res.status(500).json({ error: 'Failed to send password reset code. Please try again.' });
+  }
+});
+
+// 4.3. Forgot Password - Step 1b: Resend Expiring OTP
+authRouter.post('/forgot-password/resend-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).json({ error: 'Email is required.' });
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await queryOne('SELECT id, email, name, username FROM users WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+    if (!user) {
+      res.status(404).json({ error: 'Account not found.' });
+      return;
+    }
+
+    const otp = generateSecureOTP();
+    const otpHash = hashOTP(otp);
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+    await runQuery('DELETE FROM password_reset_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+    await runQuery(`
+      INSERT INTO password_reset_otps (email, otp_hash, otp_plain, attempts, expires_at)
+      VALUES (?, ?, ?, 0, ?)
+    `, [cleanEmail, otpHash, otp, expiresAt]);
+
+    sendOtpEmail({
+      toEmail: cleanEmail,
+      userName: user.name,
+      otp,
+      purpose: 'PASSWORD_RESET'
+    }).catch((err) => console.error('[RESEND_PASSWORD_RESET_OTP ERROR]', err));
+
+    res.json({
+      success: true,
+      expiresInSeconds: 300,
+      message: `A new 5-minute verification code has been sent to ${cleanEmail}.`
+    });
+  } catch (error: any) {
+    console.error('[FORGOT PASSWORD /resend-otp ERROR]', error);
+    res.status(500).json({ error: 'Failed to resend code.' });
+  }
+});
+
+// 4.4. Forgot Password - Step 2: Verify OTP & Reset Password
+authRouter.post('/forgot-password/reset', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      res.status(400).json({ error: 'Email, verification code, and new password are required.' });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanOtp = String(otp).replace(/\s+/g, '');
+
+    const pending = await queryOne('SELECT * FROM password_reset_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+    if (!pending) {
+      res.status(400).json({ error: 'No active password reset request found. Please request a new code.' });
+      return;
+    }
+
+    // Check expiration
+    if (new Date(pending.expires_at).getTime() < Date.now()) {
+      await runQuery('DELETE FROM password_reset_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+      res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
+      return;
+    }
+
+    // Check attempts limit
+    if (pending.attempts >= 5) {
+      await runQuery('DELETE FROM password_reset_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+      res.status(400).json({ error: 'Too many incorrect attempts. Please request a fresh reset code.' });
+      return;
+    }
+
+    // Verify OTP hash
+    const isValid = verifyOTPHash(cleanOtp, pending.otp_hash);
+    if (!isValid && cleanOtp !== pending.otp_plain) {
+      await runQuery('UPDATE password_reset_otps SET attempts = attempts + 1 WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+      res.status(400).json({ error: 'Incorrect verification code. Please check your email.' });
+      return;
+    }
+
+    // Update password in users table
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await runQuery('UPDATE users SET password_hash = ? WHERE LOWER(email) = LOWER(?)', [passwordHash, cleanEmail]);
+
+    // Clean up reset OTP record
+    await runQuery('DELETE FROM password_reset_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+
+    // Fetch updated user to generate login session
+    const user = await queryOne('SELECT id, shiori_id, email, username, name, bio, avatar_url, theme, points, github_connected, github_username FROM users WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
+    
+    let token = '';
+    if (user) {
+      token = generateToken(user);
+    }
+
+    res.json({
+      success: true,
+      message: 'Your password has been successfully reset. You can now sign in with your new password.',
+      token: token || undefined,
+      user: user || undefined
+    });
+  } catch (error: any) {
+    console.error('[FORGOT PASSWORD /reset ERROR]', error);
+    res.status(500).json({ error: 'Failed to reset password. Please try again.' });
+  }
 });
 
 // 5. Get Current User Profile

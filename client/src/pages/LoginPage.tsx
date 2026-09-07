@@ -72,7 +72,15 @@ export const LoginPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-[10px] text-eink-textMuted uppercase mb-1 font-bold">PASSWORD</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[10px] text-eink-textMuted uppercase font-bold">PASSWORD</label>
+              <Link
+                to="/forgot-password"
+                className="text-[11px] text-eink-textMuted hover:text-eink-text underline font-medium"
+              >
+                Forgot password or username?
+              </Link>
+            </div>
             <input
               type="password"
               value={password}
@@ -86,14 +94,17 @@ export const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all text-xs"
+            className="w-full py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all text-xs cursor-pointer"
           >
             <span>{loading ? 'SIGNING IN...' : 'SIGN IN'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </form>
 
-        <div className="pt-2 border-t border-eink-border text-center text-xs">
+        <div className="pt-2 border-t border-eink-border flex items-center justify-between text-xs">
+          <Link to="/forgot-password" className="text-eink-textMuted hover:text-eink-text underline">
+            Forgot credentials?
+          </Link>
           <p className="text-eink-textMuted">
             Don't have an account?{' '}
             <Link to="/register" className="text-eink-text font-bold underline">

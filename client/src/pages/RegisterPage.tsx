@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ShieldCheck, RotateCcw } from 'lucide-react';
+import { ArrowRight, ShieldCheck, RotateCcw, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { fetchJson } from '../utils/api';
 
@@ -16,9 +16,39 @@ export const RegisterPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [resendMessage, setResendMessage] = useState('');
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(300);
+  const [isExpired, setIsExpired] = useState<boolean>(false);
 
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  // Active Countdown Timer for Registration OTP
+  useEffect(() => {
+    let interval: any = null;
+    if (step === 'OTP' && secondsRemaining > 0) {
+      interval = setInterval(() => {
+        setSecondsRemaining((prev) => {
+          if (prev <= 1) {
+            setIsExpired(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else if (secondsRemaining === 0) {
+      setIsExpired(true);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [step, secondsRemaining]);
+
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   // Step 1: Send OTP to Email
   const handleSendOtp = async (e: React.FormEvent) => {
@@ -39,6 +69,8 @@ export const RegisterPage: React.FC = () => {
       });
 
       if (ok) {
+        setSecondsRemaining(300);
+        setIsExpired(false);
         setStep('OTP');
       } else {
         setError(data?.error || 'Failed to send verification code. Please check your details.');
@@ -54,6 +86,12 @@ export const RegisterPage: React.FC = () => {
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (isExpired) {
+      setError('Verification code has expired. Please click "Resend code" to request a fresh OTP.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -93,7 +131,10 @@ export const RegisterPage: React.FC = () => {
       });
 
       if (ok) {
-        setResendMessage(`New code sent to ${email}`);
+        setSecondsRemaining(300);
+        setIsExpired(false);
+        setOtp('');
+        setResendMessage(`New 5-minute code sent to ${email}`);
       } else {
         setError(data?.error || 'Failed to resend verification code.');
       }
@@ -191,6 +232,35 @@ export const RegisterPage: React.FC = () => {
         ) : (
           /* STEP 2: EMAIL OTP VERIFICATION */
           <form onSubmit={handleVerifyOtp} className="space-y-4 text-xs">
+            {/* Expiration Timer Banner */}
+            <div className={`p-3 border rounded-sm flex items-center justify-between gap-3 ${
+              isExpired
+                ? 'bg-eink-bg border-2 border-eink-text text-eink-text font-bold'
+                : 'bg-eink-surface border-eink-border text-eink-text'
+            }`}>
+              <div className="flex items-center gap-2">
+                <Clock className={`w-4 h-4 ${isExpired ? 'text-eink-text animate-bounce' : 'text-eink-accent'}`} />
+                <div>
+                  <span className="block text-[10px] text-eink-textMuted uppercase font-bold tracking-wider">
+                    CODE STATUS
+                  </span>
+                  <span className="font-mono text-xs font-bold">
+                    {isExpired ? 'EXPIRED' : `EXPIRES IN ${formatTime(secondsRemaining)}`}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resendLoading}
+                className="px-2.5 py-1 bg-eink-bg border border-eink-border rounded-sm text-[11px] font-bold text-eink-text hover:bg-eink-surface flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              >
+                <RotateCcw className={`w-3 h-3 ${resendLoading ? 'animate-spin' : ''}`} />
+                <span>{resendLoading ? 'SENDING...' : 'RESEND CODE'}</span>
+              </button>
+            </div>
+
             <div className="p-3 bg-eink-bg border border-eink-border rounded-sm text-center space-y-1">
               <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-widest block">
                 VERIFICATION CODE SENT TO
@@ -209,7 +279,7 @@ export const RegisterPage: React.FC = () => {
                 onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
                 placeholder="••••••"
                 maxLength={6}
-                className="w-full px-3 py-2.5 bg-eink-bg border border-eink-border rounded-sm text-center text-lg font-bold tracking-[0.3em] font-mono outline-none text-eink-text"
+                className="w-full px-3 py-2.5 bg-eink-bg border-2 border-eink-border focus:border-eink-text rounded-sm text-center text-lg font-bold tracking-[0.3em] font-mono outline-none text-eink-text"
                 autoFocus
                 required
               />
@@ -217,8 +287,8 @@ export const RegisterPage: React.FC = () => {
 
             <button
               type="submit"
-              disabled={loading || otp.length !== 6}
-              className="w-full py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all text-xs"
+              disabled={loading || otp.length !== 6 || isExpired}
+              className="w-full py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all text-xs cursor-pointer"
             >
               <span>{loading ? 'VERIFYING...' : 'VERIFY & CREATE ACCOUNT'}</span>
               <ShieldCheck className="w-3.5 h-3.5" />
@@ -228,7 +298,7 @@ export const RegisterPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setStep('DETAILS')}
-                className="text-eink-textSecondary hover:text-eink-text underline"
+                className="text-eink-textSecondary hover:text-eink-text underline cursor-pointer"
               >
                 ← Edit details
               </button>
@@ -237,10 +307,10 @@ export const RegisterPage: React.FC = () => {
                 type="button"
                 onClick={handleResend}
                 disabled={resendLoading}
-                className="text-eink-text font-bold hover:underline flex items-center gap-1"
+                className="text-eink-text hover:underline flex items-center gap-1 font-bold cursor-pointer disabled:opacity-50"
               >
-                <RotateCcw className="w-3 h-3" />
-                <span>{resendLoading ? 'Sending...' : 'Resend code'}</span>
+                <RotateCcw className={`w-3 h-3 ${resendLoading ? 'animate-spin' : ''}`} />
+                <span>Resend code</span>
               </button>
             </div>
           </form>
