@@ -55,6 +55,13 @@ export const RegisterPage: React.FC = () => {
     e.preventDefault();
     setError('');
     setResendMessage('');
+
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!EMAIL_REGEX.test(email.trim())) {
+      setError('Please enter a valid email address with a domain (e.g. yourname@gmail.com).');
+      return;
+    }
+
     setLoading(true);
 
     try {

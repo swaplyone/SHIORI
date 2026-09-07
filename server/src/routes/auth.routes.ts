@@ -40,6 +40,12 @@ authRouter.post('/register/send-otp', async (req: Request, res: Response): Promi
     const cleanEmail = email.trim().toLowerCase();
     const cleanUsername = username.trim().toLowerCase();
 
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      res.status(400).json({ error: 'Please enter a valid email address with a valid domain (e.g. user@gmail.com).' });
+      return;
+    }
+
     const existingEmail = await queryOne('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
     if (existingEmail) {
       res.status(400).json({ error: 'An account with this email already exists.' });
