@@ -12,6 +12,7 @@ export const githubRouter = Router();
 githubRouter.get('/oauth/url', authMiddleware, (req: AuthRequest, res: Response): void => {
   const clientId = config.githubClientId || 'Ov23li1zsUXHPz3jSsYD';
   const returnUrl = (req.query.returnUrl as string) || '/onboarding';
+  const loginHint = (req.query.login as string) || (req.query.loginHint as string) || '';
 
   // Determine frontend client origin dynamically from request headers
   let origin = config.clientUrl;
@@ -28,7 +29,10 @@ githubRouter.get('/oauth/url', authMiddleware, (req: AuthRequest, res: Response)
     nonce: Math.random().toString(36).substring(2, 15)
   };
   const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,user,read:org&state=${encodeURIComponent(state)}&prompt=consent`;
+  let authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,user,read:org&state=${encodeURIComponent(state)}&prompt=consent`;
+  if (loginHint) {
+    authUrl += `&login=${encodeURIComponent(loginHint.trim())}`;
+  }
   res.json({ url: authUrl });
 });
 

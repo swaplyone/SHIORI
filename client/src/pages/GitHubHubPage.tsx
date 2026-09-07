@@ -65,11 +65,13 @@ export const GitHubHubPage: React.FC = () => {
   }, [token]);
 
   // 1. Official GitHub OAuth Flow
-  const handleAuthorizeOAuth = async () => {
+  const handleAuthorizeOAuth = async (targetLogin?: string | React.MouseEvent) => {
     setIsConnecting(true);
     setStatusMessage(null);
     try {
-      const { ok, data } = await fetchJson('/api/github/oauth/url?returnUrl=/github');
+      const explicitLogin = typeof targetLogin === 'string' ? targetLogin : user?.email;
+      const loginParam = explicitLogin ? `&login=${encodeURIComponent(explicitLogin)}` : '';
+      const { ok, data } = await fetchJson(`/api/github/oauth/url?returnUrl=/github${loginParam}`);
       if (ok && data?.url) {
         window.location.href = data.url;
       } else {

@@ -118,11 +118,13 @@ export const OnboardingPage: React.FC = () => {
     }
   };
 
-  const handleAuthorizeGitHub = async () => {
+  const handleAuthorizeGitHub = async (targetLogin?: string | React.MouseEvent) => {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const { ok, status, data } = await fetchJson('/api/github/oauth/url?returnUrl=/onboarding');
+      const explicitLogin = typeof targetLogin === 'string' ? targetLogin : user?.email;
+      const loginParam = explicitLogin ? `&login=${encodeURIComponent(explicitLogin)}` : '';
+      const { ok, status, data } = await fetchJson(`/api/github/oauth/url?returnUrl=/onboarding${loginParam}`);
       if (ok && data?.url) {
         // Redirect browser to official GitHub OAuth Consent screen
         window.location.href = data.url;
