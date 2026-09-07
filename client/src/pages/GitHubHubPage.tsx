@@ -233,7 +233,7 @@ export const GitHubHubPage: React.FC = () => {
                     {ghStatus?.connected ? (
                       <>
                         <CheckCircle2 className="w-4 h-4 text-eink-accent" />
-                        <span>CONNECTED</span>
+                        <span>GitHub Connected @{ghStatus.username || 'user'}</span>
                       </>
                     ) : (
                       <>
@@ -242,9 +242,9 @@ export const GitHubHubPage: React.FC = () => {
                       </>
                     )}
                   </h2>
-                  {ghStatus?.connected && ghStatus.username && (
-                    <p className="text-xs text-eink-textSecondary font-mono">@{ghStatus.username}</p>
-                  )}
+                  <p className="text-xs text-eink-textSecondary font-sans mt-0.5">
+                    Sign in to the GitHub account you want to connect to SHIORI.
+                  </p>
                 </div>
               </div>
 
@@ -254,16 +254,16 @@ export const GitHubHubPage: React.FC = () => {
                     <button
                       onClick={handleSwitchGitHubAccount}
                       disabled={isConnecting}
-                      className="px-3.5 py-1.5 bg-eink-bg border border-eink-border hover:bg-eink-surface text-xs font-bold text-eink-text rounded-sm cursor-pointer flex items-center gap-1"
+                      className="px-3.5 py-1.5 bg-eink-bg border border-eink-border hover:bg-eink-surface text-xs font-bold text-eink-text rounded-sm cursor-pointer flex items-center gap-1.5"
                     >
-                      <RotateCcw className="w-3 h-3" />
-                      <span>SWITCH GITHUB ACCOUNT</span>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>{isConnecting ? 'OPENING GITHUB...' : 'Change GitHub Account'}</span>
                     </button>
                     <button
                       onClick={handleDisconnect}
                       className="px-3.5 py-1.5 border border-eink-border hover:bg-eink-bg text-xs font-bold text-eink-text rounded-sm cursor-pointer"
                     >
-                      DISCONNECT GITHUB
+                      Disconnect
                     </button>
                   </>
                 ) : (
@@ -274,15 +274,7 @@ export const GitHubHubPage: React.FC = () => {
                       className="px-4 py-2 bg-eink-text text-eink-bg text-xs font-bold rounded-sm shadow-eink-sm hover:opacity-90 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
                       <Github className="w-4 h-4" />
-                      <span>{isConnecting ? 'REDIRECTING TO GITHUB...' : 'AUTHORIZE WITH GITHUB (OAUTH)'}</span>
-                    </button>
-                    <button
-                      onClick={handleSwitchGitHubAccount}
-                      disabled={isConnecting}
-                      className="px-3.5 py-2 bg-eink-bg border border-eink-border text-xs text-eink-text rounded-sm hover:bg-eink-surface cursor-pointer font-bold flex items-center gap-1"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>CHANGE ACCOUNT</span>
+                      <span>{isConnecting ? 'REDIRECTING TO GITHUB...' : 'CONNECT GITHUB ACCOUNT'}</span>
                     </button>
                     <button
                       onClick={() => setShowTokenInput(!showTokenInput)}

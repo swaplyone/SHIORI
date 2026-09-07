@@ -274,7 +274,7 @@ export const OnboardingPage: React.FC = () => {
                 CONNECT YOUR GITHUB ACCOUNT
               </h2>
               <p className="text-xs text-eink-textSecondary leading-relaxed font-sans max-w-md mx-auto">
-                Authorize SHIORI with GitHub to import your repositories into an e-ink workspace, link development TODOs to commits, and track automated CI checks.
+                Sign in to the GitHub account you want to connect to SHIORI. Authorize access to import repositories, link development tasks to commits, and track automated CI workflows.
               </p>
             </div>
 
@@ -386,25 +386,26 @@ export const OnboardingPage: React.FC = () => {
         {/* STEP 2: REPOSITORY PICKER (When authorized) */}
         {isAuthorized && (
           <div className="space-y-5 animate-fade-in">
-            <div className="flex items-center justify-between border-b border-eink-border pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-eink-border pb-3 gap-3">
               <div>
                 <h2 className="text-sm font-bold text-eink-text uppercase">CHOOSE A REPOSITORY</h2>
                 <p className="text-xs text-eink-textSecondary font-sans">
                   Select a repository to create your SHIORI workspace.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-1.5 text-xs font-mono px-2.5 py-1 bg-eink-bg border border-eink-border rounded-sm">
                   <Github className="w-3.5 h-3.5 text-eink-text" />
-                  <span className="font-bold text-eink-text">@{githubUsername || 'developer'}</span>
+                  <span className="font-bold text-eink-text">GitHub Connected @{githubUsername || 'developer'}</span>
                 </div>
                 <button
                   type="button"
-                  onClick={handleAuthorizeGitHub}
-                  className="text-[10px] px-2 py-1 border border-eink-border hover:bg-eink-bg text-eink-textSecondary hover:text-eink-text rounded-sm font-technical"
-                  title="Reconnect or switch GitHub account"
+                  onClick={handleSwitchGitHubAccount}
+                  className="text-[11px] px-2.5 py-1 border border-eink-border hover:bg-eink-bg text-eink-text rounded-sm font-technical font-bold flex items-center gap-1 cursor-pointer"
+                  title="Switch to another GitHub account"
                 >
-                  RECONNECT
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Change GitHub Account</span>
                 </button>
               </div>
             </div>
