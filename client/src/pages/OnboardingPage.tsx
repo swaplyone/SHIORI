@@ -45,6 +45,12 @@ export const OnboardingPage: React.FC = () => {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [githubUsername, setGithubUsername] = useState<string | null>(null);
 
+  // PAT Token state for PWA direct connection
+  const [showPatInput, setShowPatInput] = useState(false);
+  const [patToken, setPatToken] = useState('');
+  const [customUsername, setCustomUsername] = useState('');
+  const [patLoading, setPatLoading] = useState(false);
+
   // Repositories state
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
@@ -131,6 +137,37 @@ export const OnboardingPage: React.FC = () => {
       setErrorMessage(err.message || 'Network error while connecting to GitHub.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConnectPat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!patToken.trim()) return;
+    setPatLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const { ok, data } = await fetchJson('/api/github/connect-pat', {
+        method: 'POST',
+        body: JSON.stringify({
+          patToken: patToken.trim(),
+          username: customUsername.trim()
+        })
+      });
+
+      if (ok && data?.username) {
+        setIsAuthorized(true);
+        setGithubUsername(data.username);
+        updateUser({ github_connected: 1, github_username: data.username });
+        setShowPatInput(false);
+        await fetchRepositories();
+      } else {
+        setErrorMessage(data?.error || 'Failed to verify Personal Access Token. Please check token permissions (repo, read:user).');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Error connecting Personal Access Token.');
+    } finally {
+      setPatLoading(false);
     }
   };
 
@@ -245,23 +282,67 @@ export const OnboardingPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="space-y-2 pt-2">
+            <div className="space-y-2.5 pt-2">
               <button
                 type="button"
                 onClick={handleAuthorizeGitHub}
                 disabled={loading || checkingStatus}
-                className="w-full py-3 bg-eink-text text-eink-bg text-xs font-bold rounded-sm flex items-center justify-center gap-2 shadow-eink-sm hover:opacity-90 transition-opacity cursor-pointer"
+                className="w-full py-3 bg-eink-text text-eink-bg text-xs font-bold rounded-sm flex items-center justify-center gap-2 shadow-eink-sm hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
               >
                 <Github className="w-4 h-4" />
-                <span>{loading ? 'CONNECTING TO GITHUB...' : 'AUTHORIZE WITH GITHUB'}</span>
+                <span>{loading ? 'CONNECTING TO GITHUB...' : 'AUTHORIZE WITH GITHUB (OAUTH)'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
               <button
                 type="button"
+                onClick={() => setShowPatInput(!showPatInput)}
+                className="w-full py-2.5 bg-eink-surface border border-eink-border text-eink-text text-xs font-bold rounded-sm hover:bg-eink-bg flex items-center justify-center gap-2 cursor-pointer font-technical"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>CONNECT WITH PERSONAL ACCESS TOKEN (PAT)</span>
+              </button>
+
+              {showPatInput && (
+                <form onSubmit={handleConnectPat} className="p-4 bg-eink-bg border border-eink-border rounded-sm space-y-3 text-xs animate-fade-in text-left">
+                  <div>
+                    <label className="text-[10px] text-eink-textMuted uppercase block mb-1 font-bold">GitHub Username</label>
+                    <input
+                      type="text"
+                      value={customUsername}
+                      onChange={(e) => setCustomUsername(e.target.value)}
+                      placeholder="e.g. tech-team or your-github-username"
+                      className="w-full px-3 py-2 bg-eink-surface border border-eink-border rounded-sm outline-none font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-eink-textMuted uppercase block mb-1 font-bold">Personal Access Token (PAT)</label>
+                    <input
+                      type="password"
+                      value={patToken}
+                      onChange={(e) => setPatToken(e.target.value)}
+                      placeholder="ghp_************************************"
+                      className="w-full px-3 py-2 bg-eink-surface border border-eink-border rounded-sm outline-none font-mono"
+                      required
+                    />
+                    <span className="text-[10px] text-eink-textMuted mt-1 block">Requires `repo` and `read:user` permissions.</span>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={patLoading || !patToken.trim()}
+                    className="w-full py-2 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm hover:opacity-90 cursor-pointer disabled:opacity-50"
+                  >
+                    {patLoading ? 'VERIFYING TOKEN...' : 'VERIFY & CONNECT PAT'}
+                  </button>
+                </form>
+              )}
+
+              <button
+                type="button"
                 onClick={() => navigate('/home')}
                 disabled={loading}
-                className="w-full py-2.5 border border-eink-border text-eink-text text-xs font-bold rounded-sm hover:bg-eink-bg transition-colors"
+                className="w-full py-2.5 border border-eink-border text-eink-text text-xs font-bold rounded-sm hover:bg-eink-bg transition-colors cursor-pointer"
               >
                 SKIP FOR NOW
               </button>
