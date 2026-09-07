@@ -12,6 +12,7 @@ import {
   GitBranch,
   FolderGit2,
   RefreshCw,
+  RotateCcw,
   Sparkles,
   ExternalLink
 } from 'lucide-react';
@@ -137,6 +138,24 @@ export const OnboardingPage: React.FC = () => {
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error while connecting to GitHub.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSwitchGitHubAccount = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const { ok, data } = await fetchJson('/api/github/oauth/url?returnUrl=/onboarding&switchAccount=true');
+      if (ok && data?.url) {
+        window.location.href = data.url;
+        return;
+      } else {
+        setErrorMessage(data?.error || 'Unable to open GitHub login.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Error initiating account switch.');
     } finally {
       setLoading(false);
     }
@@ -296,14 +315,26 @@ export const OnboardingPage: React.FC = () => {
                 <ArrowRight className="w-4 h-4" />
               </button>
 
-              <button
-                type="button"
-                onClick={() => setShowPatInput(!showPatInput)}
-                className="w-full py-2.5 bg-eink-surface border border-eink-border text-eink-text text-xs font-bold rounded-sm hover:bg-eink-bg flex items-center justify-center gap-2 cursor-pointer font-technical"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>CONNECT WITH PERSONAL ACCESS TOKEN (PAT)</span>
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleSwitchGitHubAccount}
+                  disabled={loading}
+                  className="py-2.5 px-3 bg-eink-bg border border-eink-border text-eink-text text-xs font-bold rounded-sm hover:bg-eink-surface flex items-center justify-center gap-1.5 cursor-pointer font-technical"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>CHANGE / SWITCH ACCOUNT</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPatInput(!showPatInput)}
+                  className="py-2.5 px-3 bg-eink-surface border border-eink-border text-eink-text text-xs font-bold rounded-sm hover:bg-eink-bg flex items-center justify-center gap-1.5 cursor-pointer font-technical"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>USE PAT TOKEN</span>
+                </button>
+              </div>
 
               {showPatInput && (
                 <form onSubmit={handleConnectPat} className="p-4 bg-eink-bg border border-eink-border rounded-sm space-y-3 text-xs animate-fade-in text-left">

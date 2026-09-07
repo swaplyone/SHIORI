@@ -84,6 +84,24 @@ export const GitHubHubPage: React.FC = () => {
     }
   };
 
+  // 1b. Switch / Change GitHub Account (Forces login screen on GitHub)
+  const handleSwitchGitHubAccount = async () => {
+    setIsConnecting(true);
+    setStatusMessage(null);
+    try {
+      const { ok, data } = await fetchJson('/api/github/oauth/url?returnUrl=/github&switchAccount=true');
+      if (ok && data?.url) {
+        window.location.href = data.url;
+      } else {
+        setStatusMessage(data?.error || 'Failed to open GitHub login.');
+        setIsConnecting(false);
+      }
+    } catch (err: any) {
+      setStatusMessage(err.message || 'Error opening account switch.');
+      setIsConnecting(false);
+    }
+  };
+
   // 2. Personal Access Token (PAT) Flow
   const handleConnectPat = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -234,11 +252,12 @@ export const GitHubHubPage: React.FC = () => {
                 {ghStatus?.connected ? (
                   <>
                     <button
-                      onClick={handleAuthorizeOAuth}
+                      onClick={handleSwitchGitHubAccount}
                       disabled={isConnecting}
-                      className="px-3.5 py-1.5 bg-eink-bg border border-eink-border hover:bg-eink-surface text-xs font-bold text-eink-text rounded-sm cursor-pointer"
+                      className="px-3.5 py-1.5 bg-eink-bg border border-eink-border hover:bg-eink-surface text-xs font-bold text-eink-text rounded-sm cursor-pointer flex items-center gap-1"
                     >
-                      SWITCH ACCOUNT
+                      <RotateCcw className="w-3 h-3" />
+                      <span>SWITCH GITHUB ACCOUNT</span>
                     </button>
                     <button
                       onClick={handleDisconnect}
@@ -256,6 +275,14 @@ export const GitHubHubPage: React.FC = () => {
                     >
                       <Github className="w-4 h-4" />
                       <span>{isConnecting ? 'REDIRECTING TO GITHUB...' : 'AUTHORIZE WITH GITHUB (OAUTH)'}</span>
+                    </button>
+                    <button
+                      onClick={handleSwitchGitHubAccount}
+                      disabled={isConnecting}
+                      className="px-3.5 py-2 bg-eink-bg border border-eink-border text-xs text-eink-text rounded-sm hover:bg-eink-surface cursor-pointer font-bold flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>CHANGE ACCOUNT</span>
                     </button>
                     <button
                       onClick={() => setShowTokenInput(!showTokenInput)}
