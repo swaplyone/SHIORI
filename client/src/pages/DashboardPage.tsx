@@ -42,6 +42,7 @@ export const DashboardPage: React.FC = () => {
   const [selectedRepoName, setSelectedRepoName] = useState('');
   const [pendingInvitations, setPendingInvitations] = useState<any[]>([]);
   const [pendingAssignments, setPendingAssignments] = useState<any[]>([]);
+  const [pendingConnections, setPendingConnections] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(() => !sessionStorage.getItem('shiori_cached_projects'));
   const [submitting, setSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
@@ -49,11 +50,12 @@ export const DashboardPage: React.FC = () => {
   const fetchHomeData = async () => {
     if (!token) return;
     try {
-      const [projRes, repoRes, inviteRes, assignRes] = await Promise.all([
+      const [projRes, repoRes, inviteRes, assignRes, connRes] = await Promise.all([
         fetchJson('/api/projects'),
         fetchJson('/api/github/available-repositories'),
         fetchJson('/api/projects/invitations/pending'),
-        fetchJson('/api/tasks/pending/assignments')
+        fetchJson('/api/tasks/pending/assignments'),
+        fetchJson('/api/connections/requests')
       ]);
 
       if (projRes.ok && projRes.data?.projects) {
@@ -67,6 +69,10 @@ export const DashboardPage: React.FC = () => {
 
       if (assignRes.ok && assignRes.data?.tasks) {
         setPendingAssignments(assignRes.data.tasks);
+      }
+
+      if (connRes.ok && connRes.data?.requests) {
+        setPendingConnections(connRes.data.requests);
       }
 
       if (repoRes.ok && repoRes.data?.repositories) {
@@ -130,6 +136,23 @@ export const DashboardPage: React.FC = () => {
       const { ok } = await fetchJson(`/api/projects/invitations/${inviteId}/respond`, {
         method: 'POST',
         body: JSON.stringify({ action })
+      });
+      if (ok) {
+        triggerEInkRefresh();
+        fetchHomeData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRespondConnection = async (requestId: string, action: 'ACCEPT' | 'DECLINE') => {
+    if (!token) return;
+    try {
+      setPendingConnections((prev) => prev.filter((r) => r.id !== requestId));
+      const { ok } = await fetchJson('/api/connections/respond', {
+        method: 'POST',
+        body: JSON.stringify({ requestId, action })
       });
       if (ok) {
         triggerEInkRefresh();
@@ -328,6 +351,62 @@ export const DashboardPage: React.FC = () => {
                   >
                     <Check className="w-3.5 h-3.5" />
                     <span>ACCEPT INVITATION</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* PENDING CONNECTION REQUESTS BANNER */}
+      {pendingConnections.length > 0 && (
+        <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 shadow-eink-card animate-fade-in font-technical">
+          <div className="flex items-center justify-between border-b border-eink-border pb-2">
+            <span className="font-bold text-xs uppercase text-eink-text tracking-wider flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              <span>PENDING CONNECTION REQUESTS ({pendingConnections.length})</span>
+            </span>
+            <span className="text-[11px] text-eink-textSecondary">
+              Accept to connect and assign tasks to each other
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {pendingConnections.map((req) => (
+              <div
+                key={req.id}
+                className="p-3.5 bg-eink-bg border border-eink-border rounded-sm space-y-2 flex flex-col justify-between"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-bold text-sm text-eink-text truncate">
+                      {req.sender_name || req.sender_username}
+                    </span>
+                    <span className="text-[10px] bg-eink-surface px-1.5 py-0.2 border border-eink-border rounded font-mono font-bold shrink-0">
+                      {req.sender_shiori_id}
+                    </span>
+                  </div>
+                  <p className="text-xs text-eink-textSecondary">
+                    @{req.sender_username} wants to connect with you.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-eink-border/50">
+                  <button
+                    type="button"
+                    onClick={() => handleRespondConnection(req.id, 'DECLINE')}
+                    className="px-3 py-1.5 border border-eink-border hover:bg-eink-surface text-xs text-eink-textSecondary hover:text-eink-text rounded-sm cursor-pointer"
+                  >
+                    DECLINE
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRespondConnection(req.id, 'ACCEPT')}
+                    className="px-4 py-1.5 bg-eink-text text-eink-bg font-bold text-xs rounded-sm shadow-eink-sm hover:opacity-90 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>ACCEPT CONNECTION</span>
                   </button>
                 </div>
               </div>

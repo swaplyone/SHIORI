@@ -135,9 +135,15 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
 
 // GET GitHub connection status
 githubRouter.get('/status', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const ghAccount = await queryOne('SELECT username, avatar_url, access_token FROM github_accounts WHERE user_id = ? AND access_token IS NOT NULL ORDER BY connected_at DESC LIMIT 1', [req.user!.id]);
+  const userId = req.user!.id;
+  const user = await queryOne('SELECT github_connected, github_username, github_avatar FROM users WHERE id = ?', [userId]);
+  const ghAccount = await queryOne('SELECT username, avatar_url, access_token FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
   
-  if (!ghAccount || !ghAccount.access_token) {
+  const isConnected = Boolean(user?.github_connected || (ghAccount && ghAccount.username));
+  const username = ghAccount?.username || user?.github_username || null;
+  const avatarUrl = ghAccount?.avatar_url || user?.github_avatar || '';
+
+  if (!isConnected || !username) {
     res.json({
       connected: false,
       username: null,
@@ -150,12 +156,13 @@ githubRouter.get('/status', authMiddleware, async (req: AuthRequest, res: Respon
 
   const commitsCount = await queryOne('SELECT COUNT(*) as count FROM github_commits');
   const prsCount = await queryOne('SELECT COUNT(DISTINCT github_pr_number) as count FROM tasks WHERE github_pr_number IS NOT NULL');
+  const userReposCount = await queryOne('SELECT COUNT(*) as count FROM user_repositories WHERE user_id = ? AND is_active = 1', [userId]);
 
   res.json({
     connected: true,
-    username: ghAccount.username || 'developer',
-    avatarUrl: ghAccount.avatar_url || '',
-    repositoriesCount: 0,
+    username,
+    avatarUrl,
+    repositoriesCount: userReposCount?.count || 0,
     pullRequestsCount: prsCount?.count || 0,
     recentCommitsCount: commitsCount?.count || 0
   });

@@ -63,6 +63,65 @@ export const NotificationsPage: React.FC = () => {
     }
   };
 
+  const handleAcceptConnectionFromNotif = async (notifId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!token) return;
+    try {
+      // Fetch pending requests to get request ID
+      const reqRes = await fetch('/api/connections/requests', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (reqRes.ok) {
+        const { incoming } = await reqRes.json();
+        if (incoming && incoming.length > 0) {
+          const targetReq = incoming[0];
+          await fetch('/api/connections/respond', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ requestId: targetReq.id, action: 'ACCEPT' })
+          });
+        }
+      }
+      setActionStatus((prev) => ({ ...prev, [notifId]: 'ACCEPTED' }));
+      markAsRead(notifId);
+      triggerEInkRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeclineConnectionFromNotif = async (notifId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!token) return;
+    try {
+      const reqRes = await fetch('/api/connections/requests', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (reqRes.ok) {
+        const { incoming } = await reqRes.json();
+        if (incoming && incoming.length > 0) {
+          const targetReq = incoming[0];
+          await fetch('/api/connections/respond', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ requestId: targetReq.id, action: 'DECLINE' })
+          });
+        }
+      }
+      setActionStatus((prev) => ({ ...prev, [notifId]: 'REJECTED' }));
+      markAsRead(notifId);
+      triggerEInkRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     setPermission(reminderManager.getPermission());
   }, []);
@@ -271,6 +330,7 @@ export const NotificationsPage: React.FC = () => {
           const isReview = n.type === 'PR_REVIEW';
           const isAssignment = n.type === 'TASK_ASSIGNMENT';
           const isInvite = n.type === 'PROJECT_INVITATION';
+          const isConnection = n.type === 'CONNECTION_REQUEST';
 
           return (
             <div
@@ -295,12 +355,12 @@ export const NotificationsPage: React.FC = () => {
                         ? 'bg-eink-text text-eink-bg'
                         : isAssignment
                         ? 'bg-eink-text text-eink-bg'
-                        : isInvite
+                        : isInvite || isConnection
                         ? 'bg-eink-darkSurface text-eink-darkText'
                         : 'bg-eink-surface border border-eink-border text-eink-text'
                     }`}
                   >
-                    {isFailed ? '✕' : isRecovered ? '✓' : isAssignment ? '📋' : isInvite ? '✉' : '→'}
+                    {isFailed ? '✕' : isRecovered ? '✓' : isAssignment ? '📋' : isInvite ? '✉' : isConnection ? '🤝' : '→'}
                   </div>
 
                     <div className="space-y-0.5">
@@ -340,6 +400,40 @@ export const NotificationsPage: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={(e) => handleRejectAssignment(n.task_id!, n.id, e)}
+                                className="px-3 py-1 border border-eink-border bg-eink-bg hover:bg-eink-surface text-[10px] font-bold text-eink-textSecondary hover:text-eink-text rounded-sm cursor-pointer"
+                              >
+                                DECLINE
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 1-Click Accept / Decline Action for Connection Requests */}
+                      {isConnection && (
+                        <div className="pt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          {actionStatus[n.id] === 'ACCEPTED' ? (
+                            <span className="px-2 py-1 bg-eink-text text-eink-bg text-[10px] font-bold rounded-sm flex items-center gap-1">
+                              <Check className="w-3 h-3" />
+                              <span>CONNECTED</span>
+                            </span>
+                          ) : actionStatus[n.id] === 'REJECTED' ? (
+                            <span className="px-2 py-1 border border-eink-border text-[10px] font-bold text-eink-textMuted rounded-sm">
+                              DECLINED
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => handleAcceptConnectionFromNotif(n.id, e)}
+                                className="px-3 py-1 bg-eink-text text-eink-bg text-[10px] font-bold rounded-sm hover:opacity-90 active:scale-95 flex items-center gap-1 cursor-pointer shadow-eink-sm"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>ACCEPT CONNECTION</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeclineConnectionFromNotif(n.id, e)}
                                 className="px-3 py-1 border border-eink-border bg-eink-bg hover:bg-eink-surface text-[10px] font-bold text-eink-textSecondary hover:text-eink-text rounded-sm cursor-pointer"
                               >
                                 DECLINE

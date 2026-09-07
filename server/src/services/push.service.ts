@@ -37,13 +37,13 @@ export async function savePushSubscription(
   if (existing) {
     await runQuery(`
       UPDATE push_subscriptions
-      SET user_id = ?, p256dh = ?, auth = ?, user_agent = ?, updated_at = datetime('now')
+      SET user_id = ?, p256dh = ?, auth = ?, user_agent = ?, updated_at = NOW()
       WHERE endpoint = ?
     `, [userId, subscription.keys.p256dh, subscription.keys.auth, userAgent || null, subscription.endpoint]);
   } else {
     await runQuery(`
-      INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, user_agent, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, user_agent)
+      VALUES (?, ?, ?, ?, ?, ?)
     `, [uuidv4(), userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, userAgent || null]);
   }
 }
