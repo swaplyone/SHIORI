@@ -497,6 +497,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
 
   if (!taskId) return null;
 
+  const isDone = Boolean(task && (task.status === 'DONE' || task.user_status === 'COMPLETED'));
+
   return (
     <div className="fixed inset-0 z-[10001] flex items-center justify-center p-2 sm:p-4 md:p-6 select-none font-sans">
       <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} />
@@ -747,20 +749,22 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                           )}
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditTitle(task.title || '');
-                            setEditDescription(task.description || '');
-                            setEditTags(task.tags || '');
-                            setIsEditingDetails(true);
-                          }}
-                          className="px-2 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded text-[11px] font-technical font-bold text-eink-text flex items-center gap-1 shrink-0 shadow-eink-sm transition-colors cursor-pointer"
-                          title="Edit Title, Description & Tags"
-                        >
-                          <Edit3 className="w-3 h-3" />
-                          <span>EDIT</span>
-                        </button>
+                        {!isDone && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditTitle(task.title || '');
+                              setEditDescription(task.description || '');
+                              setEditTags(task.tags || '');
+                              setIsEditingDetails(true);
+                            }}
+                            className="px-2 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded text-[11px] font-technical font-bold text-eink-text flex items-center gap-1 shrink-0 shadow-eink-sm transition-colors cursor-pointer"
+                            title="Edit Title, Description & Tags"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>EDIT</span>
+                          </button>
+                        )}
                       </div>
 
                       {task.tags && (
@@ -811,7 +815,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                   <span className="text-[10px] text-eink-textMuted uppercase block font-bold">STATUS</span>
                   <div className="mt-1 p-2 bg-eink-bg border border-eink-border rounded-sm text-xs font-technical flex items-center justify-between">
                     <span className="font-bold flex items-center gap-1.5 text-eink-text">
-                      {task.status === 'DONE' || task.user_status === 'COMPLETED' ? (
+                      {isDone ? (
                         <>
                           <span className="w-3.5 h-3.5 rounded-full bg-eink-text text-eink-bg flex items-center justify-center text-[9px] font-bold">✓</span>
                           <span>COMPLETED</span>
@@ -835,100 +839,127 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                     )}
                   </div>
                   <p className="text-[10px] text-eink-textMuted pt-1 leading-tight font-sans">
-                    Auto-completes when a Git commit references <strong className="text-eink-text font-mono">{task.task_code}</strong>.
+                    {isDone ? 'Verified through GitHub development activity.' : `Auto-completes when a Git commit references ${task.task_code}.`}
                   </p>
                 </div>
 
                 <div>
                   <span className="text-[10px] text-eink-textMuted uppercase block font-bold">PRIORITY</span>
-                  <select
-                    value={task.priority || 'MEDIUM'}
-                    onChange={(e) => handleUpdatePriority(e.target.value as TaskPriority)}
-                    className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical font-bold text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
-                  >
-                    <option value="LOW">LOW</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="HIGH">HIGH</option>
-                    <option value="URGENT">⚡ URGENT</option>
-                  </select>
+                  {isDone ? (
+                    <div className="mt-1 px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical font-bold text-eink-text flex items-center justify-between">
+                      <span>{task.priority === 'URGENT' ? '⚡ URGENT' : task.priority || 'MEDIUM'}</span>
+                      <span className="text-[9px] bg-eink-surface border border-eink-border px-1.5 py-0.2 rounded font-mono font-bold text-eink-textMuted">
+                        FINALIZED
+                      </span>
+                    </div>
+                  ) : (
+                    <select
+                      value={task.priority || 'MEDIUM'}
+                      onChange={(e) => handleUpdatePriority(e.target.value as TaskPriority)}
+                      className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical font-bold text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
+                    >
+                      <option value="LOW">LOW</option>
+                      <option value="MEDIUM">MEDIUM</option>
+                      <option value="HIGH">HIGH</option>
+                      <option value="URGENT">⚡ URGENT</option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
                   <span className="text-[10px] text-eink-textMuted uppercase block font-bold">ASSIGNEE</span>
-                  <select
-                    value={task.assignee_id || ''}
-                    onChange={(e) => handleUpdateAssignee(e.target.value)}
-                    className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical font-medium text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
-                  >
-                    <option value="">Unassigned</option>
-                    {user && (
-                      <option value={user.id}>
-                        {user.name || user.email} (You)
-                      </option>
-                    )}
-                    {availableAssignees
-                      .filter((m) => m.id !== user?.id)
-                      .map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name || m.email || m.id}
+                  {isDone ? (
+                    <div className="mt-1 px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text flex items-center justify-between">
+                      <span className="font-bold">{task.assignee_name || 'Unassigned'}</span>
+                      <span className="text-[9px] text-eink-textMuted font-mono">COMPLETED BY</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={task.assignee_id || ''}
+                      onChange={(e) => handleUpdateAssignee(e.target.value)}
+                      className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical font-medium text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
+                    >
+                      <option value="">Unassigned</option>
+                      {user && (
+                        <option value={user.id}>
+                          {user.name || user.email} (You)
                         </option>
-                      ))}
-                  </select>
+                      )}
+                      {availableAssignees
+                        .filter((m) => m.id !== user?.id)
+                        .map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name || m.email || m.id}
+                          </option>
+                        ))}
+                    </select>
+                  )}
                 </div>
 
                 <div>
                   <span className="text-[10px] text-eink-textMuted uppercase block font-bold">DUE DATE</span>
-                  <div className="space-y-1.5 mt-1">
-                    <input
-                      type="text"
-                      placeholder="e.g. Tomorrow, 2026-09-10"
-                      defaultValue={task.due_date || ''}
-                      key={task.due_date || 'empty'}
-                      onBlur={(e) => {
-                        if (e.target.value !== (task.due_date || '')) {
-                          handleUpdateDueDate(e.target.value);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleUpdateDueDate((e.target as HTMLInputElement).value);
-                        }
-                      }}
-                      className="w-full px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none focus:border-eink-text"
-                    />
-                    <div className="flex flex-wrap items-center gap-1 text-[9px] font-mono">
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateDueDate('Today')}
-                        className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-eink-text cursor-pointer transition-colors"
-                      >
-                        Today
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateDueDate('Tomorrow')}
-                        className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-eink-text cursor-pointer transition-colors"
-                      >
-                        Tomorrow
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateDueDate('Next Week')}
-                        className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-eink-text cursor-pointer transition-colors"
-                      >
-                        Next Week
-                      </button>
-                      {task.due_date && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateDueDate('')}
-                          className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-rose-700 cursor-pointer transition-colors"
-                        >
-                          Clear
-                        </button>
+                  {isDone ? (
+                    <div className="mt-1 px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text">
+                      <div className="font-bold">{task.due_date || 'No deadline'}</div>
+                      {task.completed_at && (
+                        <div className="text-[10px] text-eink-textMuted font-mono pt-0.5">
+                          Finished: {new Date(task.completed_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
                       )}
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-1.5 mt-1">
+                      <input
+                        type="text"
+                        placeholder="e.g. Tomorrow, 2026-09-10"
+                        defaultValue={task.due_date || ''}
+                        key={task.due_date || 'empty'}
+                        onBlur={(e) => {
+                          if (e.target.value !== (task.due_date || '')) {
+                            handleUpdateDueDate(e.target.value);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleUpdateDueDate((e.target as HTMLInputElement).value);
+                          }
+                        }}
+                        className="w-full px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none focus:border-eink-text"
+                      />
+                      <div className="flex flex-wrap items-center gap-1 text-[9px] font-mono">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateDueDate('Today')}
+                          className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-eink-text cursor-pointer transition-colors"
+                        >
+                          Today
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateDueDate('Tomorrow')}
+                          className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-eink-text cursor-pointer transition-colors"
+                        >
+                          Tomorrow
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateDueDate('Next Week')}
+                          className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-eink-text cursor-pointer transition-colors"
+                        >
+                          Next Week
+                        </button>
+                        {task.due_date && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateDueDate('')}
+                            className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-rose-700 cursor-pointer transition-colors"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -936,17 +967,23 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                     <Repeat className="w-3 h-3" />
                     <span>RECURRING</span>
                   </span>
-                  <select
-                    value={task.recurrence_rule || ''}
-                    onChange={(e) => handleUpdateRecurrence(e.target.value)}
-                    className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
-                  >
-                    <option value="">None (One-time)</option>
-                    <option value="Daily">↻ Every day</option>
-                    <option value="Weekdays">↻ Weekdays (Mon-Fri)</option>
-                    <option value="Weekly">↻ Every week</option>
-                    <option value="Monthly">↻ Every month</option>
-                  </select>
+                  {isDone ? (
+                    <div className="mt-1 px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text">
+                      {task.recurrence_rule || 'None (One-time)'}
+                    </div>
+                  ) : (
+                    <select
+                      value={task.recurrence_rule || ''}
+                      onChange={(e) => handleUpdateRecurrence(e.target.value)}
+                      className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
+                    >
+                      <option value="">None (One-time)</option>
+                      <option value="Daily">↻ Every day</option>
+                      <option value="Weekdays">↻ Weekdays (Mon-Fri)</option>
+                      <option value="Weekly">↻ Every week</option>
+                      <option value="Monthly">↻ Every month</option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -954,17 +991,23 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                     <Bell className="w-3 h-3" />
                     <span>REMINDER</span>
                   </span>
-                  <select
-                    value={task.reminder_at ? 'active' : ''}
-                    onChange={(e) => handleSetReminder(e.target.value)}
-                    className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
-                  >
-                    <option value="clear">No reminder</option>
-                    <option value="15m">In 15 minutes</option>
-                    <option value="today_evening">Today · 6:00 PM</option>
-                    <option value="tomorrow_morning">Tomorrow · 9:00 AM</option>
-                    {task.reminder_at && <option value="active">Active ({new Date(task.reminder_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})</option>}
-                  </select>
+                  {isDone ? (
+                    <div className="mt-1 px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-textMuted">
+                      Inactive (Task Completed)
+                    </div>
+                  ) : (
+                    <select
+                      value={task.reminder_at ? 'active' : ''}
+                      onChange={(e) => handleSetReminder(e.target.value)}
+                      className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
+                    >
+                      <option value="clear">No reminder</option>
+                      <option value="15m">In 15 minutes</option>
+                      <option value="today_evening">Today · 6:00 PM</option>
+                      <option value="tomorrow_morning">Tomorrow · 9:00 AM</option>
+                      {task.reminder_at && <option value="active">Active ({new Date(task.reminder_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})</option>}
+                    </select>
+                  )}
                 </div>
               </div>
             </div>
