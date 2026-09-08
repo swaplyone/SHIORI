@@ -584,7 +584,15 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
 
     for (const cand of candidateNames) {
       try {
-        const res = await fetch(`https://api.github.com/repos/${cand}/commits?per_page=30`, { headers });
+        let res = await fetch(`https://api.github.com/repos/${cand}/commits?per_page=30`, { headers });
+        if (!res.ok && headers.Authorization) {
+          const publicRes = await fetch(`https://api.github.com/repos/${cand}/commits?per_page=30`, {
+            headers: { 'User-Agent': 'SHIORI-App', Accept: 'application/vnd.github.v3+json' }
+          });
+          if (publicRes.ok) {
+            res = publicRes;
+          }
+        }
         if (res.ok) {
           commitsRes = res;
           workingFullName = cand;
