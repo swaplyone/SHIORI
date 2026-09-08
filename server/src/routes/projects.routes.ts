@@ -135,12 +135,16 @@ projectsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Respons
 
 // POST Create project from a GitHub repository
 projectsRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { repositoryName, description, defaultBranch = 'main' } = req.body;
+  const { repositoryName, repositoryFullName, description, defaultBranch = 'main' } = req.body;
 
   if (!repositoryName) {
     res.status(400).json({ error: 'GitHub repository name is required.' });
     return;
   }
+
+  // Determine short repo name and full name (owner/repo)
+  const shortRepoName = repositoryName.includes('/') ? repositoryName.split('/').pop()! : repositoryName;
+  const fullName = repositoryFullName || (repositoryName.includes('/') ? repositoryName : null);
 
   // Get user workspace
   let workspace = await queryOne('SELECT id FROM workspaces WHERE creator_id = ? LIMIT 1', [req.user!.id]);
@@ -153,14 +157,15 @@ projectsRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response)
     workspace = { id: wsId };
   }
 
-  const name = repositoryName.toUpperCase().replace(/-/g, ' ');
-  const slug = repositoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const name = shortRepoName.toUpperCase().replace(/[-_]/g, ' ');
+  const slug = shortRepoName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const id = `proj-${slug}-${uuidv4().slice(0, 4)}`;
+  const repoUrl = fullName ? `https://github.com/${fullName}` : `https://github.com/${shortRepoName}`;
 
   await runQuery(`
     INSERT INTO projects (id, workspace_id, name, slug, description, status, github_repo_name, github_repo_url, default_branch, created_by)
     VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?)
-  `, [id, workspace.id, name, slug, description || `GitHub repository project for ${repositoryName}`, repositoryName, `https://github.com/${repositoryName}`, defaultBranch, req.user!.id]);
+  `, [id, workspace.id, name, slug, description || `GitHub repository project for ${shortRepoName}`, shortRepoName, repoUrl, defaultBranch, req.user!.id]);
 
   // Add creator as project owner
   await runQuery(`
@@ -172,7 +177,14 @@ projectsRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response)
   await runQuery(`
     INSERT OR REPLACE INTO user_repositories (id, user_id, repo_name, full_name, default_branch, is_active)
     VALUES (?, ?, ?, ?, ?, 1)
-  `, [uuidv4(), req.user!.id, repositoryName, repositoryName, defaultBranch]);
+  `, [uuidv4(), req.user!.id, shortRepoName, fullName || shortRepoName, defaultBranch]);
+
+  // Trigger live sync in the background
+  import('./github.routes.js')
+    .then(({ syncRepoLiveFromGitHub }) => {
+      syncRepoLiveFromGitHub(req.user!.id, fullName || shortRepoName).catch(() => {});
+    })
+    .catch(() => {});
 
   const created = await queryOne('SELECT * FROM projects WHERE id = ?', [id]);
   res.status(201).json({ project: created });

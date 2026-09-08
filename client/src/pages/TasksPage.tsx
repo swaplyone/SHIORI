@@ -329,18 +329,26 @@ export const TasksPage: React.FC = () => {
         }`}
       >
         <div className="flex items-start gap-2 sm:gap-2.5 min-w-0 flex-1">
-          <button
-            type="button"
-            onClick={(e) => handleToggleTaskStatus(task, e)}
-            className="mt-0.5 p-0.5 text-eink-text hover:text-eink-textSecondary shrink-0 cursor-pointer"
-            title={isDone ? 'Restore as Active' : 'Mark as Complete'}
-          >
+          <div className="mt-0.5 p-0.5 shrink-0 flex items-center justify-center">
             {isDone ? (
-              <CheckSquare className="w-4 h-4 text-eink-text" />
+              <span
+                className="w-4 h-4 rounded-full bg-eink-text text-eink-bg flex items-center justify-center text-[10px] font-bold"
+                title="Auto-completed via GitHub commit"
+              >
+                ✓
+              </span>
+            ) : task.status === 'IN_PROGRESS' ? (
+              <span
+                className="w-4 h-4 rounded-full border-2 border-eink-text border-t-transparent animate-spin inline-block"
+                title="In Progress • Waiting for Git commit"
+              />
             ) : (
-              <Square className="w-4 h-4 text-eink-textMuted hover:text-eink-text" />
+              <span
+                className="w-4 h-4 rounded-full border border-eink-border bg-eink-bg inline-block"
+                title="TODO • Auto-completes upon Git push"
+              />
             )}
-          </button>
+          </div>
 
           <div className="space-y-1 min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">

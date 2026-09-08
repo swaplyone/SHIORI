@@ -627,35 +627,35 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
               {/* Specs Sidebar */}
               <div className="space-y-3 p-3.5 bg-eink-surface border border-eink-border rounded-sm text-xs font-technical">
                 <div>
-                  <span className="text-[10px] text-eink-textMuted uppercase block">STATUS</span>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <select
-                      value={task.status}
-                      onChange={(e) => handleUpdateStatus(e.target.value)}
-                      className="w-full px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none"
-                    >
-                      <option value="BACKLOG">· BACKLOG</option>
-                      <option value="TODO">○ TODO</option>
-                      <option value="IN_PROGRESS">◐ IN PROGRESS</option>
-                      <option value="REVIEW">→ REVIEW</option>
-                      <option value="DONE">✓ DONE</option>
-                    </select>
+                  <span className="text-[10px] text-eink-textMuted uppercase block font-bold">STATUS</span>
+                  <div className="mt-1 p-2 bg-eink-bg border border-eink-border rounded-sm text-xs font-technical flex items-center justify-between">
+                    <span className="font-bold flex items-center gap-1.5 text-eink-text">
+                      {task.status === 'DONE' || task.user_status === 'COMPLETED' ? (
+                        <>
+                          <span className="w-3.5 h-3.5 rounded-full bg-eink-text text-eink-bg flex items-center justify-center text-[9px] font-bold">✓</span>
+                          <span>COMPLETED</span>
+                        </>
+                      ) : task.status === 'IN_PROGRESS' ? (
+                        <>
+                          <span className="w-3.5 h-3.5 rounded-full border-2 border-eink-text border-t-transparent animate-spin inline-block" />
+                          <span>IN PROGRESS</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="w-3.5 h-3.5 rounded-full border border-eink-border inline-block" />
+                          <span>TODO</span>
+                        </>
+                      )}
+                    </span>
+                    {Boolean(task.auto_completed) && (
+                      <span className="text-[9px] bg-eink-surface px-1.5 py-0.2 border border-eink-border rounded font-mono font-bold">
+                        AUTO-VERIFIED
+                      </span>
+                    )}
                   </div>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-eink-textMuted uppercase block">USER REPORTED</span>
-                  <button
-                    onClick={handleToggleUserStatus}
-                    className={`mt-1 w-full py-1 px-2 border rounded text-xs font-technical flex items-center justify-between ${
-                      task.user_status === 'COMPLETED'
-                        ? 'bg-eink-text text-eink-bg border-eink-text'
-                        : 'bg-eink-bg text-eink-text border-eink-border'
-                    }`}
-                  >
-                    <span>{task.user_status === 'COMPLETED' ? '✓ Completed' : '○ In Progress'}</span>
-                    <span className="text-[9px] underline">TOGGLE</span>
-                  </button>
+                  <p className="text-[10px] text-eink-textMuted pt-1 leading-tight font-sans">
+                    Auto-completes when a Git commit references <strong className="text-eink-text font-mono">{task.task_code}</strong>.
+                  </p>
                 </div>
 
                 <div>

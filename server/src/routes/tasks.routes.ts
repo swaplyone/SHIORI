@@ -262,10 +262,13 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   if (!finalWorkspaceId) finalWorkspaceId = project.workspace_id;
   if (!finalGithubRepo) finalGithubRepo = project.github_repo_name || project.name;
 
-  // Get next task number (starts from 1, format SHR-0001, SHR-0042)
-  const maxRow = await queryOne('SELECT COALESCE(MAX(task_number), 0) as max_num FROM tasks');
+  // Get next task number scoped to this project (starts from 1: TASK-01, TASK-02, etc.)
+  const maxRow = await queryOne(
+    'SELECT COALESCE(MAX(task_number), 0) as max_num FROM tasks WHERE project_id = ? OR (github_repo = ? AND github_repo IS NOT NULL)',
+    [finalProjectId, finalGithubRepo]
+  );
   const nextNum = Number(maxRow?.max_num || 0) + 1;
-  const taskCode = `SHR-${String(nextNum).padStart(4, '0')}`;
+  const taskCode = `TASK-${String(nextNum).padStart(2, '0')}`;
   const taskId = uuidv4();
 
   const rawAssignee = req.body.assigneeId || req.body.assignee_id || req.body.assignee;

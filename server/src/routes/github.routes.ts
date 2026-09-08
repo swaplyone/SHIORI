@@ -614,7 +614,7 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
             SELECT t.id, t.task_code, t.title, t.status, t.created_at, t.dev_evidence_commits_count 
             FROM tasks t
             LEFT JOIN projects p ON t.project_id = p.id
-            WHERE (p.github_repo_name = ? OR t.github_repo = ? OR p.name = ? OR p.name ILIKE ?)
+            WHERE (LOWER(p.github_repo_name) = LOWER(?) OR LOWER(t.github_repo) = LOWER(?) OR LOWER(p.name) = LOWER(?) OR LOWER(p.name) LIKE LOWER(?))
           `, [repoName, repoName, repoName, `%${repoName}%`]);
 
           for (const task of matchingTasks) {
@@ -722,6 +722,23 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
     return [];
   }
 }
+
+// POST On-Demand Trigger GitHub Live Sync for a repository
+githubRouter.post('/sync', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { repo } = req.body;
+  if (!repo) {
+    res.status(400).json({ error: 'Repository name is required.' });
+    return;
+  }
+
+  const liveCommits = await syncRepoLiveFromGitHub(req.user!.id, repo);
+  res.json({
+    success: true,
+    repo,
+    syncedCommitsCount: liveCommits.length,
+    commits: liveCommits
+  });
+});
 
 // GET Repository Git History (Live from GitHub)
 githubRouter.get('/history', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {

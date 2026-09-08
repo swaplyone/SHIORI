@@ -69,6 +69,26 @@ export const ProjectDetailPage: React.FC = () => {
 
   // Commits & Git history state
   const [commits, setCommits] = useState<any[]>([]);
+  const [syncingGit, setSyncingGit] = useState(false);
+
+  const handleSyncGitCommits = async () => {
+    if (!project?.github_repo_name || !token) return;
+    setSyncingGit(true);
+    try {
+      const { ok } = await fetchJson('/api/github/sync', {
+        method: 'POST',
+        body: JSON.stringify({ repo: project.github_repo_name })
+      });
+      if (ok) {
+        triggerEInkRefresh();
+        await fetchProjectData(true);
+      }
+    } catch (err) {
+      console.error('Failed to sync git commits:', err);
+    } finally {
+      setSyncingGit(false);
+    }
+  };
 
   const fetchProjectData = async (silent = false) => {
     if (!projectId || !token) return;
@@ -557,17 +577,26 @@ export const ProjectDetailPage: React.FC = () => {
                     }`}
                   >
                     <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleTaskStatus(task, e)}
-                        className="mt-0.5 sm:mt-0 p-1 text-eink-text hover:text-eink-textSecondary shrink-0 cursor-pointer"
-                      >
+                      <div className="mt-0.5 sm:mt-0 p-1 shrink-0 flex items-center justify-center">
                         {isDone ? (
-                          <CheckSquare className="w-4 h-4 text-eink-text" />
+                          <span
+                            className="w-4 h-4 rounded-full bg-eink-text text-eink-bg flex items-center justify-center text-[10px] font-bold"
+                            title="Auto-completed via GitHub commit"
+                          >
+                            ✓
+                          </span>
+                        ) : task.status === 'IN_PROGRESS' ? (
+                          <span
+                            className="w-4 h-4 rounded-full border-2 border-eink-text border-t-transparent animate-spin inline-block"
+                            title="In Progress • Waiting for Git commit"
+                          />
                         ) : (
-                          <Square className="w-4 h-4 text-eink-textMuted" />
+                          <span
+                            className="w-4 h-4 rounded-full border border-eink-border bg-eink-bg inline-block"
+                            title="TODO • Auto-completes upon Git push"
+                          />
                         )}
-                      </button>
+                      </div>
 
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -655,17 +684,26 @@ export const ProjectDetailPage: React.FC = () => {
                 Inspect commit diffs or restore previous versions safely without destroying current code.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleSyncGitCommits}
+                disabled={syncingGit}
+                className="px-3.5 py-1.5 bg-eink-bg border border-eink-border hover:bg-eink-surface text-eink-text font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm cursor-pointer disabled:opacity-50"
+                title="Fetch latest commits and branches from GitHub"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${syncingGit ? 'animate-spin' : ''}`} />
+                <span>{syncingGit ? 'SYNCING...' : 'SYNC GIT COMMITS'}</span>
+              </button>
               <button
                 onClick={() => setIsHistoryOpen(true)}
-                className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90"
+                className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 cursor-pointer"
               >
                 <GitCommit className="w-3.5 h-3.5" />
                 <span>FULL COMMITS ({commits.length})</span>
               </button>
               <button
                 onClick={() => setIsRecoveryOpen(true)}
-                className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded flex items-center gap-1.5 shadow-eink-sm hover:opacity-90"
+                className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>RECOVER CODE</span>

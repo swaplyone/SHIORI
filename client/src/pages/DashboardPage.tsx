@@ -104,11 +104,13 @@ export const DashboardPage: React.FC = () => {
 
     setSubmitting(true);
     try {
+      const selectedRepo = availableRepos.find((r) => r.name === selectedRepoName || r.fullName === selectedRepoName);
       const { ok } = await fetchJson('/api/projects', {
         method: 'POST',
         body: JSON.stringify({
-          repositoryName: selectedRepoName,
-          defaultBranch: 'main'
+          repositoryName: selectedRepo?.name || selectedRepoName,
+          repositoryFullName: selectedRepo?.fullName || selectedRepoName,
+          defaultBranch: selectedRepo?.defaultBranch || 'main'
         })
       });
 
