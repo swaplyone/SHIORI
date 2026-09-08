@@ -527,6 +527,33 @@ async function initPgSchema(pool: pg.Pool) {
     }
 
     console.log('[DATABASE] ✓ Supabase PostgreSQL schema initialized successfully.');
+
+    // Renumber existing project tasks to be cleanly sequential per project (TASK-01, TASK-02...)
+    try {
+      const projectsRes = await queryAll('SELECT id, github_repo_name, name FROM projects');
+      for (const proj of (projectsRes || [])) {
+        const projTasks = await queryAll(
+          'SELECT id, task_number, task_code FROM tasks WHERE project_id = ? OR (github_repo = ? AND github_repo IS NOT NULL) ORDER BY created_at ASC',
+          [proj.id, proj.github_repo_name || proj.name]
+        );
+        if (projTasks && projTasks.length > 0) {
+          for (let i = 0; i < projTasks.length; i++) {
+            const desiredNum = i + 1;
+            const desiredCode = `TASK-${String(desiredNum).padStart(2, '0')}`;
+            const t = projTasks[i];
+            if (t.task_number !== desiredNum || t.task_code !== desiredCode) {
+              await runQuery(
+                'UPDATE tasks SET task_number = ?, task_code = ? WHERE id = ?',
+                [desiredNum, desiredCode, t.id]
+              );
+            }
+          }
+        }
+      }
+      console.log('[DATABASE] ✓ All existing project tasks normalized to sequential numbering (TASK-01, TASK-02...).');
+    } catch (normErr: any) {
+      console.warn('[DATABASE] Task sequence normalization notice:', normErr?.message || normErr);
+    }
   } catch (err: any) {
     console.warn('[DATABASE SCHEMA NOTICE]', err.message);
   }
