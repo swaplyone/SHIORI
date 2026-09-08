@@ -5,12 +5,14 @@ import {
   GitCommit,
   FileCode,
   Check,
+  Copy,
   ArrowRight,
   ShieldCheck,
   Eye,
   Columns,
   History,
-  FileText
+  FileText,
+  Loader2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -36,7 +38,7 @@ export const CodeRecoveryModal: React.FC<CodeRecoveryModalProps> = ({
   isOpen,
   onClose,
   defaultRepo = 'SHIORI',
-  defaultFilePath = 'client/src/App.tsx',
+  defaultFilePath = '',
   taskId
 }) => {
   const { token } = useAuth();
@@ -49,6 +51,15 @@ export const CodeRecoveryModal: React.FC<CodeRecoveryModalProps> = ({
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Sync repo when modal opens with new defaultRepo
+  useEffect(() => {
+    if (isOpen) {
+      setRepo(defaultRepo || 'SHIORI');
+      if (defaultFilePath) setFilePath(defaultFilePath);
+    }
+  }, [isOpen, defaultRepo, defaultFilePath]);
 
   // Load available files
   useEffect(() => {
@@ -58,7 +69,15 @@ export const CodeRecoveryModal: React.FC<CodeRecoveryModalProps> = ({
     })
       .then((res) => res.json())
       .then((data) => {
-        setAvailableFiles(data.files || []);
+        const files = data.files || [];
+        setAvailableFiles(files);
+        if (files.length > 0) {
+          // If current filePath is not among files, default to first file
+          const exists = files.some((f: any) => f.path === filePath);
+          if (!filePath || !exists) {
+            setFilePath(files[0].path);
+          }
+        }
       })
       .catch((err) => console.error(err));
   }, [isOpen, repo, token]);
@@ -75,13 +94,22 @@ export const CodeRecoveryModal: React.FC<CodeRecoveryModalProps> = ({
         const list: FileVersion[] = data.versions || [];
         setVersions(list);
         if (list.length > 0) {
-          setSelectedVersion(list[1] || list[0]); // Default to first previous commit
+          setSelectedVersion(list[1] || list[0]); // Default to first historical commit if exists
+        } else {
+          setSelectedVersion(null);
         }
         setRestoreSuccess(null);
       })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
   }, [isOpen, repo, filePath, token]);
+
+  const handleCopyCode = () => {
+    if (!selectedVersion?.content) return;
+    navigator.clipboard.writeText(selectedVersion.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   if (!isOpen) return null;
 
@@ -223,7 +251,14 @@ export const CodeRecoveryModal: React.FC<CodeRecoveryModalProps> = ({
 
           {/* Right Column: Code Viewer / Diff */}
           <div className="flex-1 flex flex-col bg-eink-bg p-4 overflow-y-auto">
-            {selectedVersion && (
+            {loading ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3">
+                <Loader2 className="w-6 h-6 animate-spin text-eink-text" />
+                <span className="text-xs font-mono font-bold text-eink-textSecondary">
+                  Fetching commit history & live file versions from GitHub...
+                </span>
+              </div>
+            ) : selectedVersion ? (
               <div className="space-y-4 flex-1 flex flex-col">
                 {/* Active version metadata header */}
                 <div className="p-3 bg-eink-surface border border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
@@ -234,16 +269,30 @@ export const CodeRecoveryModal: React.FC<CodeRecoveryModalProps> = ({
                     <p className="text-[11px] text-eink-textSecondary">{selectedVersion.message}</p>
                   </div>
 
-                  {!selectedVersion.isCurrent && (
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={handleRestore}
-                      disabled={isRestoring}
-                      className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99] disabled:opacity-50 shrink-0"
+                      onClick={handleCopyCode}
+                      className={`px-3 py-1.5 border rounded-sm flex items-center gap-1.5 text-xs font-bold transition-all ${
+                        copied
+                          ? 'bg-eink-text text-eink-bg border-eink-text'
+                          : 'bg-eink-surface border-eink-border hover:bg-eink-surfaceHover text-eink-text'
+                      }`}
                     >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>{isRestoring ? 'PREPARING...' : 'SAFE RESTORE'}</span>
+                      {copied ? <Check className="w-3.5 h-3.5 text-eink-bg" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copied ? 'COPIED ✓' : 'COPY CODE'}</span>
                     </button>
-                  )}
+
+                    {!selectedVersion.isCurrent && (
+                      <button
+                        onClick={handleRestore}
+                        disabled={isRestoring}
+                        className="px-4 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>{isRestoring ? 'PREPARING...' : 'SAFE RESTORE'}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Safe Restore Alert / Confirmation */}
@@ -263,7 +312,7 @@ export const CodeRecoveryModal: React.FC<CodeRecoveryModalProps> = ({
                 {/* Code Content Display */}
                 <div className="flex-1 border border-eink-border rounded-sm bg-eink-surface/30 p-3 font-mono text-xs overflow-x-auto">
                   {viewMode === 'view' ? (
-                    <pre className="text-eink-text whitespace-pre leading-relaxed">
+                    <pre className="text-eink-text whitespace-pre leading-relaxed font-mono">
                       {selectedVersion.content}
                     </pre>
                   ) : (
@@ -271,12 +320,18 @@ export const CodeRecoveryModal: React.FC<CodeRecoveryModalProps> = ({
                       <div className="text-[10px] text-eink-textMuted uppercase font-bold border-b border-eink-border pb-1">
                         COMPARING: CURRENT vs {selectedVersion.commitSha}
                       </div>
-                      <pre className="text-eink-text whitespace-pre leading-relaxed">
+                      <pre className="text-eink-text whitespace-pre leading-relaxed font-mono">
                         {selectedVersion.content}
                       </pre>
                     </div>
                   )}
                 </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-2 text-eink-textSecondary">
+                <FileCode className="w-8 h-8 opacity-40 mb-1" />
+                <span className="font-bold text-sm text-eink-text">No Versions Found</span>
+                <span className="text-xs max-w-sm">Select another file or ensure the repository has commits on this path.</span>
               </div>
             )}
           </div>
