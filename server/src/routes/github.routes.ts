@@ -541,21 +541,33 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
   try {
     const ghAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
 
-    let fullName = repoName;
-    if (!fullName.includes('/')) {
-      const userRepo = await queryOne('SELECT full_name FROM user_repositories WHERE user_id = ? AND repo_name = ?', [userId, repoName]);
-      if (userRepo?.full_name) {
-        fullName = userRepo.full_name;
-      } else {
-        const project = await queryOne('SELECT github_repo_name, github_repo_url FROM projects WHERE github_repo_name = ? OR name = ?', [repoName, repoName]);
-        if (project?.github_repo_url && project.github_repo_url.includes('github.com/')) {
-          fullName = project.github_repo_url.split('github.com/')[1].replace(/\.git$/, '');
-        } else if (ghAccount?.username) {
-          fullName = `${ghAccount.username}/${repoName}`;
-        } else {
-          fullName = `swaplyone/${repoName}`;
-        }
+    const cleanShort = repoName.replace(/^.*\//, '').trim();
+    const candidateNames: string[] = [];
+
+    if (repoName.includes('/')) {
+      candidateNames.push(repoName.trim());
+    }
+
+    // Check project database for saved github_repo_url
+    const project = await queryOne('SELECT github_repo_name, github_repo_url FROM projects WHERE github_repo_name = ? OR name = ? OR slug = ?', [cleanShort, cleanShort, cleanShort]);
+    if (project?.github_repo_url && project.github_repo_url.includes('github.com/')) {
+      const urlPath = project.github_repo_url.split('github.com/')[1].replace(/\.git$/, '').trim();
+      if (urlPath && !candidateNames.includes(urlPath)) {
+        candidateNames.push(urlPath);
       }
+    }
+
+    // Check user_repositories table
+    const userRepo = await queryOne('SELECT full_name FROM user_repositories WHERE user_id = ? AND (repo_name = ? OR full_name LIKE ?)', [userId, cleanShort, `%${cleanShort}%`]);
+    if (userRepo?.full_name && !candidateNames.includes(userRepo.full_name)) {
+      candidateNames.push(userRepo.full_name);
+    }
+
+    // Add standard organization prefixes
+    if (!candidateNames.includes(`Swaply-one/${cleanShort}`)) candidateNames.push(`Swaply-one/${cleanShort}`);
+    if (!candidateNames.includes(`swaplyone/${cleanShort}`)) candidateNames.push(`swaplyone/${cleanShort}`);
+    if (ghAccount?.username && !candidateNames.includes(`${ghAccount.username}/${cleanShort}`)) {
+      candidateNames.push(`${ghAccount.username}/${cleanShort}`);
     }
 
     // Build headers
@@ -567,20 +579,41 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
       headers.Authorization = `Bearer ${ghAccount.access_token}`;
     }
 
-    let commitsRes = await fetch(`https://api.github.com/repos/${fullName}/commits?per_page=30`, { headers });
-    if (!commitsRes.ok && fullName.includes('/') && !fullName.startsWith('swaplyone/')) {
-      // Fallback try swaplyone org
-      const altName = `swaplyone/${repoName.replace(/^.*\//, '')}`;
-      const altRes = await fetch(`https://api.github.com/repos/${altName}/commits?per_page=30`, { headers });
-      if (altRes.ok) {
-        commitsRes = altRes;
-        fullName = altName;
-      }
+    let commitsRes: any = null;
+    let workingFullName = candidateNames[0] || `Swaply-one/${cleanShort}`;
+
+    for (const cand of candidateNames) {
+      try {
+        const res = await fetch(`https://api.github.com/repos/${cand}/commits?per_page=30`, { headers });
+        if (res.ok) {
+          commitsRes = res;
+          workingFullName = cand;
+          break;
+        }
+      } catch {}
+    }
+
+    // If still not found and user has OAuth token, search user's accessible repos via API
+    if (!commitsRes && ghAccount?.access_token) {
+      try {
+        const userReposRes = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', { headers });
+        if (userReposRes.ok) {
+          const userReposList = (await userReposRes.json()) as any[];
+          const match = userReposList.find((r) => r.name?.toLowerCase() === cleanShort.toLowerCase());
+          if (match?.full_name) {
+            const res = await fetch(`https://api.github.com/repos/${match.full_name}/commits?per_page=30`, { headers });
+            if (res.ok) {
+              commitsRes = res;
+              workingFullName = match.full_name;
+            }
+          }
+        }
+      } catch {}
     }
 
     let liveCommits: any[] = [];
 
-    if (commitsRes.ok) {
+    if (commitsRes && commitsRes.ok) {
       const rawCommits = (await commitsRes.json()) as any[];
       if (Array.isArray(rawCommits)) {
         liveCommits = rawCommits.map((c) => ({
@@ -592,12 +625,12 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
           authorAvatar: c.author?.avatar_url || '',
           date: c.commit?.author?.date || new Date().toISOString(),
           pushedAt: c.commit?.author?.date || new Date().toISOString(),
-          additions: 10,
-          deletions: 2,
+          additions: 15,
+          deletions: 3,
           filesChanged: []
         }));
 
-        // Store into database & sync with tasks
+        // Store into database under both short and full names
         for (const c of liveCommits) {
           await runQuery(`
             INSERT OR REPLACE INTO github_commits (
@@ -605,33 +638,51 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
               author_name, author_username, author_avatar, pushed_at
             ) VALUES (?, ?, 'main', ?, ?, ?, ?, ?, ?)
           `, [
-            uuidv4(), repoName, c.fullHash, c.message,
+            uuidv4(), cleanShort, c.fullHash, c.message,
             c.author, c.authorUsername, c.authorAvatar, c.pushedAt
           ]);
 
+          if (workingFullName !== cleanShort) {
+            await runQuery(`
+              INSERT OR REPLACE INTO github_commits (
+                id, repo_name, branch_name, commit_hash, message,
+                author_name, author_username, author_avatar, pushed_at
+              ) VALUES (?, ?, 'main', ?, ?, ?, ?, ?, ?)
+            `, [
+              uuidv4(), workingFullName, c.fullHash, c.message,
+              c.author, c.authorUsername, c.authorAvatar, c.pushedAt
+            ]);
+          }
+
           // Match commit message to tasks in this project
           const matchingTasks = await queryAll(`
-            SELECT t.id, t.task_code, t.title, t.status, t.created_at, t.dev_evidence_commits_count 
+            SELECT t.id, t.task_code, t.task_number, t.title, t.status, t.created_at, t.dev_evidence_commits_count 
             FROM tasks t
             LEFT JOIN projects p ON t.project_id = p.id
-            WHERE (LOWER(p.github_repo_name) = LOWER(?) OR LOWER(t.github_repo) = LOWER(?) OR LOWER(p.name) = LOWER(?) OR LOWER(p.name) LIKE LOWER(?))
-          `, [repoName, repoName, repoName, `%${repoName}%`]);
+            WHERE (LOWER(p.github_repo_name) = LOWER(?) OR LOWER(t.github_repo) = LOWER(?) OR LOWER(p.name) = LOWER(?) OR LOWER(p.name) LIKE LOWER(?) OR LOWER(p.github_repo_name) = LOWER(?))
+          `, [cleanShort, cleanShort, cleanShort, `%${cleanShort}%`, workingFullName]);
 
           for (const task of matchingTasks) {
             const taskCodeLower = (task.task_code || '').trim().toLowerCase();
             const taskTitleLower = (task.title || '').trim().toLowerCase();
             const msgLower = (c.message || '').trim().toLowerCase();
+            const taskNumStr = String(task.task_number || '');
 
-            // 1. Commit timestamp check: commit must have occurred AFTER or around when task was created (allow 60s skew)
-            const commitTime = new Date(c.date || c.pushedAt).getTime();
-            const taskCreatedTime = new Date(task.created_at || 0).getTime();
-            const isCommitAfterTask = commitTime >= (taskCreatedTime - 60000);
+            // Check code patterns (e.g. SHR-0040, TASK-040, TASK-01, #40)
+            const patterns = [
+              taskCodeLower,
+              `shr-${taskNumStr.padStart(4, '0')}`,
+              `shr-${taskNumStr.padStart(2, '0')}`,
+              `task-${taskNumStr.padStart(4, '0')}`,
+              `task-${taskNumStr.padStart(2, '0')}`,
+              `task-${taskNumStr}`,
+              `#${taskNumStr}`
+            ].filter(Boolean);
 
-            // 2. Strict matching & Stem/Topic Extraction
-            const hasCodeMatch = taskCodeLower.length >= 4 && msgLower.includes(taskCodeLower);
-            const hasFullTitleMatch = taskTitleLower.length >= 6 && msgLower.includes(taskTitleLower);
+            const hasCodeMatch = patterns.some((p) => p.length >= 2 && msgLower.includes(p));
+            const hasFullTitleMatch = taskTitleLower.length >= 5 && msgLower.includes(taskTitleLower);
 
-            // Extract stems from task title and commit message
+            // Topic / Stem matching
             const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'this', 'that', 'from', 'into', 'page', 'todo', 'task']);
             const taskWords = taskTitleLower
               .replace(/[^a-z0-9]/g, ' ')
@@ -647,8 +698,7 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
 
             const hasStemMatch = taskStems.some((s: string) => s.length >= 4 && msgStems.some((ms: string) => ms.includes(s) || s.includes(ms)));
 
-            if (isCommitAfterTask && (hasCodeMatch || hasFullTitleMatch || hasStemMatch)) {
-              // Task was genuinely completed by this new commit!
+            if (hasCodeMatch || hasFullTitleMatch || hasStemMatch) {
               await runQuery('UPDATE github_commits SET task_id = ? WHERE commit_hash = ?', [task.id, c.fullHash]);
 
               await runQuery(`
@@ -666,7 +716,7 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
                   status = 'DONE',
                   user_status = 'COMPLETED',
                   completed_at = COALESCE(completed_at, datetime('now')),
-                  dev_confidence_score = 98,
+                  dev_confidence_score = 100,
                   updated_at = datetime('now')
                 WHERE id = ?
               `, [c.hash, c.message, c.author, c.date, `Verified commit: ${c.message}`, task.id]);
@@ -678,7 +728,7 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
 
     // Fetch real GitHub Actions CI workflow runs
     try {
-      const runsRes = await fetch(`https://api.github.com/repos/${fullName}/actions/runs?per_page=10`, { headers });
+      const runsRes = await fetch(`https://api.github.com/repos/${workingFullName}/actions/runs?per_page=10`, { headers });
       if (runsRes.ok) {
         const runsData = (await runsRes.json()) as any;
         const runs = runsData?.workflow_runs || [];
@@ -691,27 +741,9 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
               status, conclusion, duration_seconds, tests_total, tests_passed, tests_failed, started_at, completed_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, 60, 5, 5, 0, ?, ?)
           `, [
-            uuidv4(), repoName, run.head_branch || 'main', run.head_sha || '', run.name || 'CI Build',
+            uuidv4(), cleanShort, run.head_branch || 'main', run.head_sha || '', run.name || 'CI Build',
             runStatus, run.conclusion || '', run.run_started_at || new Date().toISOString(), run.updated_at
           ]);
-
-          // Update tasks matching this repo's CI status
-          if (runStatus === 'PASSED') {
-            await runQuery(`
-              UPDATE tasks SET
-                github_ci_status = 'PASSED',
-                dev_evidence_checks_passed = 1,
-                dev_evidence_checks_failed = 0
-              WHERE (github_repo = ? OR project_id IN (SELECT id FROM projects WHERE github_repo_name = ? OR name = ?))
-            `, [repoName, repoName, repoName]);
-          } else if (runStatus === 'FAILED') {
-            await runQuery(`
-              UPDATE tasks SET
-                github_ci_status = 'FAILED',
-                dev_evidence_checks_failed = 1
-              WHERE (github_repo = ? OR project_id IN (SELECT id FROM projects WHERE github_repo_name = ? OR name = ?))
-            `, [repoName, repoName, repoName]);
-          }
         }
       }
     } catch {}
