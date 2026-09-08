@@ -788,7 +788,37 @@ tasksRouter.post('/:id/restore', authMiddleware, async (req: AuthRequest, res: R
   res.json({ task: updated, message: 'Task restored' });
 });
 
-// DELETE Task (Soft delete with undo support)
+// Helper to dynamically re-sequence active project tasks so there are no numbering gaps
+export async function resequenceProjectTasks(projectId: string | null, githubRepo: string | null): Promise<void> {
+  if (!projectId && !githubRepo) return;
+  try {
+    const tasks = await queryAll(
+      `SELECT id, task_number, task_code FROM tasks 
+       WHERE (project_id = ? OR (github_repo = ? AND github_repo IS NOT NULL))
+         AND (is_deleted = 0 OR is_deleted IS NULL)
+       ORDER BY created_at ASC`,
+      [projectId, githubRepo]
+    );
+
+    if (tasks && tasks.length > 0) {
+      for (let i = 0; i < tasks.length; i++) {
+        const desiredNum = i + 1;
+        const desiredCode = `TASK-${String(desiredNum).padStart(2, '0')}`;
+        const t = tasks[i];
+        if (t.task_number !== desiredNum || t.task_code !== desiredCode) {
+          await runQuery(
+            'UPDATE tasks SET task_number = ?, task_code = ?, updated_at = datetime(\'now\') WHERE id = ?',
+            [desiredNum, desiredCode, t.id]
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[RESEQUENCE TASKS ERROR]', err);
+  }
+}
+
+// DELETE Task (Soft delete with undo support & automatic task re-sequencing)
 tasksRouter.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
@@ -801,6 +831,9 @@ tasksRouter.delete('/:id', authMiddleware, async (req: AuthRequest, res: Respons
     UPDATE tasks SET is_deleted = 1, deleted_at = datetime('now'), updated_at = datetime('now')
     WHERE id = ?
   `, [id]);
+
+  // Re-sequence remaining tasks in the project so there are no numbering gaps
+  await resequenceProjectTasks(current.project_id, current.github_repo);
 
   emitToWorkspace(current.workspace_id, 'task:deleted', { taskId: id });
   res.json({ success: true, message: 'Task deleted', taskId: id });
@@ -819,6 +852,9 @@ tasksRouter.post('/:id/undo-delete', authMiddleware, async (req: AuthRequest, re
     UPDATE tasks SET is_deleted = 0, deleted_at = NULL, updated_at = datetime('now')
     WHERE id = ?
   `, [id]);
+
+  // Re-sequence project tasks to include the restored task
+  await resequenceProjectTasks(current.project_id, current.github_repo);
 
   const restored = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
   emitToWorkspace(current.workspace_id, 'task:created', { task: restored });
