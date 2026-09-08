@@ -673,10 +673,9 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
   ) {
     try {
       const nextDue = getNextRecurrenceDate(effectiveRecurrence, current.due_at || current.due_date);
-      const maxRow = await queryOne('SELECT MAX(task_number) as max_num FROM tasks');
-      const countRow = await queryOne('SELECT COUNT(*) as total FROM tasks');
-      const nextNum = Math.max(Number(maxRow?.max_num || 0), Number(countRow?.total || 0)) + 1;
-      const nextTaskCode = `SHR-${String(nextNum).padStart(4, '0')}`;
+      const maxRow = await queryOne('SELECT MAX(task_number) as max_num FROM tasks WHERE project_id = ?', [current.project_id]);
+      const nextNum = Number(maxRow?.max_num || 0) + 1;
+      const nextTaskCode = `TASK-${String(nextNum).padStart(2, '0')}`;
       const nextTaskId = uuidv4();
 
       await runQuery(`
