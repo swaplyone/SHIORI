@@ -52,7 +52,7 @@ export const GitHistoryModal: React.FC<GitHistoryModalProps> = ({
   // Load commit detail & diff
   useEffect(() => {
     if (!selectedCommit || !token) return;
-    fetch(`/api/github/commit/${selectedCommit.hash}`, {
+    fetch(`/api/github/commit/${selectedCommit.hash}?repo=${encodeURIComponent(repoName)}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then((res) => res.json())
@@ -60,7 +60,7 @@ export const GitHistoryModal: React.FC<GitHistoryModalProps> = ({
         setCommitDetail(data.commit || null);
       })
       .catch((err) => console.error(err));
-  }, [selectedCommit, token]);
+  }, [selectedCommit, repoName, token]);
 
   if (!isOpen) return null;
 
@@ -157,15 +157,45 @@ export const GitHistoryModal: React.FC<GitHistoryModalProps> = ({
                   {commitDetail?.files?.map((f: any) => (
                     <div key={f.filename} className="border border-eink-border rounded-sm overflow-hidden text-xs font-mono">
                       <div className="bg-eink-surface p-2 border-b border-eink-border flex items-center justify-between">
-                        <span className="font-bold text-eink-text">{f.filename}</span>
+                        <span className="font-bold text-eink-text flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-eink-textMuted" />
+                          <span>{f.filename}</span>
+                        </span>
                         <div className="flex items-center gap-2 text-[10px]">
-                          <span className="font-bold text-eink-text">+{f.additions}</span>
-                          <span className="text-eink-textMuted">-{f.deletions}</span>
+                          <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">+{f.additions}</span>
+                          <span className="font-bold text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">-{f.deletions}</span>
                         </div>
                       </div>
-                      <pre className="p-3 bg-eink-bg text-eink-text whitespace-pre overflow-x-auto text-[11px] leading-relaxed">
-                        {f.diff}
-                      </pre>
+                      <div className="p-2 bg-eink-bg text-eink-text overflow-x-auto text-[11px] leading-relaxed font-mono divide-y divide-eink-border/20">
+                        {f.diff ? (
+                          f.diff.split('\n').map((line: string, lIdx: number) => {
+                            const isAdd = line.startsWith('+') && !line.startsWith('+++');
+                            const isDel = line.startsWith('-') && !line.startsWith('---');
+                            const isChunk = line.startsWith('@@');
+
+                            return (
+                              <div
+                                key={lIdx}
+                                className={`px-2 py-0.5 whitespace-pre font-mono ${
+                                  isAdd
+                                    ? 'bg-emerald-500/10 text-emerald-900 dark:text-emerald-300 font-medium'
+                                    : isDel
+                                    ? 'bg-rose-500/10 text-rose-900 dark:text-rose-300 opacity-80'
+                                    : isChunk
+                                    ? 'bg-eink-surface text-eink-textMuted font-bold text-[10px]'
+                                    : 'text-eink-text'
+                                }`}
+                              >
+                                {line}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="p-3 text-eink-textMuted italic text-center">
+                            No code diff recorded for this file
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -838,22 +838,37 @@ githubRouter.get('/commit/:hash', authMiddleware, async (req: AuthRequest, res: 
   try {
     const ghAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [req.user!.id]);
 
-    let fullName = repo;
-    if (!fullName.includes('/')) {
-      const userRepo = await queryOne('SELECT full_name FROM user_repositories WHERE user_id = ? AND repo_name = ?', [req.user!.id, repo]);
-      if (userRepo?.full_name) {
-        fullName = userRepo.full_name;
-      } else {
-        const project = await queryOne('SELECT github_repo_name, github_repo_url FROM projects WHERE github_repo_name = ? OR name = ?', [repo, repo]);
-        if (project?.github_repo_url && project.github_repo_url.includes('github.com/')) {
-          fullName = project.github_repo_url.split('github.com/')[1].replace(/\.git$/, '');
-        } else if (ghAccount?.username) {
-          fullName = `${ghAccount.username}/${repo}`;
-        } else {
-          fullName = `swaplyone/${repo}`;
-        }
-      }
+    const cleanRepo = repo.replace(/^.*\//, '');
+    const candidateNames = new Set<string>();
+
+    if (repo.includes('/')) {
+      candidateNames.add(repo);
     }
+
+    const userRepo = await queryOne('SELECT full_name FROM user_repositories WHERE user_id = ? AND (repo_name = ? OR full_name LIKE ?)', [req.user!.id, repo, `%${cleanRepo}`]);
+    if (userRepo?.full_name) {
+      candidateNames.add(userRepo.full_name);
+    }
+
+    const project = await queryOne('SELECT github_repo_name, github_repo_url FROM projects WHERE github_repo_name = ? OR name = ?', [repo, repo]);
+    if (project?.github_repo_url && project.github_repo_url.includes('github.com/')) {
+      candidateNames.add(project.github_repo_url.split('github.com/')[1].replace(/\.git$/, ''));
+    }
+
+    const dbCommitCandidate = await queryOne('SELECT repo_name FROM github_commits WHERE commit_hash LIKE ? OR commit_hash = ? LIMIT 1', [`%${hash}%`, hash]);
+    if (dbCommitCandidate?.repo_name) {
+      candidateNames.add(dbCommitCandidate.repo_name);
+      const dbClean = dbCommitCandidate.repo_name.replace(/^.*\//, '');
+      candidateNames.add(`Swaply-one/${dbClean}`);
+      candidateNames.add(`swaplyone/${dbClean}`);
+    }
+
+    candidateNames.add(`Swaply-one/${cleanRepo}`);
+    candidateNames.add(`swaplyone/${cleanRepo}`);
+    if (ghAccount?.username) {
+      candidateNames.add(`${ghAccount.username}/${cleanRepo}`);
+    }
+    candidateNames.add(cleanRepo);
 
     const headers: Record<string, string> = {
       'User-Agent': 'SHIORI-App',
@@ -863,37 +878,45 @@ githubRouter.get('/commit/:hash', authMiddleware, async (req: AuthRequest, res: 
       headers.Authorization = `Bearer ${ghAccount.access_token}`;
     }
 
-    let commitRes = await fetch(`https://api.github.com/repos/${fullName}/commits/${hash}`, { headers });
-    if (!commitRes.ok && fullName.includes('/') && !fullName.startsWith('swaplyone/')) {
-      const altName = `swaplyone/${repo.replace(/^.*\//, '')}`;
-      const altRes = await fetch(`https://api.github.com/repos/${altName}/commits/${hash}`, { headers });
-      if (altRes.ok) {
-        commitRes = altRes;
-        fullName = altName;
+    let commitData: any = null;
+    for (const name of candidateNames) {
+      try {
+        let commitRes = await fetch(`https://api.github.com/repos/${name}/commits/${hash}`, { headers });
+        if (!commitRes.ok && headers.Authorization) {
+          commitRes = await fetch(`https://api.github.com/repos/${name}/commits/${hash}`, {
+            headers: { 'User-Agent': 'SHIORI-App', Accept: 'application/vnd.github.v3+json' }
+          });
+        }
+        if (commitRes.ok) {
+          commitData = await commitRes.json();
+          break;
+        }
+      } catch (err) {
+        // Continue trying next candidate
       }
     }
 
-    if (commitRes.ok) {
-      const data = (await commitRes.json()) as any;
-      const files = (data.files || []).map((f: any) => ({
+    if (commitData) {
+      const files = (commitData.files || []).map((f: any) => ({
         filename: f.filename,
         additions: f.additions || 0,
         deletions: f.deletions || 0,
+        status: f.status || 'modified',
         diff: f.patch || `Binary or unmodified file (${f.status})`
       }));
 
       res.json({
         commit: {
-          hash: data.sha?.substring(0, 7) || hash,
-          fullHash: data.sha || hash,
-          message: data.commit?.message || 'Commit details',
-          author: data.commit?.author?.name || data.author?.login || 'Developer',
-          date: data.commit?.author?.date || new Date().toISOString(),
+          hash: commitData.sha?.substring(0, 7) || hash,
+          fullHash: commitData.sha || hash,
+          message: commitData.commit?.message || 'Commit details',
+          author: commitData.commit?.author?.name || commitData.author?.login || 'Developer',
+          date: commitData.commit?.author?.date || new Date().toISOString(),
           branch: 'main',
           stats: {
             filesChanged: files.length,
-            additions: data.stats?.additions || files.reduce((a: number, b: any) => a + b.additions, 0),
-            deletions: data.stats?.deletions || files.reduce((a: number, b: any) => a + b.deletions, 0)
+            additions: commitData.stats?.additions || files.reduce((a: number, b: any) => a + b.additions, 0),
+            deletions: commitData.stats?.deletions || files.reduce((a: number, b: any) => a + b.deletions, 0)
           },
           files
         }
