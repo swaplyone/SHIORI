@@ -581,34 +581,88 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
     ? (current.completed_at || new Date().toISOString())
     : (isReopened ? null : current.completed_at);
 
-  await runQuery(`
-    UPDATE tasks SET
-      title = COALESCE(?, title),
-      description = COALESCE(?, description),
-      status = COALESCE(?, status),
-      priority = COALESCE(?, priority),
-      user_status = COALESCE(?, user_status),
-      assignee_id = COALESCE(?, assignee_id),
-      due_date = COALESCE(?, due_date),
-      due_at = COALESCE(?, due_at),
-      reminder_at = COALESCE(?, reminder_at),
-      recurrence_rule = COALESCE(?, recurrence_rule),
-      tags = COALESCE(?, tags),
-      github_repo = COALESCE(?, github_repo),
-      github_branch = COALESCE(?, github_branch),
-      github_pr_number = COALESCE(?, github_pr_number),
-      github_pr_state = COALESCE(?, github_pr_state),
-      github_ci_status = COALESCE(?, github_ci_status),
-      completed_at = ?,
-      updated_at = datetime('now')
-    WHERE id = ?
-  `, [
-    title, description, status, priority, userStatus, assigneeId, dueDate,
-    due_at, reminder_at, recurrence_rule, tags, githubRepo, githubBranch,
-    githubPrNumber, githubPrState, githubCiStatus,
-    completedAtValue,
-    id
-  ]);
+  const updateFields: string[] = [];
+  const updateValues: any[] = [];
+
+  if (title !== undefined) {
+    updateFields.push('title = ?');
+    updateValues.push(title);
+  }
+  if (description !== undefined) {
+    updateFields.push('description = ?');
+    updateValues.push(description);
+  }
+  if (status !== undefined) {
+    updateFields.push('status = ?');
+    updateValues.push(status);
+  }
+  if (priority !== undefined) {
+    updateFields.push('priority = ?');
+    updateValues.push(priority);
+  }
+  if (userStatus !== undefined) {
+    updateFields.push('user_status = ?');
+    updateValues.push(userStatus);
+  }
+  if (rawAssignee !== undefined || req.body.assigneeId !== undefined || req.body.assignee_id !== undefined) {
+    updateFields.push('assignee_id = ?');
+    updateValues.push(assigneeId || null);
+    if (assigneeId && assigneeId !== current.assignee_id) {
+      updateFields.push("assignment_status = 'ASSIGNED'");
+    } else if (!assigneeId) {
+      updateFields.push("assignment_status = 'NONE'");
+    }
+  }
+  if (dueDate !== undefined || req.body.due_date !== undefined) {
+    updateFields.push('due_date = ?');
+    updateValues.push(dueDate || null);
+  }
+  if (due_at !== undefined) {
+    updateFields.push('due_at = ?');
+    updateValues.push(due_at || null);
+  }
+  if (reminder_at !== undefined) {
+    updateFields.push('reminder_at = ?');
+    updateValues.push(reminder_at || null);
+  }
+  if (recurrence_rule !== undefined) {
+    updateFields.push('recurrence_rule = ?');
+    updateValues.push(recurrence_rule || null);
+  }
+  if (tags !== undefined) {
+    updateFields.push('tags = ?');
+    updateValues.push(tags || null);
+  }
+  if (githubRepo !== undefined) {
+    updateFields.push('github_repo = ?');
+    updateValues.push(githubRepo || null);
+  }
+  if (githubBranch !== undefined) {
+    updateFields.push('github_branch = ?');
+    updateValues.push(githubBranch || null);
+  }
+  if (githubPrNumber !== undefined) {
+    updateFields.push('github_pr_number = ?');
+    updateValues.push(githubPrNumber || null);
+  }
+  if (githubPrState !== undefined) {
+    updateFields.push('github_pr_state = ?');
+    updateValues.push(githubPrState || null);
+  }
+  if (githubCiStatus !== undefined) {
+    updateFields.push('github_ci_status = ?');
+    updateValues.push(githubCiStatus || null);
+  }
+
+  updateFields.push('completed_at = ?');
+  updateValues.push(completedAtValue);
+  updateFields.push("updated_at = datetime('now')");
+
+  updateValues.push(id);
+
+  if (updateFields.length > 0) {
+    await runQuery(`UPDATE tasks SET ${updateFields.join(', ')} WHERE id = ?`, updateValues);
+  }
 
   // Recurrence handling: When a recurring task is completed, generate the next occurrence
   const effectiveRecurrence = recurrence_rule !== undefined ? recurrence_rule : current.recurrence_rule;

@@ -25,7 +25,8 @@ import {
   Clock,
   Play,
   Tag,
-  Check
+  Check,
+  Edit3
 } from 'lucide-react';
 import { Task, Subtask, Comment, TaskActivity, GitHubCommit, GitHubWorkflowRun, TaskPriority } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -64,6 +65,13 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
   const [isHandoffOpen, setIsHandoffOpen] = useState(false);
   const [isFocusOpen, setIsFocusOpen] = useState(false);
 
+  // Edit fields state
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editTags, setEditTags] = useState('');
+  const [availableAssignees, setAvailableAssignees] = useState<{ id: string; name: string; email?: string }[]>([]);
+
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [newCommentText, setNewCommentText] = useState('');
 
@@ -77,12 +85,30 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
       if (res.ok) {
         const data = await res.json();
         setTask(data.task);
+        setEditTitle(data.task?.title || '');
+        setEditDescription(data.task?.description || '');
+        setEditTags(data.task?.tags || '');
         setSubtasks(data.subtasks || []);
         setComments(data.comments || []);
         setActivity(data.activity || []);
         setCommits(data.commits || []);
         setWorkflowRuns(data.workflowRuns || []);
         setEvidence(data.evidence || null);
+
+        // Fetch potential assignees from project members and connections
+        if (data.task?.project_id) {
+          try {
+            const mRes = await fetch(`/api/projects/${data.task.project_id}/members`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (mRes.ok) {
+              const mData = await mRes.json();
+              setAvailableAssignees(mData.members || []);
+            }
+          } catch (mErr) {
+            console.error('Failed to fetch project members:', mErr);
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to load task details:', err);
@@ -128,6 +154,74 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
         body: JSON.stringify({ priority: newPriority })
       });
       if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateAssignee = async (newAssigneeId: string) => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ assignee_id: newAssigneeId || null })
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateDueDate = async (newDueDate: string) => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ due_date: newDueDate || null })
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveDetails = async () => {
+    if (!task || !token || !editTitle.trim()) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          description: editDescription.trim(),
+          tags: editTags.trim() || null
+        })
+      });
+      if (res.ok) {
+        setIsEditingDetails(false);
         triggerEInkRefresh();
         fetchTaskDetails();
         if (onTaskUpdated) onTaskUpdated();
@@ -573,32 +667,119 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
             {/* Title & Specs Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-6 border-b border-eink-border">
               <div className="md:col-span-2 space-y-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-xl sm:text-2xl font-bold text-eink-text tracking-tight uppercase font-sans">
-                      {task.title}
-                    </h1>
-                    {task.assignment_status === 'ACCEPTED' && (
-                      <span className="px-1.5 py-0.5 bg-eink-text text-eink-bg rounded text-[10px] font-mono font-bold">
-                        ACCEPTED ✓
+                {isEditingDetails ? (
+                  <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 font-technical">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase text-eink-text flex items-center gap-1.5">
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>EDIT TASK DETAILS</span>
                       </span>
-                    )}
-                  </div>
-                  {task.tags && (
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {task.tags.split(',').map((tag, idx) => (
-                        <span key={idx} className="px-1.5 py-0.5 bg-eink-surface border border-eink-border rounded text-[10px] font-technical text-eink-textMuted flex items-center gap-1">
-                          <Tag className="w-2.5 h-2.5" />
-                          <span>#{tag.trim()}</span>
-                        </span>
-                      ))}
                     </div>
-                  )}
-                </div>
-                
-                <div className="text-xs text-eink-textSecondary leading-relaxed whitespace-pre-line bg-eink-surface/50 p-3 border border-eink-border rounded-sm">
-                  {task.description || 'No description provided for this technical task.'}
-                </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-eink-textMuted uppercase block font-bold">TITLE</label>
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-eink-bg border border-eink-border rounded text-sm font-bold text-eink-text outline-none focus:border-eink-text"
+                        placeholder="Task title..."
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-eink-textMuted uppercase block font-bold">DESCRIPTION</label>
+                      <textarea
+                        rows={4}
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        className="w-full px-3 py-2 bg-eink-bg border border-eink-border rounded text-xs text-eink-text outline-none focus:border-eink-text resize-y leading-relaxed"
+                        placeholder="Technical description and implementation details..."
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-eink-textMuted uppercase block font-bold">TAGS (COMMA SEPARATED)</label>
+                      <input
+                        type="text"
+                        value={editTags}
+                        onChange={(e) => setEditTags(e.target.value)}
+                        className="w-full px-3 py-1 bg-eink-bg border border-eink-border rounded text-xs text-eink-text outline-none focus:border-eink-text"
+                        placeholder="frontend, auth, bug, ui"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-eink-border">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingDetails(false);
+                          setEditTitle(task.title || '');
+                          setEditDescription(task.description || '');
+                          setEditTags(task.tags || '');
+                        }}
+                        className="px-3 py-1.5 border border-eink-border hover:bg-eink-surface rounded text-xs font-bold text-eink-text cursor-pointer"
+                      >
+                        CANCEL
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveDetails}
+                        className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded text-xs shadow-eink-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>SAVE DETAILS</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2 flex-wrap flex-1">
+                          <h1 className="text-xl sm:text-2xl font-bold text-eink-text tracking-tight uppercase font-sans">
+                            {task.title}
+                          </h1>
+                          {task.assignment_status === 'ACCEPTED' && (
+                            <span className="px-1.5 py-0.5 bg-eink-text text-eink-bg rounded text-[10px] font-mono font-bold">
+                              ACCEPTED ✓
+                            </span>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditTitle(task.title || '');
+                            setEditDescription(task.description || '');
+                            setEditTags(task.tags || '');
+                            setIsEditingDetails(true);
+                          }}
+                          className="px-2 py-1 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded text-[11px] font-technical font-bold text-eink-text flex items-center gap-1 shrink-0 shadow-eink-sm transition-colors cursor-pointer"
+                          title="Edit Title, Description & Tags"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>EDIT</span>
+                        </button>
+                      </div>
+
+                      {task.tags && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          {task.tags.split(',').map((tag, idx) => (
+                            <span key={idx} className="px-1.5 py-0.5 bg-eink-surface border border-eink-border rounded text-[10px] font-technical text-eink-textMuted flex items-center gap-1">
+                              <Tag className="w-2.5 h-2.5" />
+                              <span>#{tag.trim()}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="text-xs text-eink-textSecondary leading-relaxed whitespace-pre-line bg-eink-surface/50 p-3 border border-eink-border rounded-sm">
+                      {task.description || 'No description provided for this technical task.'}
+                    </div>
+                  </>
+                )}
 
                 {/* Discrepancy Alert Notice if any */}
                 {Boolean(task.has_ci_discrepancy) && (
@@ -659,28 +840,106 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                 </div>
 
                 <div>
-                  <span className="text-[10px] text-eink-textMuted uppercase block">PRIORITY</span>
+                  <span className="text-[10px] text-eink-textMuted uppercase block font-bold">PRIORITY</span>
                   <select
                     value={task.priority || 'MEDIUM'}
                     onChange={(e) => handleUpdatePriority(e.target.value as TaskPriority)}
-                    className="w-full mt-1 px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical font-bold text-eink-text outline-none"
+                    className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical font-bold text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
                   >
                     <option value="LOW">LOW</option>
                     <option value="MEDIUM">MEDIUM</option>
                     <option value="HIGH">HIGH</option>
-                    <option value="URGENT">URGENT</option>
+                    <option value="URGENT">⚡ URGENT</option>
                   </select>
                 </div>
 
                 <div>
-                  <span className="text-[10px] text-eink-textMuted uppercase block flex items-center gap-1">
+                  <span className="text-[10px] text-eink-textMuted uppercase block font-bold">ASSIGNEE</span>
+                  <select
+                    value={task.assignee_id || ''}
+                    onChange={(e) => handleUpdateAssignee(e.target.value)}
+                    className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical font-medium text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
+                  >
+                    <option value="">Unassigned</option>
+                    {user && (
+                      <option value={user.id}>
+                        {user.name || user.email} (You)
+                      </option>
+                    )}
+                    {availableAssignees
+                      .filter((m) => m.id !== user?.id)
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name || m.email || m.id}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-eink-textMuted uppercase block font-bold">DUE DATE</span>
+                  <div className="space-y-1.5 mt-1">
+                    <input
+                      type="text"
+                      placeholder="e.g. Tomorrow, 2026-09-10"
+                      defaultValue={task.due_date || ''}
+                      key={task.due_date || 'empty'}
+                      onBlur={(e) => {
+                        if (e.target.value !== (task.due_date || '')) {
+                          handleUpdateDueDate(e.target.value);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleUpdateDueDate((e.target as HTMLInputElement).value);
+                        }
+                      }}
+                      className="w-full px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none focus:border-eink-text"
+                    />
+                    <div className="flex flex-wrap items-center gap-1 text-[9px] font-mono">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateDueDate('Today')}
+                        className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-eink-text cursor-pointer transition-colors"
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateDueDate('Tomorrow')}
+                        className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-eink-text cursor-pointer transition-colors"
+                      >
+                        Tomorrow
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateDueDate('Next Week')}
+                        className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-eink-text cursor-pointer transition-colors"
+                      >
+                        Next Week
+                      </button>
+                      {task.due_date && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateDueDate('')}
+                          className="px-1.5 py-0.5 border border-eink-border hover:bg-eink-surface rounded bg-eink-bg text-rose-700 cursor-pointer transition-colors"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-eink-textMuted uppercase block flex items-center gap-1 font-bold">
                     <Repeat className="w-3 h-3" />
                     <span>RECURRING</span>
                   </span>
                   <select
                     value={task.recurrence_rule || ''}
                     onChange={(e) => handleUpdateRecurrence(e.target.value)}
-                    className="w-full mt-1 px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none"
+                    className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
                   >
                     <option value="">None (One-time)</option>
                     <option value="Daily">↻ Every day</option>
@@ -691,14 +950,14 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                 </div>
 
                 <div>
-                  <span className="text-[10px] text-eink-textMuted uppercase block flex items-center gap-1">
+                  <span className="text-[10px] text-eink-textMuted uppercase block flex items-center gap-1 font-bold">
                     <Bell className="w-3 h-3" />
                     <span>REMINDER</span>
                   </span>
                   <select
                     value={task.reminder_at ? 'active' : ''}
                     onChange={(e) => handleSetReminder(e.target.value)}
-                    className="w-full mt-1 px-2 py-1 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none"
+                    className="w-full mt-1 px-2 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text outline-none cursor-pointer hover:border-eink-text transition-colors"
                   >
                     <option value="clear">No reminder</option>
                     <option value="15m">In 15 minutes</option>
@@ -706,16 +965,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                     <option value="tomorrow_morning">Tomorrow · 9:00 AM</option>
                     {task.reminder_at && <option value="active">Active ({new Date(task.reminder_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})</option>}
                   </select>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-eink-textMuted uppercase block">ASSIGNEE</span>
-                  <span className="text-xs text-eink-text block mt-1">{task.assignee_name || 'Unassigned'}</span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-eink-textMuted uppercase block">DUE DATE</span>
-                  <span className="text-xs text-eink-text block mt-1">{task.due_date || 'No due date'}</span>
                 </div>
               </div>
             </div>
