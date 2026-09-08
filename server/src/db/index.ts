@@ -117,7 +117,7 @@ async function initPgSchema(pool: pg.Pool) {
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       task_number INTEGER NOT NULL,
-      task_code TEXT UNIQUE NOT NULL,
+      task_code TEXT NOT NULL,
       project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
       workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
@@ -416,6 +416,8 @@ async function initPgSchema(pool: pg.Pool) {
     await pool.query(schemaSql);
     // Auto-migrate any missing columns on existing Supabase tables
     const migrations = [
+      `ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_task_code_key CASCADE;`,
+      `ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_task_number_key CASCADE;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS user_status TEXT DEFAULT 'PENDING';`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date TEXT;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_pr_title TEXT;`,

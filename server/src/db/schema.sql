@@ -201,7 +201,7 @@ CREATE TABLE IF NOT EXISTS project_invitations (
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   task_number INTEGER NOT NULL,
-  task_code TEXT UNIQUE NOT NULL,
+  task_code TEXT NOT NULL,
   project_id TEXT NOT NULL,
   workspace_id TEXT NOT NULL,
   title TEXT NOT NULL,
