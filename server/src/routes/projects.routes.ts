@@ -79,13 +79,16 @@ projectsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Respons
            (SELECT COUNT(*) FROM tasks t 
             WHERE (t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%') 
               AND (t.status != 'DONE' AND (t.user_status != 'COMPLETED' OR t.user_status IS NULL))
+              AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
            ) as active_todos,
            (SELECT COUNT(*) FROM tasks t 
             WHERE (t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%') 
               AND (t.status = 'DONE' OR t.user_status = 'COMPLETED')
+              AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
            ) as completed_tasks,
            (SELECT COUNT(*) FROM tasks t 
-            WHERE t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%'
+            WHERE (t.project_id = p.id OR t.github_repo = p.github_repo_name OR t.github_repo = p.name OR t.github_repo LIKE '%' || p.name || '%')
+              AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
            ) as total_tasks
     FROM projects p
     WHERE p.id = ? OR p.slug = ? OR p.github_repo_name = ?
@@ -113,13 +116,14 @@ projectsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Respons
       .catch(() => {});
   }
 
-  // Get project TODOs (with updated evidence and commit counts)
+  // Get project TODOs (excluding soft-deleted tasks)
   const todos = await queryAll(`
     SELECT t.*, u.name as assignee_name, u2.name as creator_name
     FROM tasks t
     LEFT JOIN users u ON t.assignee_id = u.id
     LEFT JOIN users u2 ON t.created_by = u2.id
-    WHERE t.project_id = ? OR t.github_repo = ?
+    WHERE (t.project_id = ? OR t.github_repo = ?)
+      AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
     ORDER BY t.created_at DESC
   `, [project.id, project.github_repo_name]);
 
