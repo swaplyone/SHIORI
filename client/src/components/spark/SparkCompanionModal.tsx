@@ -30,7 +30,15 @@ type SparkState = 'IDLE' | 'WAKE_LISTENING' | 'LISTENING' | 'PROCESSING' | 'SPEA
 export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   context = {}
 }) => {
-  const { token } = useAuth();
+  const {
+    token,
+    setTheme,
+    setUIMode,
+    setAccentColor,
+    setMatteLevel,
+    logout
+  } = useAuth();
+
   const {
     isSparkOpen,
     closeSpark,
@@ -49,7 +57,16 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     speakSpark
   } = useSpark();
 
-  const { startFocusTimer, pauseFocusTimer, resumeFocusTimer, stopFocusTimer } = useMorphBar();
+  const {
+    startFocusTimer,
+    pauseFocusTimer,
+    resumeFocusTimer,
+    stopFocusTimer,
+    expandMorphBar,
+    collapseMorphBar,
+    focusTimer
+  } = useMorphBar();
+
   const navigate = useNavigate();
 
   const [state, setState] = useState<SparkState>('LISTENING');
@@ -62,6 +79,11 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
   const stateRef = useRef<SparkState>('LISTENING');
   stateRef.current = state;
+
+  const conversationContextRef = useRef<{
+    taskId?: string;
+    projectId?: string;
+  }>({});
 
   const isConversationActiveRef = useRef<boolean>(false);
   const recognitionRef = useRef<any>(null);
@@ -316,7 +338,11 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         },
         body: JSON.stringify({
           command: text,
-          context,
+          context: {
+            ...context,
+            ...conversationContextRef.current,
+            currentPath: window.location.pathname
+          },
           confirmed: isConfirmed,
           confirmationPayload
         })
@@ -328,15 +354,85 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       if (res.ok && data.success) {
         setResponseMessage(data.displayText || 'Done.');
 
+        // Update short-lived context
+        if (data.task?.id) conversationContextRef.current.taskId = data.task.id;
+        if (data.taskId) conversationContextRef.current.taskId = data.taskId;
+        if (data.projectId) conversationContextRef.current.projectId = data.projectId;
+
+        // 1. Focus Timer Controls
         if (data.focusAction) {
           if (data.focusAction === 'start') {
-            startFocusTimer(data.focusMinutes || 25, 'Spark Focus Session');
+            startFocusTimer(undefined, 'Spark Focus Session', data.focusMinutes || 25);
           } else if (data.focusAction === 'pause') {
             pauseFocusTimer();
           } else if (data.focusAction === 'resume') {
             resumeFocusTimer();
           } else if (data.focusAction === 'stop') {
             stopFocusTimer();
+          }
+        }
+
+        // 2. App & UI Actions
+        if (data.appAction) {
+          if (data.appAction === 'close_spark') {
+            isConversationActiveRef.current = false;
+            closeSpark();
+            return;
+          }
+
+          if (data.appAction === 'close_app') {
+            const win = window as any;
+            if (win.electron?.quit) {
+              win.electron.quit();
+            } else if (win.Capacitor?.Plugins?.App?.exitApp) {
+              win.Capacitor.Plugins.App.exitApp();
+            } else {
+              // Browser / PWA platform explanation
+              const notice = "I cannot force-close Safari or browser tabs directly. You can close SHIORI from your app switcher.";
+              setResponseMessage(notice);
+              if (data.speakText && voiceResponsesEnabled) {
+                speakText(notice);
+              }
+              return;
+            }
+          }
+
+          if (data.appAction === 'go_back') {
+            navigate(-1);
+          } else if (data.appAction === 'go_forward') {
+            navigate(1);
+          } else if (data.appAction === 'reload') {
+            window.location.reload();
+            return;
+          } else if (data.appAction === 'logout') {
+            isConversationActiveRef.current = false;
+            closeSpark();
+            logout();
+            return;
+          } else if (data.appAction === 'expand_morphbar') {
+            expandMorphBar();
+          } else if (data.appAction === 'collapse_morphbar') {
+            collapseMorphBar();
+          } else if (data.appAction === 'set_theme' && data.theme) {
+            setTheme(data.theme);
+          } else if (data.appAction === 'set_ui_mode' && data.uiMode) {
+            setUIMode(data.uiMode);
+          } else if (data.appAction === 'set_accent' && data.accentColor) {
+            setAccentColor(data.accentColor);
+          } else if (data.appAction === 'focus_status') {
+            if (focusTimer?.isActive) {
+              const mins = Math.floor(focusTimer.secondsRemaining / 60);
+              const secs = focusTimer.secondsRemaining % 60;
+              const msg = `You have ${mins} minute${mins === 1 ? '' : 's'} and ${secs} second${secs === 1 ? '' : 's'} remaining on your focus timer.`;
+              setResponseMessage(msg);
+              if (voiceResponsesEnabled) speakText(msg);
+              return;
+            } else {
+              const msg = 'No focus session is currently running.';
+              setResponseMessage(msg);
+              if (voiceResponsesEnabled) speakText(msg);
+              return;
+            }
           }
         }
 

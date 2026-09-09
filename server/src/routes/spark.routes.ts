@@ -195,6 +195,64 @@ sparkRouter.get('/briefing', authMiddleware, async (req: AuthRequest, res: Respo
   });
 });
 
+// Helper to resolve task by code, ID, title, or contextual reference ("it", "that task")
+async function resolveTask(identifier: string, context: any = {}): Promise<any> {
+  const lower = (identifier || '').toLowerCase().trim();
+
+  // 1. Check for TASK-XX
+  const codeMatch = lower.match(/task-?(\d+)/i);
+  if (codeMatch) {
+    const num = parseInt(codeMatch[1], 10);
+    const code = `TASK-${String(num).padStart(2, '0')}`;
+    const task = await queryOne(
+      `SELECT t.*, p.name as project_name FROM tasks t 
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE (t.task_code = ? OR t.task_number = ?) AND (t.is_deleted = 0 OR t.is_deleted IS NULL)`,
+      [code, num]
+    );
+    if (task) return task;
+  }
+
+  // 2. Contextual "it", "that task", "the task"
+  if (['it', 'that', 'that task', 'the task', 'this', 'this task'].includes(lower)) {
+    if (context.taskId) {
+      const task = await queryOne(
+        `SELECT t.*, p.name as project_name FROM tasks t 
+         LEFT JOIN projects p ON t.project_id = p.id
+         WHERE t.id = ? AND (t.is_deleted = 0 OR t.is_deleted IS NULL)`,
+        [context.taskId]
+      );
+      if (task) return task;
+    }
+  }
+
+  // 3. Search by title substring
+  if (identifier && identifier.length > 2) {
+    const clean = identifier.replace(/^[\s:"']+|[\s:"']+$/g, '');
+    const task = await queryOne(
+      `SELECT t.*, p.name as project_name FROM tasks t 
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE (LOWER(t.title) LIKE LOWER(?) OR LOWER(t.task_code) LIKE LOWER(?)) 
+       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY t.updated_at DESC LIMIT 1`,
+      [`%${clean}%`, `%${clean}%`]
+    );
+    if (task) return task;
+  }
+
+  // 4. Default to context taskId or most recently active task
+  if (context.taskId) {
+    return await queryOne(
+      `SELECT t.*, p.name as project_name FROM tasks t 
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE t.id = ? AND (t.is_deleted = 0 OR t.is_deleted IS NULL)`,
+      [context.taskId]
+    );
+  }
+
+  return null;
+}
+
 // POST /api/spark/command — Natural Language Intent Router & Tool Execution
 sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.id;
@@ -361,8 +419,204 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 3. TASK CREATION INTENT ("CREATE TASK", "ADD TASK", "NEW TASK", "REMIND ME TO")
-  // Priority check: "Create a task called tell me a joke" must create the task!
+  // 3. APP LIFECYCLE & APP CONTROL COMMANDS
+  // =========================================================================
+  // Distinction: "close SHIORI" vs "close Spark"
+  if (
+    lower === 'close shiori' || lower === 'exit shiori' || lower === 'quit shiori' || 
+    lower === 'close the app' || lower === 'exit the app' || lower === 'quit the app'
+  ) {
+    res.json({
+      success: true,
+      intent: 'APP_CLOSE',
+      appAction: 'close_app',
+      speakText: 'Closing SHIORI.',
+      displayText: 'Attempting to close SHIORI...',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (
+    lower === 'close spark' || lower === 'exit spark' || lower === 'minimize spark' || 
+    lower === 'hide spark' || lower === 'dismiss spark' || lower === 'close modal'
+  ) {
+    res.json({
+      success: true,
+      intent: 'SPARK_CLOSE',
+      appAction: 'close_spark',
+      speakText: 'Closing Spark.',
+      displayText: 'Spark closed. Standing by for wake word.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower === 'go back' || lower === 'navigate back' || lower === 'back') {
+    res.json({
+      success: true,
+      intent: 'APP_BACK',
+      appAction: 'go_back',
+      speakText: 'Going back.',
+      displayText: 'Navigating back.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower === 'go forward' || lower === 'forward') {
+    res.json({
+      success: true,
+      intent: 'APP_FORWARD',
+      appAction: 'go_forward',
+      speakText: 'Going forward.',
+      displayText: 'Navigating forward.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('refresh shiori') || lower.includes('reload shiori') || lower === 'refresh' || lower === 'reload') {
+    res.json({
+      success: true,
+      intent: 'APP_RELOAD',
+      appAction: 'reload',
+      speakText: 'Refreshing SHIORI.',
+      displayText: 'Refreshing workspace data...',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('log me out') || lower.includes('sign out') || lower.includes('logout')) {
+    res.json({
+      success: true,
+      intent: 'APP_LOGOUT',
+      appAction: 'logout',
+      speakText: 'Logging out.',
+      displayText: 'Logging out of SHIORI session. See you soon.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 4. UI & APPEARANCE CONTROLS (THEME, ACCENT, MORPHBAR)
+  // =========================================================================
+  if (lower.includes('open morphbar') || lower.includes('expand morphbar') || lower.includes('expand island') || lower.includes('open island')) {
+    res.json({
+      success: true,
+      intent: 'UI_MORPHBAR_EXPAND',
+      appAction: 'expand_morphbar',
+      speakText: 'Expanding MorphBar.',
+      displayText: 'MorphBar island expanded.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('close morphbar') || lower.includes('collapse morphbar') || lower.includes('collapse island') || lower.includes('close island')) {
+    res.json({
+      success: true,
+      intent: 'UI_MORPHBAR_COLLAPSE',
+      appAction: 'collapse_morphbar',
+      speakText: 'Collapsing MorphBar.',
+      displayText: 'MorphBar island collapsed.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('dark mode') || lower.includes('turn on dark mode') || lower.includes('enable dark mode') || lower.includes('switch to dark')) {
+    res.json({
+      success: true,
+      intent: 'UI_THEME_DARK',
+      appAction: 'set_theme',
+      theme: 'dark',
+      speakText: 'Dark mode enabled.',
+      displayText: 'Switched appearance to **Dark Mode**.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('light mode') || lower.includes('turn on light mode') || lower.includes('enable light mode') || lower.includes('switch to light')) {
+    res.json({
+      success: true,
+      intent: 'UI_THEME_LIGHT',
+      appAction: 'set_theme',
+      theme: 'light',
+      speakText: 'Light mode enabled.',
+      displayText: 'Switched appearance to **Light Mode**.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('switch to e-ink') || lower.includes('e-ink matte') || lower.includes('eink mode') || lower.includes('e-ink mode')) {
+    res.json({
+      success: true,
+      intent: 'UI_MODE_EINK',
+      appAction: 'set_ui_mode',
+      uiMode: 'eink_matte',
+      speakText: 'Switched to E-ink Matte.',
+      displayText: 'Switched display mode to **E-ink Matte**.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('switch to color matte') || lower.includes('color matte') || lower.includes('color mode')) {
+    res.json({
+      success: true,
+      intent: 'UI_MODE_COLOR',
+      appAction: 'set_ui_mode',
+      uiMode: 'color_matte',
+      speakText: 'Switched to Color Matte.',
+      displayText: 'Switched display mode to **Color Matte**.',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.startsWith('change accent') || lower.startsWith('set accent') || lower.includes('accent to')) {
+    let colorName = 'forest green';
+    let hex = '#2E5A36';
+
+    if (lower.includes('amber') || lower.includes('gold') || lower.includes('yellow') || lower.includes('orange')) {
+      colorName = 'warm amber';
+      hex = '#D97706';
+    } else if (lower.includes('indigo') || lower.includes('blue')) {
+      colorName = 'indigo';
+      hex = '#4F46E5';
+    } else if (lower.includes('red') || lower.includes('crimson') || lower.includes('scarlet')) {
+      colorName = 'crimson';
+      hex = '#DC2626';
+    } else if (lower.includes('charcoal') || lower.includes('black') || lower.includes('slate')) {
+      colorName = 'charcoal slate';
+      hex = '#1E293B';
+    } else if (lower.includes('violet') || lower.includes('purple')) {
+      colorName = 'violet';
+      hex = '#7C3AED';
+    } else if (lower.includes('green') || lower.includes('forest')) {
+      colorName = 'forest green';
+      hex = '#2E5A36';
+    }
+
+    res.json({
+      success: true,
+      intent: 'UI_ACCENT',
+      appAction: 'set_accent',
+      accentColor: hex,
+      speakText: `Accent changed to ${colorName}.`,
+      displayText: `Updated accent color to **${colorName}** (${hex}).`,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 5. TASK CREATION INTENT ("CREATE TASK", "ADD TASK", "NEW TASK", "REMIND ME TO")
   // =========================================================================
   if (
     /^(please\s*)?(create|add|new)\s+(a\s+)?task\b/i.test(lower) ||
@@ -410,12 +664,28 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     const taskCode = `TASK-${String(nextSeq).padStart(2, '0')}`;
     const taskId = uuidv4();
 
+    // Check if priority is in text
+    let priority = 'MEDIUM';
+    if (lower.includes('urgent')) priority = 'URGENT';
+    else if (lower.includes('high priority')) priority = 'HIGH';
+    else if (lower.includes('low priority')) priority = 'LOW';
+
+    // Check if deadline mentioned
+    let deadline: string | null = null;
+    if (lower.includes('today')) {
+      const now = new Date();
+      deadline = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0).toISOString();
+    } else if (lower.includes('tomorrow')) {
+      const now = new Date();
+      deadline = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 18, 0, 0).toISOString();
+    }
+
     await runQuery(`
       INSERT INTO tasks (
         id, project_id, task_code, task_number, sequence_order, title, description,
-        priority, status, created_by, is_deleted, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'MEDIUM', 'TODO', ?, 0, datetime('now'), datetime('now'))
-    `, [taskId, projectId, taskCode, nextSeq, nextSeq, title, `Task created via Spark: ${title}`, userId]);
+        priority, status, deadline, created_by, is_deleted, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'TODO', ?, ?, 0, datetime('now'), datetime('now'))
+    `, [taskId, projectId, taskCode, nextSeq, nextSeq, title, `Task created via Spark: ${title}`, priority, deadline, userId]);
 
     await runQuery(`
       INSERT INTO task_activity (id, task_id, action_type, summary, details, created_at)
@@ -431,7 +701,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       success: true,
       intent: 'TASK_CREATE',
       speakText: `Added ${taskCode}.`,
-      displayText: `Created **${taskCode}**: "${title}" in *${project.name}*. One less thing living rent-free in your head.`,
+      displayText: `Created **${taskCode}**: "${title}" in *${project.name}* [${priority}].`,
       task: { id: taskId, taskCode, title, projectId },
       actionTaken: true,
       refreshNeeded: true
@@ -440,25 +710,111 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 4. TASK DELETION INTENT (Requires Confirmation)
-  // Priority check: "Delete the task called weather" must delete the task!
+  // 6. TASK PRIORITY UPDATE ("MAKE IT URGENT", "CHANGE PRIORITY TO HIGH")
+  // =========================================================================
+  if (
+    lower.includes('priority') || lower.startsWith('make it urgent') || 
+    lower.startsWith('make it high') || lower.startsWith('make it medium') || lower.startsWith('make it low') ||
+    lower.startsWith('set priority')
+  ) {
+    let newPriority = 'URGENT';
+    if (lower.includes('urgent')) newPriority = 'URGENT';
+    else if (lower.includes('high')) newPriority = 'HIGH';
+    else if (lower.includes('medium')) newPriority = 'MEDIUM';
+    else if (lower.includes('low')) newPriority = 'LOW';
+
+    let targetTask = await resolveTask(rawText, context);
+
+    if (targetTask) {
+      await runQuery('UPDATE tasks SET priority = ?, updated_at = datetime("now") WHERE id = ?', [newPriority, targetTask.id]);
+      await runQuery(`
+        INSERT INTO task_activity (id, task_id, action_type, summary, details, created_at)
+        VALUES (?, ?, 'PRIORITY_CHANGED', ?, 'Updated priority via Spark', datetime('now'))
+      `, [uuidv4(), targetTask.id, `Priority changed to ${newPriority}`]);
+
+      res.json({
+        success: true,
+        intent: 'TASK_PRIORITY_UPDATE',
+        speakText: `Priority updated to ${newPriority.toLowerCase()}.`,
+        displayText: `Updated **${targetTask.task_code}** ("${targetTask.title}") priority to **${newPriority}**.`,
+        actionTaken: true,
+        refreshNeeded: true
+      });
+      return;
+    }
+  }
+
+  // =========================================================================
+  // 7. TASK DEADLINE / MOVE ("MOVE TO TOMORROW", "MOVE TO TODAY")
+  // =========================================================================
+  if (
+    lower.includes('move to tomorrow') || lower.includes('move it to tomorrow') || 
+    lower.includes('move to today') || lower.includes('move it to today') ||
+    lower.includes('postpone') || lower.includes('set deadline')
+  ) {
+    let targetTask = await resolveTask(rawText, context);
+
+    if (targetTask) {
+      const now = new Date();
+      let newDeadline: string;
+      let label = 'today';
+
+      if (lower.includes('tomorrow') || lower.includes('postpone')) {
+        newDeadline = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 18, 0, 0).toISOString();
+        label = 'tomorrow';
+      } else {
+        newDeadline = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0).toISOString();
+        label = 'today';
+      }
+
+      await runQuery('UPDATE tasks SET deadline = ?, updated_at = datetime("now") WHERE id = ?', [newDeadline, targetTask.id]);
+
+      res.json({
+        success: true,
+        intent: 'TASK_DEADLINE_UPDATE',
+        speakText: `Moved to ${label}.`,
+        displayText: `Scheduled **${targetTask.task_code}** ("${targetTask.title}") for **${label}**.`,
+        actionTaken: true,
+        refreshNeeded: true
+      });
+      return;
+    }
+  }
+
+  // =========================================================================
+  // 8. TASK STATUS CHANGE ("START WORKING ON TASK-01", "SET TO IN PROGRESS", "REOPEN")
+  // =========================================================================
+  if (
+    lower.startsWith('start working on') || lower.includes('set to in progress') || 
+    lower.includes('mark in progress') || lower.startsWith('reopen')
+  ) {
+    let targetTask = await resolveTask(rawText, context);
+
+    if (targetTask) {
+      const newStatus = lower.includes('reopen') ? 'TODO' : 'IN_PROGRESS';
+      await runQuery('UPDATE tasks SET status = ?, updated_at = datetime("now") WHERE id = ?', [newStatus, targetTask.id]);
+
+      res.json({
+        success: true,
+        intent: 'TASK_STATUS_UPDATE',
+        speakText: newStatus === 'IN_PROGRESS' ? `Started work on ${targetTask.task_code}.` : `Reopened ${targetTask.task_code}.`,
+        displayText: `Set **${targetTask.task_code}** ("${targetTask.title}") to **${newStatus}**.`,
+        actionTaken: true,
+        refreshNeeded: true
+      });
+      return;
+    }
+  }
+
+  // =========================================================================
+  // 9. TASK DELETION INTENT (Requires Confirmation)
   // =========================================================================
   if (
     /^(please\s*)?(delete|remove)\s+(the\s+)?task\b/i.test(lower) ||
-    lower.includes('delete task') || lower.includes('remove task')
+    lower.includes('delete task') || lower.includes('remove task') ||
+    lower.startsWith('delete ') || lower.startsWith('remove ')
   ) {
-    const codeMatch = lower.match(/task-?(\d+)/i);
-    let task = null;
-
-    if (codeMatch) {
-      const num = parseInt(codeMatch[1], 10);
-      const code = `TASK-${String(num).padStart(2, '0')}`;
-      task = await queryOne('SELECT id, task_code, title FROM tasks WHERE (task_code = ? OR task_number = ?) AND (is_deleted = 0 OR is_deleted IS NULL)', [code, num]);
-    }
-
-    if (!task && context.taskId) {
-      task = await queryOne('SELECT id, task_code, title FROM tasks WHERE id = ?', [context.taskId]);
-    }
+    let task = await resolveTask(rawText, context);
 
     if (task) {
       res.json({
@@ -488,30 +844,15 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 5. TASK COMPLETION INTENT
+  // 10. TASK COMPLETION INTENT
   // =========================================================================
   if (
     lower.includes('complete task') || lower.includes('mark task') || 
     lower.includes('finish task') || lower.includes('done with task') ||
-    lower.startsWith('complete ') || lower.startsWith('finish ')
+    lower.startsWith('complete ') || lower.startsWith('finish ') ||
+    lower === 'complete it' || lower === 'finish it' || lower === 'done'
   ) {
-    const codeMatch = lower.match(/task-?(\d+)/i);
-    let task = null;
-
-    if (codeMatch) {
-      const num = parseInt(codeMatch[1], 10);
-      const code = `TASK-${String(num).padStart(2, '0')}`;
-      task = await queryOne(
-        `SELECT id, task_code, title, project_id FROM tasks 
-         WHERE (task_code = ? OR task_number = ?) AND (is_deleted = 0 OR is_deleted IS NULL)
-         ORDER BY updated_at DESC LIMIT 1`,
-        [code, num]
-      );
-    }
-
-    if (!task && context.taskId) {
-      task = await queryOne('SELECT id, task_code, title, project_id FROM tasks WHERE id = ?', [context.taskId]);
-    }
+    let task = await resolveTask(rawText, context);
 
     if (!task) {
       task = await queryOne(
@@ -550,15 +891,28 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 6. FOCUS TIMER INTENTS
+  // 11. FOCUS TIMER INTENTS
   // =========================================================================
   if (
     lower.startsWith('start focus') || lower.startsWith('begin focus') ||
     lower.startsWith('start a focus') || lower.startsWith('pause focus') ||
     lower.startsWith('resume focus') || lower.startsWith('stop focus') ||
     lower.includes('focus timer') || lower.includes('pomodoro') ||
+    lower.includes('how much time is left') || lower.includes('focus status') ||
     /^(start|pause|resume|stop|cancel)\s+(focus|timer)/i.test(lower)
   ) {
+    if (lower.includes('how much time') || lower.includes('focus status') || lower.includes('time left')) {
+      res.json({
+        success: true,
+        intent: 'FOCUS_STATUS',
+        appAction: 'focus_status',
+        speakText: 'Checking your focus timer.',
+        displayText: 'Checking active focus timer status...',
+        actionTaken: true
+      });
+      return;
+    }
+
     if (lower.includes('pause')) {
       res.json({
         success: true,
@@ -618,17 +972,78 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 7. WORKSPACE_SUMMARY & PRIORITIZATION INTENTS ("WHAT SHOULD I WORK ON?", "WHAT'S OVERDUE?")
+  // 12. SEARCH INTENT ("FIND MY AUTHENTICATION TASK", "SEARCH FOR LOGIN")
+  // =========================================================================
+  if (lower.startsWith('find ') || lower.startsWith('search for ') || lower.startsWith('where is ')) {
+    const queryTerm = rawText
+      .replace(/^(please\s*)?(find|search\s+for|where\s+is)\s+(my\s+)?(the\s+)?/i, '')
+      .replace(/^[\s:"']+|[\s:"']+$/g, '');
+
+    if (queryTerm && queryTerm.length > 1) {
+      const matchingTasks = await queryAll(
+        `SELECT task_code, title, priority, status FROM tasks 
+         WHERE (LOWER(title) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?) OR LOWER(task_code) LIKE LOWER(?)) 
+         AND (is_deleted = 0 OR is_deleted IS NULL)
+         LIMIT 3`,
+        [`%${queryTerm}%`, `%${queryTerm}%`, `%${queryTerm}%`]
+      );
+
+      const matchingProjects = await queryAll(
+        `SELECT id, name FROM projects 
+         WHERE LOWER(name) LIKE LOWER(?) AND created_by = ?
+         LIMIT 2`,
+        [`%${queryTerm}%`, userId]
+      );
+
+      if ((matchingTasks && matchingTasks.length > 0) || (matchingProjects && matchingProjects.length > 0)) {
+        const results = [];
+        if (matchingTasks?.length) {
+          results.push(...matchingTasks.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.status}]`));
+        }
+        if (matchingProjects?.length) {
+          results.push(...matchingProjects.map((p: any) => `• Project: **${p.name}**`));
+        }
+
+        res.json({
+          success: true,
+          intent: 'SEARCH_RESULTS',
+          speakText: `Found matching items for ${queryTerm}.`,
+          displayText: `**Search Results for "${queryTerm}":**\n\n${results.join('\n')}`,
+          actionTaken: true,
+          navigate: '/todos'
+        });
+        return;
+      } else {
+        res.json({
+          success: true,
+          intent: 'SEARCH_EMPTY',
+          speakText: `No items found matching ${queryTerm}.`,
+          displayText: `No tasks or projects found matching "${queryTerm}".`,
+          actionTaken: false
+        });
+        return;
+      }
+    }
+  }
+
+  // =========================================================================
+  // 13. WORKSPACE SUMMARY & STATUS ("WHAT'S GOING ON?", "WHAT'S MY STATUS?", "WHAT'S OVERDUE?")
   // =========================================================================
   const isWorkspaceSummaryQuery = 
+    lower.includes("what's going on") ||
+    lower.includes('what is going on') ||
+    lower.includes("what's my status") ||
+    lower.includes('what is my status') ||
+    lower.includes('give me my summary') ||
+    lower.includes('give me a summary') ||
     lower.includes('what should i work on') || 
+    lower.includes('what do i need to do') || 
     lower.includes('what do i have to do') || 
     lower.includes("what's pending") || 
     lower.includes('what is pending') || 
     lower.includes('what is overdue') || 
     lower.includes("what's overdue") || 
-    lower.includes('how am i doing') || 
-    lower.includes('how is my project doing');
+    lower.includes('how am i doing');
 
   if (isWorkspaceSummaryQuery) {
     const running = await queryOne(
@@ -665,7 +1080,6 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
        ORDER BY t.sequence_order ASC LIMIT 3`
     );
 
-    // Smart Prioritized Next Task: Overdue -> Due Today -> Urgent/High -> In Progress -> Sequence Order
     const prioritizedTask = await queryOne(
       `SELECT t.id, t.task_code, t.title, t.priority, t.deadline, p.name as project_name 
        FROM tasks t
@@ -702,10 +1116,10 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     let displaySummary = '';
 
     if (overdueCount > 0) {
-      speakSummary = `You have ${overdueCount} overdue task and ${dueTodayCount} due today. I'd start with ${prioritizedTask?.title || 'the overdue one'}. It's been waiting patiently. Well... increasingly less patiently.`;
+      speakSummary = `You have ${overdueCount} overdue task and ${dueTodayCount} due today. I'd start with ${prioritizedTask?.title || 'the overdue one'}. It's been waiting patiently.`;
       displaySummary = `You have **${overdueCount}** overdue task and **${dueTodayCount}** due today.\n\n` +
         `I'd start with **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}") in *${prioritizedTask?.project_name || 'SHIORI'}*.\n\n` +
-        `*It's been waiting patiently. Well... increasingly less patiently.*`;
+        `*It's been waiting patiently.*`;
     } else if (dueTodayCount > 0) {
       speakSummary = `Clean slate on overdue work. You have ${pendingCount} pending tasks, with ${dueTodayCount} due today.`;
       displaySummary = `Clean slate on overdue work. You have **${pendingCount}** pending tasks, with **${dueTodayCount}** due today.\n\n` +
@@ -734,7 +1148,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 8. TASK CATEGORY SPECIFIC QUERIES ("WHAT'S RUNNING", "WHAT'S DUE TODAY", "SHOW MY TASKS")
+  // 14. TASK CATEGORY SPECIFIC QUERIES ("WHAT'S RUNNING", "WHAT'S DUE TODAY", "SHOW MY TASKS")
   // =========================================================================
   if (lower.includes("what's running") || lower.includes('what is running') || lower.includes('what am i working on')) {
     const runningTasks = await queryAll(
@@ -798,7 +1212,6 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
-  // Precise Task List intent (e.g. "show my tasks", "list tasks", "my todos")
   if (
     lower.includes('show my tasks') || lower.includes('show tasks') || 
     lower.includes('list my tasks') || lower.includes('list tasks') || 
@@ -856,7 +1269,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 9. GITHUB REPOSITORY CREATION INTENT (Requires Confirmation)
+  // 15. GITHUB REPOSITORY CREATION INTENT (Requires Confirmation)
   // =========================================================================
   if (
     lower.includes('create repository') || lower.includes('create repo') || 
@@ -892,7 +1305,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 10. GIT / COMMITS STATUS QUERY ("CHECK GIT STATUS", "LATEST COMMIT")
+  // 16. GIT / COMMITS STATUS QUERY ("CHECK GIT STATUS", "LATEST COMMIT")
   // =========================================================================
   if (
     lower.includes('check git') || lower.includes('git status') || 
@@ -934,7 +1347,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 11. PROJECT LIST / CREATION INTENTS
+  // 17. PROJECT OPERATIONS (CREATE, LIST, OPEN, DELETE)
   // =========================================================================
   if (
     /^(please\s*)?(create|add|new)\s+(a\s+)?project\b/i.test(lower) ||
@@ -965,7 +1378,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
-  if (lower.includes('show projects') || lower.includes('list projects') || lower.includes('my repositories')) {
+  if (lower.includes('show projects') || lower.includes('list projects') || lower.includes('my repositories') || lower.includes('my projects')) {
     const projects = await queryAll('SELECT id, name, github_repo_name FROM projects WHERE created_by = ? ORDER BY updated_at DESC LIMIT 5', [userId]);
     const pCount = (projects || []).length;
     const lines = (projects || []).map((p: any) => `• **${p.name}** ${p.github_repo_name ? `(${p.github_repo_name})` : ''}`).join('\n');
@@ -982,9 +1395,9 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 12. ACTIVITY / PROGRESS INTENT
+  // 18. ACTIVITY & JOURNAL INTENTS
   // =========================================================================
-  if (lower.includes('activity') || lower.includes('what did i do today') || lower.includes('show activity') || lower.includes('my history')) {
+  if (lower.includes('activity') || lower.includes('what did i do today') || lower.includes('what did i accomplish') || lower.includes('show activity')) {
     const activities = await queryAll(
       `SELECT title, meta_text, created_at FROM global_activities WHERE user_id = ? ORDER BY created_at DESC LIMIT 3`,
       [userId]
@@ -1014,10 +1427,37 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
+  if (lower.startsWith('write in journal') || lower.startsWith('log journal') || lower.startsWith('add note')) {
+    const entryText = rawText
+      .replace(/^(please\s*)?(write\s+in\s+(my\s+)?journal|log\s+journal|add\s+note)\s*(:|to)?\s*/i, '')
+      .replace(/^[\s:"']+|[\s:"']+$/g, '');
+
+    if (entryText && entryText.length > 2) {
+      await runQuery(`
+        INSERT INTO global_activities (id, user_id, category, icon_symbol, title, meta_text, created_at)
+        VALUES (?, ?, 'JOURNAL', '✍', ?, 'Journal Note via Spark', datetime('now'))
+      `, [uuidv4(), userId, entryText]);
+
+      res.json({
+        success: true,
+        intent: 'JOURNAL_ENTRY',
+        speakText: 'Recorded in your journal.',
+        displayText: `Added journal entry: *"${entryText}"*.`,
+        actionTaken: true,
+        navigate: '/journal'
+      });
+      return;
+    }
+  }
+
   // =========================================================================
-  // 13. SHIORI NAVIGATION INTENTS ("OPEN SETTINGS", "GO TO ACTIVITY", ETC.)
+  // 19. SHIORI NAVIGATION INTENTS
   // =========================================================================
-  if (lower.startsWith('open ') || lower.startsWith('go to ') || lower.startsWith('navigate to ') || lower.startsWith('show ')) {
+  if (
+    lower.startsWith('open ') || lower.startsWith('go to ') || 
+    lower.startsWith('navigate to ') || lower.startsWith('show ') ||
+    lower.startsWith('take me to ')
+  ) {
     if (lower.includes('home') || lower.includes('dashboard')) {
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Home.', displayText: 'Opening SHIORI Home.', navigate: '/home', actionTaken: true });
       return;
@@ -1026,12 +1466,16 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Todos.', displayText: 'Opening My Todos.', navigate: '/todos', actionTaken: true });
       return;
     }
-    if (lower.includes('repositories') || lower.includes('repo') || lower.includes('project')) {
+    if (lower.includes('repositories') || lower.includes('repo') || lower.includes('projects')) {
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Repositories.', displayText: 'Opening Repositories.', navigate: '/repositories', actionTaken: true });
       return;
     }
-    if (lower.includes('connection') || lower.includes('friend') || lower.includes('id')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Connections.', displayText: 'Opening SHIORI Connections.', navigate: '/connections', actionTaken: true });
+    if (lower.includes('workspace')) {
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Workspaces.', displayText: 'Opening Workspaces.', navigate: '/workspaces', actionTaken: true });
+      return;
+    }
+    if (lower.includes('connection') || lower.includes('friend')) {
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Connections.', displayText: 'Opening Connections.', navigate: '/connections', actionTaken: true });
       return;
     }
     if (lower.includes('github') || lower.includes('pipeline') || lower.includes('webhook')) {
@@ -1042,14 +1486,22 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Journal.', displayText: 'Opening Daily Journal.', navigate: '/journal', actionTaken: true });
       return;
     }
+    if (lower.includes('notification')) {
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Notifications.', displayText: 'Opening Notifications.', navigate: '/notifications', actionTaken: true });
+      return;
+    }
     if (lower.includes('setting') || lower.includes('appearance') || lower.includes('theme') || lower.includes('matte')) {
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Settings.', displayText: 'Opening SHIORI Settings.', navigate: '/settings', actionTaken: true });
+      return;
+    }
+    if (lower.includes('install')) {
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Installation Gateway.', displayText: 'Opening PWA Installation Gateway.', navigate: '/install', actionTaken: true });
       return;
     }
   }
 
   // =========================================================================
-  // 14. SPARK WIT ENGINE — CONTEXT-AWARE PERSONALITY RESOLUTION
+  // 20. SPARK WIT ENGINE — CONTEXT-AWARE PERSONALITY RESOLUTION
   // Route all casual, silly, off-topic, procrastination, git humor, etc.
   // =========================================================================
   const safeContext = await getSafeWorkspaceContext(userId);
