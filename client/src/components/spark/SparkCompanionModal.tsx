@@ -391,9 +391,17 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           }
 
           if (data.appAction === 'go_back') {
+            isConversationActiveRef.current = false;
             navigate(-1);
+            if (data.speakText && voiceResponsesEnabled) speakText(data.speakText);
+            setTimeout(() => closeSpark(), 300);
+            return;
           } else if (data.appAction === 'go_forward') {
+            isConversationActiveRef.current = false;
             navigate(1);
+            if (data.speakText && voiceResponsesEnabled) speakText(data.speakText);
+            setTimeout(() => closeSpark(), 300);
+            return;
           } else if (data.appAction === 'reload') {
             window.location.reload();
             return;
@@ -445,17 +453,15 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         }
 
         if (data.navigate) {
+          isConversationActiveRef.current = false;
+          navigate(data.navigate);
           if (data.speakText && voiceResponsesEnabled) {
-            speakText(data.speakText, () => {
-              navigate(data.navigate);
-              setState('LISTENING');
-              setTimeout(() => startListening(), 450);
-            });
-          } else {
-            navigate(data.navigate);
-            setState('LISTENING');
-            setTimeout(() => startListening(), 450);
+            speakText(data.speakText);
           }
+          // Dismiss the Spark modal so the user immediately lands on their requested page
+          setTimeout(() => {
+            closeSpark();
+          }, 350);
           return;
         }
 

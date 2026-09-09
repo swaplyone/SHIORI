@@ -1453,11 +1453,17 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   // =========================================================================
   // 19. SHIORI NAVIGATION INTENTS
   // =========================================================================
-  if (
+  const isNav = 
     lower.startsWith('open ') || lower.startsWith('go to ') || 
     lower.startsWith('navigate to ') || lower.startsWith('show ') ||
-    lower.startsWith('take me to ')
-  ) {
+    lower.startsWith('take me to ') || lower.startsWith('switch to ') ||
+    ['settings', 'setting', 'settings page', 'setting page', 'tasks', 'todos', 'todo', 'task list', 'repositories', 'projects', 'home', 'dashboard', 'connections', 'github', 'journal', 'activity', 'workspaces', 'install'].includes(lower);
+
+  if (isNav) {
+    if (lower.includes('setting') || lower.includes('appearance') || lower.includes('theme') || lower.includes('matte')) {
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Settings.', displayText: 'Opening SHIORI Settings.', navigate: '/settings', actionTaken: true });
+      return;
+    }
     if (lower.includes('home') || lower.includes('dashboard')) {
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Home.', displayText: 'Opening SHIORI Home.', navigate: '/home', actionTaken: true });
       return;
@@ -1488,10 +1494,6 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     }
     if (lower.includes('notification')) {
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Notifications.', displayText: 'Opening Notifications.', navigate: '/notifications', actionTaken: true });
-      return;
-    }
-    if (lower.includes('setting') || lower.includes('appearance') || lower.includes('theme') || lower.includes('matte')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Settings.', displayText: 'Opening SHIORI Settings.', navigate: '/settings', actionTaken: true });
       return;
     }
     if (lower.includes('install')) {
