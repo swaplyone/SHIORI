@@ -4,14 +4,13 @@ import {
   X,
   Mic,
   MicOff,
-  Send,
+  RotateCcw,
   Volume2,
   VolumeX,
   AlertTriangle,
   Radio,
   Sparkles,
   ShieldCheck,
-  CheckCircle2,
   CornerDownLeft
 } from 'lucide-react';
 import Strands from './Strands';
@@ -36,7 +35,6 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     isSparkOpen,
     closeSpark,
     heySparkEnabled,
-    setHeySparkEnabled,
     voiceResponsesEnabled,
     setVoiceResponsesEnabled,
     initialCommand,
@@ -47,12 +45,13 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   const { startFocusTimer, pauseFocusTimer, resumeFocusTimer, stopFocusTimer } = useMorphBar();
   const navigate = useNavigate();
 
-  const [state, setState] = useState<SparkState>('IDLE');
+  const [state, setState] = useState<SparkState>('LISTENING');
   const [inputText, setInputText] = useState<string>('');
   const [interimTranscript, setInterimTranscript] = useState<string>('');
   const [responseMessage, setResponseMessage] = useState<string>('');
   const [confirmationPayload, setConfirmationPayload] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [isTypingMode, setIsTypingMode] = useState<boolean>(false);
 
   const recognitionRef = useRef<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -76,7 +75,10 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     if (!voiceResponsesEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
-      const clean = text.replace(/[*_`#]/g, '').trim();
+      const clean = text
+        .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '')
+        .replace(/[*_~`#\[\]\(\)]/g, '')
+        .trim();
       if (!clean) return;
 
       const utterance = new SpeechSynthesisUtterance(clean);
@@ -105,6 +107,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     setState('PROCESSING');
     setErrorMessage('');
     setInterimTranscript('');
+    setIsTypingMode(false);
 
     try {
       const res = await fetch('/api/spark/command', {
@@ -176,7 +179,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     }
   };
 
-  const startListening = () => {
+  const startListening = useCallback(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setErrorMessage("Voice recognition is not available in this browser. You can type commands below.");
@@ -224,14 +227,14 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
         if (cleanedInterim) {
           setInterimTranscript(cleanedInterim);
-          // Reset silence debounce
+          // 2.2s silence debounce execution for hands-free natural speaking
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
           silenceTimerRef.current = setTimeout(() => {
             if (cleanedInterim.length > 2 && !isExecutingRef.current) {
               setInputText(cleanedInterim);
               handleExecuteCommand(cleanedInterim);
             }
-          }, 2400);
+          }, 2200);
         }
 
         if (cleanedFinal) {
@@ -265,9 +268,9 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       console.warn('Recognition start failed:', e);
       setState('IDLE');
     }
-  };
+  }, [recognitionLanguage]);
 
-  const stopListening = () => {
+  const stopListening = useCallback(() => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (recognitionRef.current) {
       try {
@@ -276,9 +279,17 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     }
     setInterimTranscript('');
     setState('IDLE');
+  }, []);
+
+  const handleRetry = () => {
+    setInputText('');
+    setInterimTranscript('');
+    setResponseMessage('');
+    setErrorMessage('');
+    startListening();
   };
 
-  // On open: start listening smoothly
+  // On open: initialize and start listening smoothly
   useEffect(() => {
     if (isSparkOpen) {
       isExecutingRef.current = false;
@@ -286,6 +297,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       setConfirmationPayload(null);
       setErrorMessage('');
       setInterimTranscript('');
+      setIsTypingMode(false);
 
       if (initialCommand && initialCommand.trim().length > 1) {
         setInputText(initialCommand);
@@ -296,14 +308,13 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       } else {
         setState('LISTENING');
         setInputText('');
-        setResponseMessage("I'm listening. What should we work on in SHIORI?");
+        setResponseMessage('');
         clearInitialCommand();
 
         const timer = setTimeout(() => {
           startListening();
-        }, 250);
+        }, 200);
 
-        setTimeout(() => inputRef.current?.focus(), 200);
         return () => clearTimeout(timer);
       }
     } else {
@@ -317,7 +328,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         window.speechSynthesis.cancel();
       }
     }
-  }, [isSparkOpen, initialCommand]);
+  }, [isSparkOpen, initialCommand, startListening]);
 
   // Handle ESC and keyboard controls
   useEffect(() => {
@@ -332,21 +343,21 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
   if (!isSparkOpen) return null;
 
-  // Strands dynamic shader mapping according to state (quiet, restrained, premium glass)
+  // Strands dynamic shader mapping according to state (Japanese-inspired glass sphere)
   const getStrandsProps = () => {
     switch (state) {
       case 'LISTENING':
         return {
-          colors: ['#10B981', '#ffffff', '#06B6D4', '#F97316'],
+          colors: ['#F97316', '#ffffff', '#10B981'],
           count: 3,
-          speed: 0.8,
-          amplitude: 1.2,
+          speed: 0.75,
+          amplitude: 1.25,
           waviness: 3.2,
           thickness: 0.7,
-          glow: 1.3,
+          glow: 1.2,
           taper: 6,
           spread: 1,
-          intensity: 0.85,
+          intensity: 0.75,
           saturation: 2,
           opacity: 1,
           scale: 1.5,
@@ -448,104 +459,195 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
   const strandsProps = getStrandsProps();
 
+  const getStatusLabel = () => {
+    switch (state) {
+      case 'LISTENING':
+        return 'LISTENING';
+      case 'PROCESSING':
+        return 'PROCESSING';
+      case 'SPEAKING':
+        return 'SPEAKING';
+      case 'CONFIRMATION':
+        return 'CONFIRMATION';
+      case 'ERROR':
+        return 'NOTICE';
+      case 'IDLE':
+      default:
+        return 'READY';
+    }
+  };
+
+  const getSubStatusText = () => {
+    if (state === 'LISTENING') return 'Go ahead.';
+    if (state === 'PROCESSING') return 'One second...';
+    if (responseMessage) return responseMessage;
+    if (state === 'IDLE') return 'Ready when you are.';
+    return 'Go ahead.';
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-between p-4 sm:p-8 md:p-10 bg-[#0a0a0a]/85 backdrop-blur-[32px] backdrop-saturate-150 overflow-hidden font-sans select-none animate-fade-in text-white">
-      {/* Central Full-Screen WebGL Strands Layer */}
-      <div className="fixed inset-0 w-full h-full pointer-events-none z-0">
-        <Strands {...strandsProps} />
-      </div>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Spark Fullscreen Voice Assistant"
+      className="fixed inset-0 z-50 flex flex-col justify-between w-full h-[100dvh] bg-[#0c0d0e]/85 backdrop-blur-[40px] backdrop-saturate-[180%] select-none font-sans text-white overflow-hidden animate-fade-in pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] px-6 sm:px-12"
+    >
+      {/* Subtle radial vignette */}
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.35)_55%,rgba(0,0,0,0.85)_100%)] pointer-events-none z-0" />
 
-      {/* Subtle paper vignette */}
-      <div className="fixed inset-0 bg-radial-gradient from-transparent via-black/20 to-black/80 pointer-events-none z-0" />
-
-      {/* Top Floating Minimalist Bar */}
-      <div className="relative z-10 w-full max-w-3xl mx-auto flex items-center justify-between px-5 py-2.5 rounded-full bg-white/[0.06] backdrop-blur-2xl border border-white/15 shadow-2xl">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-bold tracking-widest text-white flex items-center gap-1.5 font-abask">
-            ✦ SPARK
+      {/* ========================================================================= */}
+      {/* 1. TOP HEADER */}
+      {/* ========================================================================= */}
+      <header className="relative z-10 w-full flex items-center justify-between shrink-0">
+        {/* Top Left: SHIORI Brand */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-serif tracking-[0.25em] text-white/80 font-medium flex items-center gap-1.5 uppercase">
+            <span className="text-amber-300 text-xs">✦</span> SHIORI
           </span>
-          <span className="hidden sm:inline-block text-[10px] text-white/60 uppercase font-mono tracking-widest px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
-            SHIORI PROJECT COMPANION
-          </span>
-
-          {heySparkEnabled && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-mono font-bold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              <span>WAKE ACTIVE</span>
-            </div>
-          )}
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Top Center: Spark Title & Identity */}
+        <div className="flex flex-col items-center justify-center text-center">
+          <span className="text-amber-200/90 text-sm leading-none mb-1 animate-pulse">✦</span>
+          <h1 className="text-base sm:text-lg font-bold tracking-[0.45em] text-white uppercase font-abask leading-none">
+            S P A R K
+          </h1>
+          <p className="text-[9px] sm:text-[10px] tracking-[0.28em] text-white/50 uppercase font-mono mt-1">
+            SHIORI PROJECT COMPANION
+          </p>
+        </div>
+
+        {/* Top Right: Status Pill & Close (X) Button */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-white/80 text-[11px] font-mono tracking-wider">
+            <span className="text-amber-300 text-xs">✦</span>
+            <span>SPARK</span>
+          </div>
+
           <button
             onClick={() => setVoiceResponsesEnabled(!voiceResponsesEnabled)}
             title={voiceResponsesEnabled ? 'Mute Voice Output' : 'Enable Voice Output'}
-            className="p-1.5 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10 cursor-pointer"
+            className="p-2 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10 cursor-pointer"
           >
-            {voiceResponsesEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5 opacity-50" />}
+            {voiceResponsesEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 opacity-50" />}
           </button>
 
           <button
             onClick={closeSpark}
-            className="p-1.5 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10 cursor-pointer"
+            className="p-2 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10 cursor-pointer"
             title="Close (Esc)"
+            aria-label="Close Spark"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Central Immersive Stage */}
-      <div className="relative z-10 flex flex-col items-center justify-center text-center my-auto max-w-2xl w-full mx-auto px-4 space-y-5">
-        {/* Minimalist Status Label */}
-        <div className="flex items-center justify-center">
-          <span
-            className={`px-3.5 py-1 rounded-full text-[11px] font-mono font-bold tracking-widest border uppercase transition-all shadow-md backdrop-blur-xl ${
-              state === 'LISTENING'
-                ? 'bg-emerald-600/70 text-white border-emerald-400/60 animate-pulse'
-                : state === 'PROCESSING'
-                ? 'bg-purple-600/70 text-white border-purple-400/60'
-                : state === 'SPEAKING'
-                ? 'bg-amber-600/70 text-white border-amber-400/60'
-                : state === 'CONFIRMATION'
-                ? 'bg-red-600/70 text-white border-red-400/60'
-                : 'bg-white/10 text-white/80 border-white/15'
-            }`}
-          >
-            {state === 'LISTENING'
-              ? '● LISTENING...'
-              : state === 'PROCESSING'
-              ? '◌ ONE SECOND...'
-              : state === 'SPEAKING'
-              ? "✦ HERE'S WHAT I FOUND"
-              : state === 'CONFIRMATION'
-              ? '⚠ CONFIRMATION'
-              : '✦ GO AHEAD'}
-          </span>
+      {/* ========================================================================= */}
+      {/* 2. CENTER STAGE: SPHERICAL STRANDS LENS & STATUS */}
+      {/* ========================================================================= */}
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center my-auto w-full max-w-2xl mx-auto text-center space-y-5 sm:space-y-6">
+        {/* Spherical Lens containing the WebGL Strands Animation */}
+        <div className="relative flex items-center justify-center">
+          <div className="w-[68vw] h-[68vw] max-w-[340px] max-h-[340px] sm:w-[380px] sm:h-[380px] md:w-[420px] md:h-[420px] rounded-full overflow-hidden relative shadow-[0_0_90px_rgba(0,0,0,0.9),inset_0_0_30px_rgba(255,255,255,0.08)] border border-white/15 backdrop-blur-md transition-transform duration-700 ease-out hover:scale-[1.02]">
+            <Strands {...strandsProps} className="w-full h-full" />
+            {/* Glass refraction reflection overlay */}
+            <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/10 via-transparent to-black/40 pointer-events-none" />
+          </div>
         </div>
 
-        {/* Live Transcription or Response Display */}
-        <div className="w-full space-y-4">
-          {state === 'LISTENING' && (interimTranscript || inputText) ? (
-            <div className="p-6 bg-black/40 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-xl space-y-2 animate-fade-in">
-              <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest block font-bold">
-                HEARING:
+        {/* State Indicator Pill */}
+        <div className="flex flex-col items-center justify-center space-y-2">
+          <div className="flex items-center gap-2 px-4 py-1 rounded-full bg-black/45 border border-white/15 backdrop-blur-xl shadow-lg">
+            {state === 'LISTENING' ? (
+              <span className="flex items-center gap-0.5 text-emerald-400">
+                <span className="w-0.5 h-3 bg-emerald-400 animate-pulse" />
+                <span className="w-0.5 h-4 bg-emerald-400 animate-pulse delay-75" />
+                <span className="w-0.5 h-2 bg-emerald-400 animate-pulse delay-150" />
               </span>
-              <p className="text-xl sm:text-2xl font-mono text-emerald-200 font-medium italic tracking-tight">
-                &gt; "{interimTranscript || inputText}"<span className="inline-block w-2 h-5 ml-1 bg-emerald-400 animate-pulse align-middle" />
-              </p>
-            </div>
-          ) : (
-            <div className="p-6 sm:p-8 bg-black/40 backdrop-blur-2xl border border-white/15 rounded-3xl shadow-xl transition-all">
-              <p className="text-lg sm:text-2xl font-abask text-white font-medium tracking-tight leading-relaxed whitespace-pre-line">
-                {responseMessage || "I'm listening. What should we work on in SHIORI?"}
-              </p>
-            </div>
-          )}
+            ) : state === 'PROCESSING' ? (
+              <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
+            ) : state === 'SPEAKING' ? (
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            ) : (
+              <span className="w-2 h-2 rounded-full bg-white/40" />
+            )}
 
-          {/* Error Notice */}
+            <span className="text-xs font-mono font-bold tracking-widest text-white/90">
+              {getStatusLabel()}
+            </span>
+          </div>
+
+          {/* Subtitle / Caption */}
+          <p className="text-sm sm:text-base font-sans text-white/70 italic max-w-lg px-4 transition-all leading-relaxed whitespace-pre-line">
+            {getSubStatusText()}
+          </p>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* 3. LIVE TRANSCRIPTION OR EDITABLE COMMAND PILL */}
+        {/* ========================================================================= */}
+        <div className="w-full max-w-xl px-2">
+          <div
+            onClick={() => {
+              setIsTypingMode(true);
+              setTimeout(() => inputRef.current?.focus(), 50);
+            }}
+            className="w-full px-5 py-3 rounded-full bg-black/40 backdrop-blur-2xl border border-white/15 shadow-2xl flex items-center gap-3 transition-all focus-within:border-white/35 focus-within:bg-black/60 cursor-text"
+          >
+            <Mic className="w-4 h-4 text-white/50 shrink-0" />
+
+            {isTypingMode ? (
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleExecuteCommand();
+                  }
+                }}
+                onBlur={() => {
+                  if (!inputText) setIsTypingMode(false);
+                }}
+                placeholder='Type a command (e.g. "Start a 25 min focus", "What should I work on?")...'
+                className="flex-1 bg-transparent text-white placeholder-white/40 font-mono text-xs sm:text-sm outline-none"
+              />
+            ) : (
+              <div className="flex-1 text-left overflow-hidden">
+                {interimTranscript || inputText ? (
+                  <p className="text-xs sm:text-sm font-mono text-white/90 truncate">
+                    "{interimTranscript || inputText}"
+                    {state === 'LISTENING' && (
+                      <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-xs sm:text-sm font-mono text-white/40 truncate">
+                    {state === 'LISTENING' ? 'Speak a command or tap to type...' : 'Tap to type command...'}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {inputText.trim() && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleExecuteCommand();
+                }}
+                className="p-1.5 rounded-full bg-white text-black hover:bg-white/90 transition-all cursor-pointer"
+                title="Send Command"
+              >
+                <CornerDownLeft className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Error Message */}
           {errorMessage && (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/20 border border-red-400/40 text-red-200 text-xs font-mono">
+            <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 border border-red-400/30 text-red-200 text-xs font-mono">
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>{errorMessage}</span>
             </div>
@@ -553,10 +655,10 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
           {/* Confirmation Box */}
           {state === 'CONFIRMATION' && confirmationPayload && (
-            <div className="mt-3 p-4 rounded-xl bg-red-950/40 border border-red-500/40 backdrop-blur-xl text-left space-y-2.5 animate-fade-in">
-              <div className="flex items-center gap-2 text-red-200 font-bold text-xs">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                <span>Explicit Action Confirmation</span>
+            <div className="mt-4 p-4 rounded-2xl bg-red-950/40 border border-red-500/40 backdrop-blur-xl text-left space-y-2.5 animate-fade-in shadow-2xl">
+              <div className="flex items-center gap-2 text-red-200 font-bold text-xs font-mono uppercase">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                <span>Confirmation Required</span>
               </div>
               <p className="text-xs text-white/80 leading-relaxed font-sans">
                 Action: <strong className="text-white">{confirmationPayload.action}</strong> on{' '}
@@ -569,7 +671,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
                     setConfirmationPayload(null);
                     setResponseMessage('Action cancelled.');
                   }}
-                  className="px-3.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold transition-all cursor-pointer"
+                  className="px-4 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold transition-all cursor-pointer"
                 >
                   CANCEL
                 </button>
@@ -583,73 +685,84 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
             </div>
           )}
         </div>
-      </div>
 
-      {/* Bottom Compact Console with Fallback Text Input */}
-      <div className="relative z-10 w-full max-w-2xl mx-auto flex flex-col gap-3 pb-2 sm:pb-0">
-        {/* Quick Suggestion Chips */}
-        <div className="flex flex-wrap items-center justify-center gap-1.5 text-xs font-mono">
-          {[
-            'What should I work on?',
-            "What's running?",
-            "What's overdue?",
-            'Start a 25 min focus'
-          ].map((sugg) => (
+        {/* ========================================================================= */}
+        {/* 4. BOTTOM ACTION CONTROLS: CANCEL, GLOWING MIC, RETRY */}
+        {/* ========================================================================= */}
+        <div className="flex items-center justify-center gap-8 sm:gap-12 pt-1">
+          {/* Cancel Button */}
+          <div className="flex flex-col items-center gap-1.5">
             <button
-              key={sugg}
-              onClick={() => {
-                setInputText(sugg);
-                handleExecuteCommand(sugg);
-              }}
-              className="px-3 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.14] border border-white/10 text-white/80 transition-all hover:scale-105 active:scale-95 text-[11px] cursor-pointer"
+              onClick={closeSpark}
+              className="w-11 h-11 rounded-full bg-white/[0.08] hover:bg-white/[0.16] border border-white/15 flex items-center justify-center text-white/70 hover:text-white transition-all active:scale-95 shadow-md cursor-pointer"
+              title="Cancel (Esc)"
+              aria-label="Cancel"
             >
-              {sugg}
+              <X className="w-4 h-4" />
             </button>
-          ))}
+            <span className="text-[10px] font-mono tracking-wider text-white/50 uppercase">
+              Cancel
+            </span>
+          </div>
+
+          {/* Central Microphone Button with Rainbow/Gold Glowing Border */}
+          <div className="flex flex-col items-center gap-1.5">
+            <button
+              onClick={state === 'LISTENING' ? stopListening : startListening}
+              className={`w-16 h-16 sm:w-18 sm:h-18 rounded-full p-[2.5px] transition-all duration-300 active:scale-90 cursor-pointer ${
+                state === 'LISTENING'
+                  ? 'bg-gradient-to-tr from-[#FF4242] via-[#EAB308] to-[#10B981] shadow-[0_0_35px_rgba(234,179,8,0.45)] scale-105'
+                  : 'bg-white/20 hover:bg-white/30 border border-white/20'
+              }`}
+              title={state === 'LISTENING' ? 'Stop Listening' : 'Start Speaking'}
+              aria-label="Toggle Microphone"
+            >
+              <div className="w-full h-full rounded-full bg-[#131416] flex items-center justify-center text-white">
+                {state === 'LISTENING' ? (
+                  <MicOff className="w-6 h-6 text-emerald-400 animate-pulse" />
+                ) : (
+                  <Mic className="w-6 h-6 text-white" />
+                )}
+              </div>
+            </button>
+            <span className="text-[10px] font-mono tracking-wider text-white/60 uppercase">
+              {state === 'LISTENING' ? 'Listening...' : 'Tap to speak'}
+            </span>
+          </div>
+
+          {/* Retry Button */}
+          <div className="flex flex-col items-center gap-1.5">
+            <button
+              onClick={handleRetry}
+              className="w-11 h-11 rounded-full bg-white/[0.08] hover:bg-white/[0.16] border border-white/15 flex items-center justify-center text-white/70 hover:text-white transition-all active:scale-95 shadow-md cursor-pointer"
+              title="Retry Voice Input"
+              aria-label="Retry"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+            <span className="text-[10px] font-mono tracking-wider text-white/50 uppercase">
+              Retry
+            </span>
+          </div>
+        </div>
+      </main>
+
+      {/* ========================================================================= */}
+      {/* 5. BOTTOM FOOTER BAR */}
+      {/* ========================================================================= */}
+      <footer className="relative z-10 w-full flex items-center justify-between text-[10px] font-mono text-white/40 tracking-wider shrink-0">
+        <div className="flex items-center gap-2">
+          <span>—— SHIORI / SPARK</span>
         </div>
 
-        {/* Compact Text Input / Voice Bar */}
-        <div className="p-2.5 bg-white/[0.07] backdrop-blur-2xl border border-white/15 rounded-2xl shadow-xl flex items-center gap-2.5">
-          <button
-            onClick={state === 'LISTENING' ? stopListening : startListening}
-            className={`p-2.5 rounded-xl border transition-all flex items-center justify-center shrink-0 cursor-pointer ${
-              state === 'LISTENING'
-                ? 'bg-emerald-500 text-white border-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.8)] scale-105'
-                : 'bg-white/10 hover:bg-white/20 border-white/20 text-white'
-            }`}
-            title={state === 'LISTENING' ? 'Stop Listening' : 'Tap to Speak'}
-          >
-            {state === 'LISTENING' ? <MicOff className="w-4 h-4 animate-pulse" /> : <Mic className="w-4 h-4" />}
-          </button>
-
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleExecuteCommand();
-              }
-            }}
-            placeholder={
-              state === 'LISTENING'
-                ? 'Listening to voice...'
-                : 'Speak to Spark or type command (e.g. "What should I work on?")...'
-            }
-            className="flex-1 px-3.5 py-2 bg-black/30 border border-white/10 rounded-xl text-white placeholder-white/40 font-mono text-xs sm:text-sm outline-none focus:border-white/30 transition-colors"
-          />
-
-          <button
-            onClick={() => handleExecuteCommand()}
-            disabled={!inputText.trim() || state === 'PROCESSING'}
-            className="p-2.5 rounded-xl bg-white text-black font-bold shadow-md disabled:opacity-30 hover:opacity-90 active:scale-95 transition-all cursor-pointer"
-            title="Execute Command"
-          >
-            <CornerDownLeft className="w-3.5 h-3.5" />
-          </button>
+        <div className="flex items-center gap-1.5">
+          <span>Press</span>
+          <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/70 font-bold border border-white/10 text-[9px]">
+            Esc
+          </kbd>
+          <span>to close</span>
         </div>
-      </div>
+      </footer>
     </div>
   );
 };
