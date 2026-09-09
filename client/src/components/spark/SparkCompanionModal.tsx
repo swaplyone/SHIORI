@@ -99,18 +99,6 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     localStorage.getItem('shiori_spark_debug') === 'true'
   );
 
-  // Prevent background scrolling while Spark is open without layout shifts
-  useEffect(() => {
-    if (isSparkOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isSparkOpen]);
-
   // Robust Speech Output using speakSpark with seamless iOS handoff
   const speakText = useCallback((text: string, onDone?: () => void) => {
     speakSpark(
