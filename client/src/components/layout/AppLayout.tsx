@@ -6,11 +6,14 @@ import { PwaInstallPrompt } from '../common/PwaInstallPrompt';
 import { NotificationPermissionPrompt } from '../common/NotificationPermissionPrompt';
 import { SimulatorDrawer } from '../simulator/SimulatorDrawer';
 import { TaskDetailModal } from '../tasks/TaskDetailModal';
+import { SparkCompanionModal } from '../spark/SparkCompanionModal';
 import { useNotifications } from '../../context/NotificationContext';
+import { Mic } from 'lucide-react';
 
 export const AppLayout: React.FC = () => {
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [isSparkOpen, setIsSparkOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const { isRefreshing } = useNotifications();
 
@@ -18,6 +21,7 @@ export const AppLayout: React.FC = () => {
   useEffect(() => {
     const handleOpenSimulator = () => setIsSimulatorOpen(true);
     const handleOpenPalette = () => setIsPaletteOpen(true);
+    const handleOpenSpark = () => setIsSparkOpen(true);
     const handleOpenTask = (e: any) => {
       if (e.detail?.taskId) {
         setSelectedTaskId(e.detail.taskId);
@@ -32,17 +36,25 @@ export const AppLayout: React.FC = () => {
       ) {
         e.preventDefault();
         setIsPaletteOpen((prev) => !prev);
+      } else if (
+        ((e.key === 'j' || e.key === 'J') && (e.metaKey || e.ctrlKey)) ||
+        ((e.key === 's' || e.key === 'S') && e.altKey)
+      ) {
+        e.preventDefault();
+        setIsSparkOpen((prev) => !prev);
       }
     };
 
     window.addEventListener('shiori:open-simulator', handleOpenSimulator);
     window.addEventListener('shiori:open-command-palette', handleOpenPalette);
+    window.addEventListener('shiori:open-spark', handleOpenSpark);
     window.addEventListener('shiori:open-task', handleOpenTask);
     window.addEventListener('keydown', handleGlobalKeydown);
 
     return () => {
       window.removeEventListener('shiori:open-simulator', handleOpenSimulator);
       window.removeEventListener('shiori:open-command-palette', handleOpenPalette);
+      window.removeEventListener('shiori:open-spark', handleOpenSpark);
       window.removeEventListener('shiori:open-task', handleOpenTask);
       window.removeEventListener('keydown', handleGlobalKeydown);
     };
@@ -116,6 +128,23 @@ export const AppLayout: React.FC = () => {
           }}
         />
       )}
+
+      {/* Global Spark Companion Modal */}
+      <SparkCompanionModal
+        isOpen={isSparkOpen}
+        onClose={() => setIsSparkOpen(false)}
+      />
+
+      {/* Floating Spark Quick-Talk Launcher (Always accessible, mobile safe-area aware) */}
+      <button
+        onClick={() => setIsSparkOpen(true)}
+        className="fixed bottom-5 right-5 z-40 px-3 py-2 bg-eink-surface hover:bg-eink-surfaceHover text-eink-text border border-eink-border shadow-eink-sm hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 rounded-full font-technical text-xs font-bold"
+        title="Open Spark Companion (Ctrl+J / Alt+S)"
+      >
+        <span className="text-eink-text font-bold">✦</span>
+        <span className="tracking-wider">SPARK</span>
+        <Mic className="w-3.5 h-3.5 text-eink-textSecondary ml-0.5" />
+      </button>
 
       {/* Install PWA Prompt */}
       <PwaInstallPrompt />

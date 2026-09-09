@@ -22,6 +22,7 @@ import { journalRouter } from './routes/journal.routes.js';
 import { notificationsRouter } from './routes/notifications.routes.js';
 import { simulatorRouter } from './routes/simulator.routes.js';
 import { recoveryRouter } from './routes/recovery.routes.js';
+import { sparkRouter } from './routes/spark.routes.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -61,6 +62,7 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/simulator', simulatorRouter);
 app.use('/api/recovery', recoveryRouter);
 app.use('/api/focus', focusRouter);
+app.use('/api/spark', sparkRouter);
 
 // Health check endpoints for UptimeRobot & Keep-Alive Monitoring
 app.get(['/', '/health', '/api/health', '/ping', '/api/ping'], (_req, res) => {
