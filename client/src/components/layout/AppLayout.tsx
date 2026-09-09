@@ -9,6 +9,7 @@ import { TaskDetailModal } from '../tasks/TaskDetailModal';
 import { SparkCompanionModal } from '../spark/SparkCompanionModal';
 import { SparkGreetingBanner } from '../spark/SparkGreetingBanner';
 import { SparkFloatingBubble } from '../spark/SparkFloatingBubble';
+import { SparkMicrophonePromptModal } from '../spark/SparkMicrophonePromptModal';
 import { useNotifications } from '../../context/NotificationContext';
 import { useSpark } from '../../context/SparkContext';
 
@@ -135,6 +136,9 @@ export const AppLayout: React.FC = () => {
 
       {/* Global Spark Companion Modal */}
       <SparkCompanionModal />
+
+      {/* Spark Microphone Permission Explanation Modal */}
+      <SparkMicrophonePromptModal />
 
       {/* Floating Spark Companion Bubble on bottom-right corner */}
       <SparkFloatingBubble />

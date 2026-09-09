@@ -1,24 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   X,
   Mic,
   MicOff,
   Send,
-  Sparkles,
-  RotateCcw,
-  Check,
-  AlertTriangle,
   Volume2,
   VolumeX,
-  ShieldCheck,
-  Terminal,
-  ArrowRight,
-  Play,
-  CheckCircle2,
-  Clock,
+  AlertTriangle,
   Radio,
-  Minimize2
+  Sparkles,
+  ShieldCheck,
+  CheckCircle2
 } from 'lucide-react';
 import Strands from './Strands';
 import { useAuth } from '../../context/AuthContext';
@@ -32,7 +25,7 @@ interface SparkCompanionModalProps {
   };
 }
 
-type SparkState = 'STANDBY' | 'WAKE_DETECTED' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'CONFIRMATION' | 'ERROR';
+type SparkState = 'IDLE' | 'WAKE_LISTENING' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'CONFIRMATION' | 'ERROR';
 
 export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   context = {}
@@ -43,183 +36,64 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     closeSpark,
     heySparkEnabled,
     setHeySparkEnabled,
+    voiceResponsesEnabled,
+    setVoiceResponsesEnabled,
     initialCommand,
-    clearInitialCommand
+    clearInitialCommand,
+    recognitionLanguage,
+    requestMicrophoneAccess
   } = useSpark();
 
   const { startFocusTimer, pauseFocusTimer, resumeFocusTimer, stopFocusTimer } = useMorphBar();
   const navigate = useNavigate();
 
-  const [state, setState] = useState<SparkState>('STANDBY');
+  const [state, setState] = useState<SparkState>('IDLE');
   const [inputText, setInputText] = useState<string>('');
+  const [interimTranscript, setInterimTranscript] = useState<string>('');
   const [responseMessage, setResponseMessage] = useState<string>('');
   const [confirmationPayload, setConfirmationPayload] = useState<any>(null);
-  const [speechEnabled, setSpeechEnabled] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   const recognitionRef = useRef<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isExecutingRef = useRef(false);
+  const lastExecutedTextRef = useRef('');
 
-  // Initialize Speech Recognition for active voice input
-  useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-
-      recognition.onstart = () => {
-        setState('LISTENING');
-      };
-
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-
-        const cleanTranscript = transcript.replace(/^(?:hey|hi|hello|ok|okay)?\s*spark[,.]?\s*/i, '').trim();
-        if (cleanTranscript) {
-          setInputText(cleanTranscript);
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('[SPARK ACTIVE SPEECH ERROR]', event.error);
-        if (event.error === 'not-allowed') {
-          setErrorMessage('Microphone access denied. You can type commands below.');
-          setState('STANDBY');
-        } else if (event.error === 'no-speech') {
-          setState('STANDBY');
-        } else {
-          setState('STANDBY');
-        }
-      };
-
-      recognition.onend = () => {
-        // If voice transcribed text was captured, auto-execute it
-        if (inputRef.current?.value && !isExecutingRef.current) {
-          handleExecuteCommand(inputRef.current.value);
-        } else {
-          setState((prev) => (prev === 'LISTENING' ? 'STANDBY' : prev));
-        }
-      };
-
-      recognitionRef.current = recognition;
-    } catch (err) {
-      console.warn('Modal SpeechRecognition init error:', err);
-    }
-  }, []);
-
-  // When modal opens: Check if an initial command was captured, or start listening
-  useEffect(() => {
-    if (isSparkOpen) {
-      isExecutingRef.current = false;
-      setConfirmationPayload(null);
-      setErrorMessage('');
-
-      if (initialCommand && initialCommand.trim().length > 1) {
-        // User spoke the wake word + command in one breath
-        setInputText(initialCommand);
-        setState('PROCESSING');
-        setResponseMessage(`Executing: "${initialCommand}"...`);
-        clearInitialCommand();
-        handleExecuteCommand(initialCommand);
-      } else {
-        // User spoke just "Hey Spark" or tapped the floating orb
-        setState('WAKE_DETECTED');
-        setInputText('');
-        setResponseMessage('What should we work on in SHIORI today?');
-        clearInitialCommand();
-
-        // Start listening smoothly after wake chime animation
-        const timer = setTimeout(() => {
-          startListening();
-        }, 500);
-
-        setTimeout(() => inputRef.current?.focus(), 300);
-        return () => clearTimeout(timer);
-      }
-    } else {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch {}
-      }
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    }
-  }, [isSparkOpen, initialCommand]);
-
-  // Handle ESC key to close
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isSparkOpen) {
-        closeSpark();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSparkOpen, closeSpark]);
-
-  // Speech output
-  const speakText = (text: string) => {
-    if (!speechEnabled || !('speechSynthesis' in window)) return;
+  // Speech output using Web SpeechSynthesis API
+  const speakText = useCallback((text: string) => {
+    if (!voiceResponsesEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
       const clean = text.replace(/[*_`#]/g, '').trim();
+      if (!clean) return;
+
       const utterance = new SpeechSynthesisUtterance(clean);
+      utterance.lang = recognitionLanguage || 'en-IN';
       utterance.rate = 1.05;
       utterance.pitch = 1.0;
       utterance.onstart = () => setState('SPEAKING');
-      utterance.onend = () => setState('STANDBY');
-      utterance.onerror = () => setState('STANDBY');
+      utterance.onend = () => setState('IDLE');
+      utterance.onerror = () => setState('IDLE');
       window.speechSynthesis.speak(utterance);
     } catch (e) {
       console.warn('Speech synthesis error:', e);
+      setState('IDLE');
     }
-  };
-
-  const startListening = () => {
-    if (!recognitionRef.current) {
-      setState('STANDBY');
-      return;
-    }
-    try {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-      setInputText('');
-      setErrorMessage('');
-      recognitionRef.current.start();
-    } catch (e) {
-      console.warn('Recognition start failed:', e);
-      setState('STANDBY');
-    }
-  };
-
-  const stopListening = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {}
-    }
-    setState('STANDBY');
-  };
+  }, [voiceResponsesEnabled, recognitionLanguage]);
 
   // Execute Command via Secure Backend Router
   const handleExecuteCommand = async (commandToRun?: string, isConfirmed = false) => {
     const text = (commandToRun || inputText).trim();
     if (!text || !token) return;
 
+    // Clean duplicate executions
+    if (text === lastExecutedTextRef.current && isExecutingRef.current) return;
+    lastExecutedTextRef.current = text;
+
     isExecutingRef.current = true;
     setState('PROCESSING');
     setErrorMessage('');
+    setInterimTranscript('');
 
     try {
       const res = await fetch('/api/spark/command', {
@@ -242,10 +116,10 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       if (res.ok && data.success) {
         setResponseMessage(data.displayText || 'Done.');
 
-        if (data.speakText) {
+        if (data.speakText && voiceResponsesEnabled) {
           speakText(data.speakText);
         } else {
-          setState('STANDBY');
+          setState('IDLE');
         }
 
         if (data.focusAction) {
@@ -281,7 +155,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       } else {
         setState('ERROR');
         setResponseMessage(data.displayText || data.error || 'I could not reach SHIORI right now.');
-        if (data.speakText) speakText(data.speakText);
+        if (data.speakText && voiceResponsesEnabled) speakText(data.speakText);
       }
     } catch (err) {
       console.error(err);
@@ -291,44 +165,178 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     }
   };
 
+  const startListening = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setErrorMessage("Voice recognition is not supported in this browser. You can type commands below.");
+      setState('IDLE');
+      return;
+    }
+
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      setInputText('');
+      setInterimTranscript('');
+      setErrorMessage('');
+
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = recognitionLanguage || 'en-IN';
+      recognition.maxAlternatives = 2;
+
+      recognition.onstart = () => {
+        setState('LISTENING');
+      };
+
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        let final = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const trans = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            final += trans;
+          } else {
+            interim += trans;
+          }
+        }
+
+        // Clean wake word prefixes from the transcribed text
+        const cleanedInterim = interim.replace(/^(?:hey|hi|hello|ok|okay)?\s*spark[,.]?\s*/i, '').trim();
+        const cleanedFinal = final.replace(/^(?:hey|hi|hello|ok|okay)?\s*spark[,.]?\s*/i, '').trim();
+
+        if (cleanedInterim) {
+          setInterimTranscript(cleanedInterim);
+        }
+
+        if (cleanedFinal) {
+          setInputText(cleanedFinal);
+          setInterimTranscript('');
+          handleExecuteCommand(cleanedFinal);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('[SPARK SPEECH ERROR]', event.error);
+        if (event.error === 'not-allowed') {
+          setErrorMessage('Microphone access denied. Check your browser permissions.');
+          setState('IDLE');
+        } else if (event.error === 'no-speech') {
+          setState('IDLE');
+        } else {
+          setState('IDLE');
+        }
+      };
+
+      recognition.onend = () => {
+        setInterimTranscript('');
+        setState((prev) => (prev === 'LISTENING' ? 'IDLE' : prev));
+      };
+
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch (e) {
+      console.warn('Recognition start failed:', e);
+      setState('IDLE');
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {}
+    }
+    setInterimTranscript('');
+    setState('IDLE');
+  };
+
+  // When modal opens: Check if an initial command was captured, or start listening
+  useEffect(() => {
+    if (isSparkOpen) {
+      isExecutingRef.current = false;
+      lastExecutedTextRef.current = '';
+      setConfirmationPayload(null);
+      setErrorMessage('');
+      setInterimTranscript('');
+
+      if (initialCommand && initialCommand.trim().length > 1) {
+        // User spoke wake word + command in one fluid sentence
+        setInputText(initialCommand);
+        setState('PROCESSING');
+        setResponseMessage(`Executing: "${initialCommand}"...`);
+        clearInitialCommand();
+        handleExecuteCommand(initialCommand);
+      } else {
+        // User spoke just "Hey Spark" or tapped the floating orb
+        setState('LISTENING');
+        setInputText('');
+        setResponseMessage("I'm listening. What should we work on in SHIORI?");
+        clearInitialCommand();
+
+        const timer = setTimeout(() => {
+          startListening();
+        }, 300);
+
+        setTimeout(() => inputRef.current?.focus(), 250);
+        return () => clearTimeout(timer);
+      }
+    } else {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {}
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    }
+  }, [isSparkOpen, initialCommand]);
+
+  // Handle ESC key to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isSparkOpen) {
+        closeSpark();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSparkOpen, closeSpark]);
+
   if (!isSparkOpen) return null;
 
-  // WebGL Strands dynamic shader mapping for full-screen visuals
+  // WebGL Strands dynamic shader mapping according to state
   const getStrandsProps = () => {
     switch (state) {
-      case 'WAKE_DETECTED':
-        return {
-          colors: ['#F97316', '#ffffff', '#10B981', '#EAB308'],
-          count: 6,
-          speed: 1.5,
-          amplitude: 1.6,
-          waviness: 1.8,
-          thickness: 0.95,
-          glow: 3.8,
-          intensity: 1.0,
-          scale: 1.3
-        };
       case 'LISTENING':
         return {
           colors: ['#10B981', '#ffffff', '#06B6D4', '#F97316'],
           count: 5,
-          speed: 0.95,
+          speed: 1.0,
           amplitude: 1.4,
-          waviness: 1.5,
+          waviness: 1.6,
           thickness: 0.85,
-          glow: 3.4,
+          glow: 3.5,
           intensity: 0.95,
           scale: 1.25
         };
       case 'PROCESSING':
         return {
           colors: ['#7C3AED', '#06B6D4', '#ffffff', '#FF4242'],
-          count: 7,
-          speed: 1.4,
-          amplitude: 1.1,
-          waviness: 2.0,
+          count: 6,
+          speed: 1.3,
+          amplitude: 1.0,
+          waviness: 1.9,
           thickness: 0.85,
-          glow: 3.2,
+          glow: 3.0,
           intensity: 0.9,
           scale: 1.2
         };
@@ -340,7 +348,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           amplitude: 1.1,
           waviness: 1.2,
           thickness: 0.8,
-          glow: 3.0,
+          glow: 2.9,
           intensity: 0.85,
           scale: 1.2
         };
@@ -357,17 +365,18 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           intensity: 0.75,
           scale: 1.1
         };
-      case 'STANDBY':
+      case 'WAKE_LISTENING':
+      case 'IDLE':
       default:
         return {
           colors: ['#F97316', '#ffffff', '#10B981'],
           count: 3,
-          speed: 0.45,
-          amplitude: 0.65,
-          waviness: 1.0,
+          speed: 0.4,
+          amplitude: 0.6,
+          waviness: 0.95,
           thickness: 0.7,
-          glow: 2.6,
-          intensity: 0.75,
+          glow: 2.5,
+          intensity: 0.7,
           scale: 1.15
         };
     }
@@ -383,7 +392,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       </div>
 
       {/* Ambient Frosted Vignette Overlay */}
-      <div className="fixed inset-0 bg-radial-gradient from-transparent via-black/20 to-black/80 pointer-events-none z-0" />
+      <div className="fixed inset-0 bg-radial-gradient from-transparent via-black/25 to-black/85 pointer-events-none z-0" />
 
       {/* Top Floating Frosted Navigation Bar */}
       <div className="relative z-10 w-full max-w-4xl mx-auto flex items-center justify-between px-5 py-3 rounded-full bg-white/[0.08] backdrop-blur-2xl border border-white/20 shadow-2xl">
@@ -413,23 +422,23 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
                 ? 'bg-white/20 text-white border-white/40 shadow-sm'
                 : 'bg-white/5 text-white/50 border-white/10 hover:text-white'
             }`}
-            title="Toggle 'Hey Spark' wake-word listener"
+            title="Wake word operates while SHIORI is open in browser"
           >
             <Radio className="w-3.5 h-3.5" />
             <span>"HEY SPARK"</span>
           </button>
 
           <button
-            onClick={() => setSpeechEnabled(!speechEnabled)}
-            title={speechEnabled ? 'Mute Audio Output' : 'Enable Audio Output'}
-            className="p-2 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10"
+            onClick={() => setVoiceResponsesEnabled(!voiceResponsesEnabled)}
+            title={voiceResponsesEnabled ? 'Mute Voice Output' : 'Enable Voice Output'}
+            className="p-2 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10 cursor-pointer"
           >
-            {speechEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 opacity-50" />}
+            {voiceResponsesEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 opacity-50" />}
           </button>
 
           <button
             onClick={closeSpark}
-            className="p-2 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10"
+            className="p-2 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10 cursor-pointer"
             title="Close Companion (Esc)"
           >
             <X className="w-4 h-4" />
@@ -443,9 +452,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         <div className="flex items-center justify-center">
           <span
             className={`px-4 py-1.5 rounded-full text-xs font-mono font-bold tracking-widest border uppercase transition-all shadow-xl backdrop-blur-xl ${
-              state === 'WAKE_DETECTED'
-                ? 'bg-orange-500/80 text-white border-orange-300 scale-110 animate-pulse shadow-[0_0_30px_rgba(249,115,22,0.8)]'
-                : state === 'LISTENING'
+              state === 'LISTENING'
                 ? 'bg-emerald-600/80 text-white border-emerald-300 animate-pulse shadow-[0_0_30px_rgba(16,185,129,0.8)]'
                 : state === 'PROCESSING'
                 ? 'bg-purple-600/80 text-white border-purple-300 shadow-[0_0_30px_rgba(147,51,234,0.8)]'
@@ -456,34 +463,34 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
                 : 'bg-white/10 text-white/90 border-white/20'
             }`}
           >
-            {state === 'WAKE_DETECTED'
-              ? '✦ HEY SPARK DETECTED'
-              : state === 'LISTENING'
-              ? '● LISTENING TO VOICE...'
+            {state === 'LISTENING'
+              ? '● LISTENING...'
               : state === 'PROCESSING'
-              ? '◌ PROCESSING COMMAND...'
+              ? '◌ PROCESSING...'
               : state === 'SPEAKING'
               ? '✦ SPARK'
               : state === 'CONFIRMATION'
-              ? '⚠ ACTION CONFIRMATION'
+              ? '⚠ CONFIRMATION'
+              : heySparkEnabled
+              ? '✦ LISTENING FOR HEY SPARK'
               : '✦ SPARK READY'}
           </span>
         </div>
 
         {/* Primary Response & Transcription Frosted Glass Card */}
         <div className="bg-black/50 backdrop-blur-2xl border border-white/20 rounded-3xl p-6 sm:p-10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] text-center w-full space-y-4 transition-all">
-          {state === 'LISTENING' && inputText ? (
+          {state === 'LISTENING' && (interimTranscript || inputText) ? (
             <div className="space-y-2 animate-fade-in">
               <span className="text-[11px] font-mono text-emerald-400 uppercase tracking-widest block font-bold">
                 HEARING:
               </span>
               <p className="text-xl sm:text-3xl font-mono text-emerald-200 font-semibold italic tracking-tight">
-                "{inputText}"<span className="inline-block w-2.5 h-6 ml-1.5 bg-emerald-400 animate-pulse align-middle" />
+                "{interimTranscript || inputText}"<span className="inline-block w-2.5 h-6 ml-1.5 bg-emerald-400 animate-pulse align-middle" />
               </p>
             </div>
           ) : (
-            <p className="text-lg sm:text-2xl font-abask text-white font-medium tracking-tight leading-relaxed drop-shadow-md">
-              {responseMessage || 'How can I assist your workflow today?'}
+            <p className="text-lg sm:text-2xl font-abask text-white font-medium tracking-tight leading-relaxed drop-shadow-md whitespace-pre-line">
+              {responseMessage || 'What should we work on in SHIORI today?'}
             </p>
           )}
 
@@ -509,17 +516,17 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   onClick={() => {
-                    setState('STANDBY');
+                    setState('IDLE');
                     setConfirmationPayload(null);
                     setResponseMessage('Action cancelled.');
                   }}
-                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold transition-all"
+                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold transition-all cursor-pointer"
                 >
                   CANCEL
                 </button>
                 <button
                   onClick={() => handleExecuteCommand(undefined, true)}
-                  className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-lg transition-all"
+                  className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-lg transition-all cursor-pointer"
                 >
                   CONFIRM ACTION
                 </button>
@@ -538,7 +545,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
             "What's running?",
             "What's overdue?",
             'Start 25 min focus',
-            'Fix GitHub authentication'
+            'Create task finish OAuth'
           ].map((sugg) => (
             <button
               key={sugg}
@@ -546,7 +553,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
                 setInputText(sugg);
                 handleExecuteCommand(sugg);
               }}
-              className="px-3.5 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.18] border border-white/15 text-white/90 transition-all hover:scale-105 active:scale-95 shadow-sm"
+              className="px-3.5 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.18] border border-white/15 text-white/90 transition-all hover:scale-105 active:scale-95 shadow-sm cursor-pointer"
             >
               {sugg}
             </button>

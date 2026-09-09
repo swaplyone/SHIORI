@@ -118,7 +118,17 @@ export const SettingsPage: React.FC = () => {
     logout
   } = useAuth();
 
-  const { heySparkEnabled, setHeySparkEnabled, openSpark } = useSpark();
+  const {
+    voiceAssistantEnabled,
+    setVoiceAssistantEnabled,
+    heySparkEnabled,
+    setHeySparkEnabled,
+    voiceResponsesEnabled,
+    setVoiceResponsesEnabled,
+    micPermissionStatus,
+    requestMicrophoneAccess,
+    openSpark
+  } = useSpark();
 
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'appearance' | 'spark' | 'privacy' | 'notifications' | 'account' | 'pwa'>('appearance');
@@ -815,20 +825,42 @@ export const SettingsPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-eink-text font-abask">✦ SPARK COMPANION</span>
                 <span className="text-[10px] bg-eink-bg px-2 py-0.5 border border-eink-border rounded font-mono font-bold">
-                  v2.0
+                  PROJECT COMPANION
                 </span>
               </div>
               <p className="text-eink-textSecondary mt-1">
-                Configure voice wake-word, daily task briefings, and natural language command behavior.
+                Configure voice wake-word, spoken responses, microphone access, and natural language workspace awareness.
               </p>
             </div>
 
             <div className="space-y-4 pt-2 divide-y divide-eink-border/50">
-              {/* Wake Word Toggle */}
+              {/* 1. Voice Assistant Master Toggle */}
+              <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <span className="font-bold text-eink-text text-sm block">Voice Assistant</span>
+                  <span className="text-[11px] text-eink-textMuted block mt-0.5">
+                    Enable Spark voice interactions, floating quick-talk bubble, and companion assistant features.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setVoiceAssistantEnabled(!voiceAssistantEnabled)}
+                  className={`px-4 py-2 rounded-sm font-mono text-xs font-bold transition-all cursor-pointer ${
+                    voiceAssistantEnabled
+                      ? 'bg-eink-text text-eink-bg border-2 border-eink-text shadow-eink-sm'
+                      : 'bg-eink-bg border border-eink-border text-eink-textSecondary hover:text-eink-text'
+                  }`}
+                >
+                  {voiceAssistantEnabled ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              {/* 2. Wake Word Toggle */}
               <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-eink-text text-sm">"Hey Spark" Wake Word</span>
+                    <span className="font-bold text-eink-text text-sm">Wake Word Mode</span>
                     {heySparkEnabled && (
                       <span className="flex items-center gap-1 text-[10px] text-eink-text font-mono font-bold bg-eink-bg px-2 py-0.5 border border-eink-border rounded">
                         <Radio className="w-3 h-3 animate-pulse text-eink-text" />
@@ -837,7 +869,7 @@ export const SettingsPage: React.FC = () => {
                     )}
                   </div>
                   <span className="text-[11px] text-eink-textMuted block mt-0.5">
-                    Listen for "Hey Spark" while SHIORI is actively open. Runs 100% on-device without continuous audio uploads.
+                    Listen for wake phrase while SHIORI is open in your browser or PWA.
                   </span>
                 </div>
 
@@ -850,35 +882,108 @@ export const SettingsPage: React.FC = () => {
                       : 'bg-eink-bg border border-eink-border text-eink-textSecondary hover:text-eink-text'
                   }`}
                 >
-                  {heySparkEnabled ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+                  {heySparkEnabled ? 'ON' : 'OFF'}
                 </button>
               </div>
 
-              {/* Manual Voice & Shortcut */}
+              {/* 3. Wake Phrase Information */}
+              <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="font-bold text-eink-text block">Wake Phrase</span>
+                  <span className="text-[11px] text-eink-textMuted">
+                    Primary wake trigger with Indian English phonetic normalization.
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="px-2.5 py-1 bg-eink-bg border border-eink-border rounded font-mono font-bold text-xs text-eink-text">
+                    HEY SPARK
+                  </span>
+                  <span className="text-[10px] text-eink-textMuted font-mono">
+                    (also: "Hi Spark", "Hey Spock")
+                  </span>
+                </div>
+              </div>
+
+              {/* 4. Voice Responses Toggle */}
+              <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <span className="font-bold text-eink-text text-sm block">Voice Responses (Speech Output)</span>
+                  <span className="text-[11px] text-eink-textMuted block mt-0.5">
+                    Speak direct answers, daily briefings, and focus completions via browser speech synthesis.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setVoiceResponsesEnabled(!voiceResponsesEnabled)}
+                  className={`px-4 py-2 rounded-sm font-mono text-xs font-bold transition-all cursor-pointer ${
+                    voiceResponsesEnabled
+                      ? 'bg-eink-text text-eink-bg border-2 border-eink-text shadow-eink-sm'
+                      : 'bg-eink-bg border border-eink-border text-eink-textSecondary hover:text-eink-text'
+                  }`}
+                >
+                  {voiceResponsesEnabled ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              {/* 5. Microphone Permission Status */}
+              <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-eink-text block">Microphone Permission</span>
+                    <span
+                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                        micPermissionStatus === 'granted'
+                          ? 'bg-emerald-500/10 border-emerald-500 text-emerald-700'
+                          : 'bg-amber-500/10 border-amber-500 text-amber-700'
+                      }`}
+                    >
+                      {micPermissionStatus === 'granted' ? 'GRANTED' : 'NOT GRANTED'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-eink-textMuted block mt-0.5">
+                    Required for wake-word and microphone audio speech recognition.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await requestMicrophoneAccess();
+                  }}
+                  className="px-3.5 py-1.5 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm font-bold text-eink-text flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>{micPermissionStatus === 'granted' ? 'TEST MIC' : 'GRANT ACCESS'}</span>
+                </button>
+              </div>
+
+              {/* 6. Manual Voice & Shortcut */}
               <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <span className="font-bold text-eink-text block">Manual Voice & Keyboard Shortcut</span>
                   <span className="text-[11px] text-eink-textMuted">
-                    Tap the floating Spark button anytime or press <kbd className="px-1.5 py-0.5 border border-eink-border rounded bg-eink-bg font-mono">Ctrl+J</kbd> / <kbd className="px-1.5 py-0.5 border border-eink-border rounded bg-eink-bg font-mono">Alt+S</kbd>.
+                    Tap the floating Spark bubble anytime or press <kbd className="px-1.5 py-0.5 border border-eink-border rounded bg-eink-bg font-mono">Ctrl+J</kbd> / <kbd className="px-1.5 py-0.5 border border-eink-border rounded bg-eink-bg font-mono">Alt+S</kbd>.
                   </span>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => openSpark()}
-                  className="px-3.5 py-1.5 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm font-bold text-eink-text flex items-center gap-1.5 shrink-0 transition-colors"
+                  className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs flex items-center gap-1.5 shrink-0 shadow-eink-sm hover:opacity-90 transition-opacity cursor-pointer"
                 >
                   <Mic className="w-3.5 h-3.5" />
                   <span>OPEN SPARK</span>
                 </button>
               </div>
 
-              {/* Privacy Architecture Notice */}
+              {/* 7. Privacy Architecture Notice */}
               <div className="pt-3">
                 <div className="p-3 bg-eink-bg border border-eink-border rounded-sm space-y-1">
-                  <span className="font-bold text-eink-text block text-[11px]">🔒 Privacy-First Architecture</span>
+                  <span className="font-bold text-eink-text block text-[11px]">🔒 Privacy & Scope Guarantee</span>
                   <p className="text-[10px] text-eink-textSecondary leading-relaxed">
-                    Spark operates strictly within a whitelist of SHIORI tools (tasks, projects, focus timer, Git status). It will never execute arbitrary shell commands or expose secrets, environment variables, or other users' data.
+                    Spark operates strictly within a whitelist of SHIORI tools (tasks, projects, focus timer, Git status). Wake-word recognition runs on-device through standard Web Speech API while SHIORI is open, and audio is never recorded, stored, or streamed to external servers.
                   </p>
                 </div>
               </div>
