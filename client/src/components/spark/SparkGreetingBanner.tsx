@@ -107,7 +107,7 @@ export const SparkGreetingBanner: React.FC = () => {
               </button>
 
               <button
-                onClick={openSpark}
+                onClick={() => openSpark()}
                 className="px-3 py-1 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border text-eink-text font-bold rounded-sm text-xs transition-colors flex items-center gap-1"
               >
                 <Mic className="w-3 h-3" />

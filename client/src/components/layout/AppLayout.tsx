@@ -138,7 +138,7 @@ export const AppLayout: React.FC = () => {
 
       {/* Floating Spark Quick-Talk Launcher (Always accessible, mobile safe-area aware) */}
       <button
-        onClick={openSpark}
+        onClick={() => openSpark()}
         className={`fixed bottom-5 right-5 z-40 px-3 py-2 bg-eink-surface hover:bg-eink-surfaceHover text-eink-text border border-eink-border shadow-eink-sm hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 rounded-full font-technical text-xs font-bold ${
           heySparkEnabled ? 'ring-1 ring-eink-text' : ''
         }`}

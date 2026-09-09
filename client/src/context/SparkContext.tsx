@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 
 interface BriefingData {
@@ -21,23 +21,61 @@ interface BriefingData {
 
 interface SparkContextType {
   isSparkOpen: boolean;
-  openSpark: () => void;
+  openSpark: (initialCommand?: string) => void;
   closeSpark: () => void;
   toggleSpark: () => void;
   heySparkEnabled: boolean;
   setHeySparkEnabled: (enabled: boolean) => void;
   isWakeListening: boolean;
+  initialCommand: string;
+  clearInitialCommand: () => void;
   briefingData: BriefingData | null;
   refreshBriefing: () => Promise<void>;
   hasSeenGreeting: boolean;
   dismissGreeting: () => void;
+  playWakeChime: () => void;
 }
 
 const SparkContext = createContext<SparkContextType | undefined>(undefined);
 
+// Helper for fuzzy wake-word matching
+function extractWakeCommand(transcript: string): { isWake: boolean; commandText: string } {
+  const lower = transcript.toLowerCase().trim();
+  
+  // List of wake-word patterns (including common speech engine misrecognitions)
+  const wakePatterns = [
+    /^hey\s+spark[,.]?\s*/i,
+    /^spark[,.]?\s*/i,
+    /^hey\s+sparks[,.]?\s*/i,
+    /^sparks[,.]?\s*/i,
+    /^hey\s+spot[,.]?\s*/i,
+    /^hey\s+smart[,.]?\s*/i,
+    /^hey\s+shark[,.]?\s*/i,
+    /^hey\s+shiori[,.]?\s*/i,
+    /^shiori[,.]?\s*/i
+  ];
+
+  for (const pattern of wakePatterns) {
+    if (pattern.test(lower)) {
+      const remaining = lower.replace(pattern, '').trim();
+      return { isWake: true, commandText: remaining };
+    }
+  }
+
+  // Also check anywhere inside sentence (e.g., "okay hey spark what is overdue")
+  if (lower.includes('hey spark') || lower.includes('spark')) {
+    const idx = lower.indexOf('hey spark') !== -1 ? lower.indexOf('hey spark') + 9 : lower.indexOf('spark') + 5;
+    const remaining = lower.substring(idx).replace(/^[,.\s]+/, '').trim();
+    return { isWake: true, commandText: remaining };
+  }
+
+  return { isWake: false, commandText: '' };
+}
+
 export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, isAuthenticated } = useAuth();
   const [isSparkOpen, setIsSparkOpen] = useState(false);
+  const [initialCommand, setInitialCommand] = useState('');
   const [heySparkEnabled, setHeySparkEnabledState] = useState<boolean>(() => {
     return localStorage.getItem('shiori_hey_spark_enabled') === 'true';
   });
@@ -48,10 +86,10 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const wakeRecognitionRef = useRef<any>(null);
-  const isListeningRef = useRef(false);
+  const isListeningLoopRef = useRef(false);
 
-  // Play gentle subtle double chime when wake word detected
-  const playWakeChime = () => {
+  // Play pleasant double chime on wake detection
+  const playWakeChime = useCallback(() => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
@@ -65,7 +103,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
       osc2.frequency.setValueAtTime(880.00, ctx.currentTime + 0.08); // A5
 
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.setValueAtTime(0.09, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
 
       osc1.connect(gain);
@@ -77,23 +115,35 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       osc2.start(ctx.currentTime + 0.08);
       osc2.stop(ctx.currentTime + 0.35);
     } catch {}
-  };
+  }, []);
 
   const setHeySparkEnabled = (enabled: boolean) => {
     setHeySparkEnabledState(enabled);
     localStorage.setItem('shiori_hey_spark_enabled', enabled ? 'true' : 'false');
   };
 
-  const openSpark = () => setIsSparkOpen(true);
-  const closeSpark = () => setIsSparkOpen(false);
-  const toggleSpark = () => setIsSparkOpen((prev) => !prev);
+  const openSpark = (cmd?: string) => {
+    if (cmd) setInitialCommand(cmd);
+    setIsSparkOpen(true);
+  };
+
+  const closeSpark = () => {
+    setIsSparkOpen(false);
+    setInitialCommand('');
+  };
+
+  const toggleSpark = () => {
+    setIsSparkOpen((prev) => !prev);
+  };
+
+  const clearInitialCommand = () => setInitialCommand('');
 
   const dismissGreeting = () => {
     setHasSeenGreeting(true);
     sessionStorage.setItem('shiori_spark_session_greeting', 'seen');
   };
 
-  // Fetch proactive daily briefing on session load
+  // Fetch daily briefing on session load
   const refreshBriefing = async () => {
     if (!token || !isAuthenticated) return;
     try {
@@ -115,12 +165,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [isAuthenticated, token]);
 
-  // Wake-word listening loop ("Hey Spark" / "Spark")
+  // Robust on-device wake-word detection loop
   useEffect(() => {
     if (!heySparkEnabled || isSparkOpen || !isAuthenticated) {
       if (wakeRecognitionRef.current) {
         try {
-          isListeningRef.current = false;
+          isListeningLoopRef.current = false;
           wakeRecognitionRef.current.abort();
         } catch {}
       }
@@ -129,70 +179,83 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    if (!SpeechRecognition) {
+      setIsWakeListening(false);
+      return;
+    }
 
     let recognition: any = null;
 
-    try {
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
+    const startWakeRecognition = () => {
+      if (!heySparkEnabled || isSparkOpen || !isAuthenticated) return;
+      try {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
 
-      recognition.onstart = () => {
-        isListeningRef.current = true;
-        setIsWakeListening(true);
-      };
+        recognition.onstart = () => {
+          isListeningLoopRef.current = true;
+          setIsWakeListening(true);
+        };
 
-      recognition.onresult = (event: any) => {
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const text = (event.results[i][0].transcript || '').toLowerCase().trim();
-          if (text.includes('hey spark') || text.includes('spark')) {
-            playWakeChime();
-            setIsSparkOpen(true);
-            try {
-              recognition.abort();
-            } catch {}
-            break;
+        recognition.onresult = (event: any) => {
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript || '';
+            const { isWake, commandText } = extractWakeCommand(transcript);
+
+            if (isWake) {
+              playWakeChime();
+              isListeningLoopRef.current = false;
+              try {
+                recognition.abort();
+              } catch {}
+              openSpark(commandText);
+              break;
+            }
           }
-        }
-      };
+        };
 
-      recognition.onerror = (event: any) => {
-        if (event.error === 'not-allowed') {
-          console.warn('[SPARK WAKE] Mic permission denied.');
-          setHeySparkEnabled(false);
-        }
-        setIsWakeListening(false);
-      };
+        recognition.onerror = (event: any) => {
+          if (event.error === 'not-allowed') {
+            console.warn('[SPARK WAKE] Microphone permission not allowed.');
+            setHeySparkEnabled(false);
+            setIsWakeListening(false);
+          }
+        };
 
-      recognition.onend = () => {
-        setIsWakeListening(false);
-        // Automatically restart if wake listening is still enabled and modal is closed
-        if (isListeningRef.current && heySparkEnabled && !isSparkOpen) {
-          setTimeout(() => {
-            try {
-              if (isListeningRef.current) recognition.start();
-            } catch {}
-          }, 800);
-        }
-      };
+        recognition.onend = () => {
+          setIsWakeListening(false);
+          // Restart gracefully if still enabled and modal closed
+          if (isListeningLoopRef.current && heySparkEnabled && !isSparkOpen) {
+            setTimeout(() => {
+              if (isListeningLoopRef.current && !isSparkOpen) {
+                try {
+                  recognition.start();
+                } catch {}
+              }
+            }, 500);
+          }
+        };
 
-      recognition.start();
-      wakeRecognitionRef.current = recognition;
-    } catch (e) {
-      console.warn('Wake recognition start failed:', e);
-    }
+        recognition.start();
+        wakeRecognitionRef.current = recognition;
+      } catch (err) {
+        console.warn('Wake speech recognition error:', err);
+      }
+    };
+
+    startWakeRecognition();
 
     return () => {
-      isListeningRef.current = false;
+      isListeningLoopRef.current = false;
       if (recognition) {
         try {
           recognition.abort();
         } catch {}
       }
     };
-  }, [heySparkEnabled, isSparkOpen, isAuthenticated]);
+  }, [heySparkEnabled, isSparkOpen, isAuthenticated, playWakeChime]);
 
   return (
     <SparkContext.Provider
@@ -204,10 +267,13 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         heySparkEnabled,
         setHeySparkEnabled,
         isWakeListening,
+        initialCommand,
+        clearInitialCommand,
         briefingData,
         refreshBriefing,
         hasSeenGreeting,
-        dismissGreeting
+        dismissGreeting,
+        playWakeChime
       }}
     >
       {children}

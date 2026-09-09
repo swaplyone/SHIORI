@@ -865,7 +865,7 @@ export const SettingsPage: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={openSpark}
+                  onClick={() => openSpark()}
                   className="px-3.5 py-1.5 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm font-bold text-eink-text flex items-center gap-1.5 shrink-0 transition-colors"
                 >
                   <Mic className="w-3.5 h-3.5" />
