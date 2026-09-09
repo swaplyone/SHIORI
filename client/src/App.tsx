@@ -175,6 +175,7 @@ export const App: React.FC = () => {
                   <Route path="/friends" element={<Navigate to="/connections" replace />} />
                   <Route path="/github" element={<GitHubHubPage />} />
                   <Route path="/activity" element={<ActivityPage />} />
+                  <Route path="/reports" element={<ActivityPage />} />
                   <Route path="/journal" element={<JournalPage />} />
                   <Route path="/notifications" element={<NotificationsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />

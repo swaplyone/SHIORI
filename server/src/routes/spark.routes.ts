@@ -4,6 +4,8 @@ import { queryOne, queryAll, runQuery } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { getSparkWitResponse, SafeWorkspaceContext } from '../services/spark/sparkWitEngine.js';
 import { kokoroService, KokoroVoiceId } from '../services/kokoro.service.js';
+import { taskReportService } from '../services/taskReport.service.js';
+import { parseNaturalDateExpression, getUserDayRange, getUserWeekRange, getUserMonthRange } from '../utils/dateRange.js';
 
 export const sparkRouter = Router();
 
@@ -982,7 +984,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     }
 
     if (task) {
-      await runQuery('UPDATE tasks SET status = "DONE", updated_at = datetime("now") WHERE id = ?', [task.id]);
+      await runQuery('UPDATE tasks SET status = "DONE", completed_at = datetime("now"), updated_at = datetime("now") WHERE id = ?', [task.id]);
       await runQuery(`
         INSERT INTO task_activity (id, task_id, action_type, summary, details, created_at)
         VALUES (?, ?, 'STATUS_CHANGED', 'Marked DONE via Spark', 'Completed via companion', datetime('now'))
@@ -1770,131 +1772,489 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 17. TASK SPECIFIC INTENTS (COMPLETED, OVERDUE, DUE TODAY, RUNNING/ACTIVE, SUMMARY)
+  // 17. SHIORI TASK INTELLIGENCE & TASK HISTORY (WEEKLY, DAILY, COMPLETED, OVERDUE, DUE)
+  // Single Source of Truth via TaskReportService — Zero Generic Fallbacks
   // =========================================================================
-  if (lower.includes('what have we completed') || lower.includes('what have i completed') || lower.includes('what did i complete today') || lower.includes('completed tasks') || lower.includes('show completed tasks') || lower.includes('what did we finish')) {
-    const completedTasks = await queryAll(
-      `SELECT t.task_code, t.title, t.updated_at, p.name as project_name 
-       FROM tasks t 
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE t.status = 'DONE' AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.updated_at DESC LIMIT 5`
-    );
 
-    const count = (completedTasks || []).length;
-    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: COMPLETED_TASKS | RESULT: SUCCESS (${count})`);
+  // Helper to extract target project from natural language query or conversation context
+  const scopedProject = await resolveTargetProject(rawText, userId, context);
+  const projectFilter = scopedProject?.id || context.projectId || undefined;
 
-    if (count === 0) {
-      res.json({
-        success: true,
-        intent: 'TASK_COMPLETED_EMPTY',
-        speakText: 'No completed tasks found in your workspace yet.',
-        displayText: 'No completed tasks recorded yet. Ready when you finish your next task.',
-        actionTaken: true
-      });
-      return;
-    }
+  // Verb detection helpers
+  const isDueOrNeedVerb = /\b(needs? to be done|need to do|needs? to finish|need to finish|due|what needs)\b/i.test(lower);
+  const isCompletionVerb = /\b(complete|completed|finish|finished|done|accomplish|accomplished)\b/i.test(lower);
 
-    const lines = completedTasks.map((t: any) => `• **${t.task_code}**: ${t.title}${t.project_name ? ` *(in ${t.project_name})*` : ''}`).join('\n');
-    res.json({
-      success: true,
-      intent: 'COMPLETED_TASKS',
-      speakText: `You have completed ${count} task${count === 1 ? '' : 's'}: ${completedTasks.slice(0, 3).map((t: any) => t.title).join(', ')}.`,
-      displayText: `**${count} Completed Task${count === 1 ? '' : 's'}:**\n\n${lines}`,
-      actionTaken: true
-    });
-    return;
-  }
+  // 1. DUE TODAY (Check before completion verbs because "needs to be done" contains "done")
+  const isDueTodayQuery =
+    isDueOrNeedVerb && (lower.includes('today') || lower.includes("today's"));
 
-  if (
-    lower.includes("what's overdue") || 
-    lower.includes('what is overdue') || 
-    lower.includes('tasks are overdue') ||
-    lower.includes('show overdue') ||
-    lower.includes('overdue tasks') ||
-    lower.includes('what tasks are late')
-  ) {
-    const overdueTasks = await queryAll(
-      `SELECT t.task_code, t.title, t.priority, t.deadline, p.name as project_name 
-       FROM tasks t
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE t.status != 'DONE' 
-       AND t.deadline IS NOT NULL 
-       AND t.deadline != '' 
-       AND t.deadline < datetime('now')
-       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.deadline ASC LIMIT 5`
-    );
+  if (isDueTodayQuery) {
+    const dayRange = getUserDayRange();
+    const dueTodayTasks = await taskReportService.getDueTasks(userId, { start: dayRange.start, end: dayRange.end }, { projectId: projectFilter });
+    const count = dueTodayTasks.length;
 
-    const count = (overdueTasks || []).length;
-    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: OVERDUE_TASKS | RESULT: SUCCESS (${count})`);
-
-    if (count === 0) {
-      res.json({
-        success: true,
-        intent: 'TASK_OVERDUE_EMPTY',
-        speakText: 'You have no overdue tasks.',
-        displayText: 'Zero overdue tasks. All deadlines are in good standing. ✨',
-        actionTaken: true
-      });
-      return;
-    }
-
-    const lines = overdueTasks.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}] in *${t.project_name || 'Project'}*`).join('\n');
-    res.json({
-      success: true,
-      intent: 'OVERDUE_TASKS',
-      speakText: `You have ${count} overdue task${count === 1 ? '' : 's'}.`,
-      displayText: `**${count} Overdue Task${count === 1 ? '' : 's'}:**\n\n${lines}`,
-      actionTaken: true
-    });
-    return;
-  }
-
-  if (
-    lower.includes("what's due today") || 
-    lower.includes('what is due today') || 
-    lower.includes('what is due') ||
-    lower.includes('due today') ||
-    lower.includes("show today's tasks") ||
-    lower.includes('today tasks')
-  ) {
-    const dueTodayTasks = await queryAll(
-      `SELECT t.task_code, t.title, t.priority, p.name as project_name 
-       FROM tasks t
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE t.status != 'DONE' 
-       AND t.deadline IS NOT NULL 
-       AND date(t.deadline) = date('now')
-       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.sequence_order ASC LIMIT 5`
-    );
-
-    const count = (dueTodayTasks || []).length;
-    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: TODAY_TASKS | RESULT: SUCCESS (${count})`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_DUE_TODAY | COUNT: ${count}`);
 
     if (count === 0) {
       res.json({
         success: true,
         intent: 'TASK_DUE_TODAY_EMPTY',
-        speakText: 'No tasks due today.',
-        displayText: 'No tasks scheduled with deadlines for today.',
+        projectId: projectFilter,
+        speakText: 'No tasks scheduled with deadlines for today.',
+        displayText: 'No tasks due today. You can focus on your active backlog.',
         actionTaken: true
       });
       return;
     }
 
     const lines = dueTodayTasks.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}]`).join('\n');
+    const speakText = `You've got ${count} task${count === 1 ? '' : 's'} due today: ${dueTodayTasks.map((t: any) => t.title).join(', ')}.`;
+    const displayText = `### TASKS DUE TODAY (${count})\n\n${lines}`;
+
     res.json({
       success: true,
-      intent: 'TODAY_TASKS',
-      speakText: `You have ${count} task${count === 1 ? '' : 's'} due today.`,
-      displayText: `**${count} Task${count === 1 ? '' : 's'} Due Today:**\n\n${lines}`,
+      intent: 'TASK_DUE_TODAY',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
       actionTaken: true
     });
     return;
   }
 
+  // 2. DUE THIS WEEK
+  const isDueThisWeekQuery =
+    isDueOrNeedVerb && (lower.includes('this week') || lower.includes('current week'));
+
+  if (isDueThisWeekQuery) {
+    const weekRange = getUserWeekRange(0);
+    const dueThisWeek = await taskReportService.getDueTasks(userId, { start: weekRange.start, end: weekRange.end }, { projectId: projectFilter });
+    const count = dueThisWeek.length;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_DUE_THIS_WEEK | COUNT: ${count}`);
+
+    if (count === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_DUE_THIS_WEEK_EMPTY',
+        projectId: projectFilter,
+        speakText: 'You have no tasks scheduled with deadlines this week.',
+        displayText: 'No deadlines scheduled for this week.',
+        actionTaken: true
+      });
+      return;
+    }
+
+    const lines = dueThisWeek.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}] (Due: ${t.deadline || t.due_date})`).join('\n');
+    const speakText = `You have ${count} task${count === 1 ? '' : 's'} due this week: ${dueThisWeek.map((t: any) => t.title).join(', ')}.`;
+    const displayText = `### TASKS DUE THIS WEEK (${count})\n\n${lines}`;
+
+    res.json({
+      success: true,
+      intent: 'TASK_DUE_THIS_WEEK',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // 3. WEEKLY TO-DOS & WEEKLY REPORT SUMMARY
+  const isWeeklyReportQuery =
+    lower.includes('weekly report') ||
+    lower.includes("this week's report") ||
+    lower.includes('this week report') ||
+    lower.includes('give me this week') ||
+    lower.includes('give me a weekly report') ||
+    lower.includes('show my weekly report') ||
+    lower.includes('weekly summary') ||
+    lower.includes('weekly to-do') ||
+    lower.includes('weekly todo') ||
+    lower.includes('weekly to-dos') ||
+    lower.includes('weekly todos') ||
+    lower.includes('how productive was i this week') ||
+    lower.includes('how productive were we this week') ||
+    (lower.includes('productivity') && lower.includes('this week'));
+
+  if (isWeeklyReportQuery) {
+    const weeklyData = await taskReportService.getWeeklyReport(userId, 0, { projectId: projectFilter });
+    const { metrics, days, completedTasks, activeTasks, overdueTasks } = weeklyData;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_WEEKLY_SUMMARY | COMPLETED: ${metrics.completedCount} | ACTIVE: ${metrics.activeCount}`);
+
+    const daysSummary = days
+      .filter((d: any) => d.count > 0)
+      .map((d: any) => `• **${d.dayName}**: ${d.count} completed (${d.tasks.map((t: any) => t.title).join(', ')})`)
+      .join('\n');
+
+    let speakText = `You've completed ${metrics.completedCount} task${metrics.completedCount === 1 ? '' : 's'} this week, with a ${metrics.completionRate}% completion rate. You have ${metrics.activeCount} active task${metrics.activeCount === 1 ? '' : 's'}${metrics.overdueCount > 0 ? ` and ${metrics.overdueCount} overdue` : ''}.`;
+    if (metrics.completedCount === 0) {
+      speakText = `You haven't completed any tasks this week yet. You've got ${metrics.activeCount} active task${metrics.activeCount === 1 ? '' : 's'} and ${metrics.pendingCount} pending in your backlog.`;
+    }
+
+    const displayText = [
+      `### WEEKLY TO-DOS & REPORT (${weeklyData.dateRange.startDateStr} → ${weeklyData.dateRange.endDateStr})`,
+      `**KPI SUMMARY:**\n• **Completed:** ${metrics.completedCount}\n• **Active (In Progress):** ${metrics.activeCount}\n• **Overdue:** ${metrics.overdueCount}\n• **Due This Week:** ${metrics.dueThisWeekCount}\n• **Completion Rate:** ${metrics.completionRate}%`,
+      daysSummary ? `**DAILY BREAKDOWN:**\n${daysSummary}` : `*No tasks completed yet this week.*`,
+      activeTasks.length > 0 ? `**CURRENT ACTIVE WORK:**\n` + activeTasks.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n') : '',
+      overdueTasks.length > 0 ? `**⚠️ OVERDUE ATTENTION:**\n` + overdueTasks.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n') : ''
+    ].filter(Boolean).join('\n\n');
+
+    res.json({
+      success: true,
+      intent: 'TASK_WEEKLY_SUMMARY',
+      lastTimeframe: 'this_week',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // 4. COMPLETED THIS WEEK
+  const isCompletedThisWeekQuery =
+    isCompletionVerb &&
+    (lower.includes('this week') || lower.includes('current week') || lower.includes('so far this week') || lower.includes('during this week'));
+
+  if (isCompletedThisWeekQuery) {
+    const weeklyData = await taskReportService.getWeeklyReport(userId, 0, { projectId: projectFilter });
+    const { metrics, days, completedTasks } = weeklyData;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_COMPLETED_THIS_WEEK | COUNT: ${metrics.completedCount}`);
+
+    if (metrics.completedCount === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_COMPLETED_THIS_WEEK_EMPTY',
+        lastTimeframe: 'this_week',
+        projectId: projectFilter,
+        speakText: `You haven't completed any tasks this week yet. You've got ${weeklyData.metrics.activeCount} active tasks waiting.`,
+        displayText: `**This Week's Completed Tasks:**\n\nYou haven't marked any tasks as **DONE** this week yet.\n\n• Active tasks in progress: **${weeklyData.metrics.activeCount}**\n• Overdue tasks: **${weeklyData.metrics.overdueCount}**`,
+        actionTaken: true
+      });
+      return;
+    }
+
+    const activeDays = days.filter((d: any) => d.count > 0);
+    const busiestDay = [...activeDays].sort((a, b) => b.count - a.count)[0];
+
+    let speakText = `You've completed ${metrics.completedCount} task${metrics.completedCount === 1 ? '' : 's'} this week.`;
+    if (busiestDay) {
+      speakText += ` ${busiestDay.dayName} was your most productive day with ${busiestDay.count}.`;
+    }
+    speakText += ` You still have ${weeklyData.metrics.activeCount} active task${weeklyData.metrics.activeCount === 1 ? '' : 's'}.`;
+
+    const dayList = activeDays
+      .map((d: any) => `**${d.dayName.toUpperCase()} (${d.dateStr}):**\n` + d.tasks.map((t: any) => `• ✓ **${t.task_code}**: ${t.title}${t.project_name ? ` *(in ${t.project_name})*` : ''}`).join('\n'))
+      .join('\n\n');
+
+    const displayText = `### COMPLETED THIS WEEK (${metrics.completedCount} Tasks)\n\n${dayList}\n\n*Active in progress: ${weeklyData.metrics.activeCount} · Overdue: ${weeklyData.metrics.overdueCount}*`;
+
+    res.json({
+      success: true,
+      intent: 'TASK_COMPLETED_THIS_WEEK',
+      lastTimeframe: 'this_week',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // 5. COMPLETED LAST WEEK
+  const isCompletedLastWeekQuery =
+    isCompletionVerb &&
+    (lower.includes('last week') || lower.includes('previous week') || lower.includes('past week'));
+
+  if (isCompletedLastWeekQuery) {
+    const weeklyData = await taskReportService.getWeeklyReport(userId, -1, { projectId: projectFilter });
+    const { metrics, days, completedTasks } = weeklyData;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_COMPLETED_LAST_WEEK | COUNT: ${metrics.completedCount}`);
+
+    if (metrics.completedCount === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_COMPLETED_LAST_WEEK_EMPTY',
+        lastTimeframe: 'last_week',
+        projectId: projectFilter,
+        speakText: `No tasks recorded as completed last week.`,
+        displayText: `**Last Week's Report:**\n\nNo tasks were recorded as completed during the previous week (${weeklyData.dateRange.startDateStr} → ${weeklyData.dateRange.endDateStr}).`,
+        actionTaken: true
+      });
+      return;
+    }
+
+    const activeDays = days.filter((d: any) => d.count > 0);
+    const dayList = activeDays
+      .map((d: any) => `**${d.dayName.toUpperCase()}:**\n` + d.tasks.map((t: any) => `• ✓ **${t.task_code}**: ${t.title}`).join('\n'))
+      .join('\n\n');
+
+    const speakText = `Last week you completed ${metrics.completedCount} task${metrics.completedCount === 1 ? '' : 's'}: ${completedTasks.slice(0, 3).map((t: any) => t.title).join(', ')}.`;
+    const displayText = `### COMPLETED LAST WEEK (${metrics.completedCount} Tasks)\n\n${dayList}`;
+
+    res.json({
+      success: true,
+      intent: 'TASK_COMPLETED_LAST_WEEK',
+      lastTimeframe: 'last_week',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // 6. COMPLETED TODAY
+  const isCompletedTodayQuery =
+    isCompletionVerb &&
+    (lower.includes('today') || lower.includes("today's") || lower.includes('so far today'));
+
+  if (isCompletedTodayQuery) {
+    const dailyData = await taskReportService.getDailyReport(userId, undefined, { projectId: projectFilter });
+    const { metrics, completedTasks } = dailyData;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_COMPLETED_TODAY | COUNT: ${metrics.completedCount}`);
+
+    if (metrics.completedCount === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_COMPLETED_TODAY_EMPTY',
+        lastTimeframe: 'today',
+        projectId: projectFilter,
+        speakText: `Nothing completed today yet. You've got ${metrics.activeCount} active task${metrics.activeCount === 1 ? '' : 's'} in progress.`,
+        displayText: `**Today's Completed Tasks:**\n\nNothing completed today yet.\n\n• Active tasks: **${metrics.activeCount}**\n• Due today: **${metrics.dueTodayCount}**`,
+        actionTaken: true
+      });
+      return;
+    }
+
+    const lines = completedTasks.map((t: any) => `• ✓ **${t.task_code}**: ${t.title}${t.project_name ? ` *(in ${t.project_name})*` : ''}`).join('\n');
+    const speakText = `Today you've completed ${metrics.completedCount} task${metrics.completedCount === 1 ? '' : 's'}: ${completedTasks.map((t: any) => t.title).join(', ')}.`;
+    const displayText = `### COMPLETED TODAY (${metrics.completedCount} Tasks)\n\n${lines}`;
+
+    res.json({
+      success: true,
+      intent: 'TASK_COMPLETED_TODAY',
+      lastTimeframe: 'today',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // 7. COMPLETED YESTERDAY
+  const isCompletedYesterdayQuery =
+    isCompletionVerb &&
+    lower.includes('yesterday');
+
+  if (isCompletedYesterdayQuery) {
+    const yesterdayDate = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const dailyData = await taskReportService.getDailyReport(userId, yesterdayDate, { projectId: projectFilter });
+    const { metrics, completedTasks } = dailyData;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_COMPLETED_YESTERDAY | COUNT: ${metrics.completedCount}`);
+
+    if (metrics.completedCount === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_COMPLETED_YESTERDAY_EMPTY',
+        lastTimeframe: 'yesterday',
+        projectId: projectFilter,
+        speakText: `You didn't complete any tasks yesterday.`,
+        displayText: `**Yesterday's Report:**\n\nNo tasks were marked as completed yesterday (${yesterdayDate}).`,
+        actionTaken: true
+      });
+      return;
+    }
+
+    const lines = completedTasks.map((t: any) => `• ✓ **${t.task_code}**: ${t.title}${t.project_name ? ` *(in ${t.project_name})*` : ''}`).join('\n');
+    const speakText = `Yesterday you completed ${metrics.completedCount} task${metrics.completedCount === 1 ? '' : 's'}: ${completedTasks.map((t: any) => t.title).join(', ')}.`;
+    const displayText = `### COMPLETED YESTERDAY (${metrics.completedCount} Tasks)\n\n${lines}`;
+
+    res.json({
+      success: true,
+      intent: 'TASK_COMPLETED_YESTERDAY',
+      lastTimeframe: 'yesterday',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // 8. ALL TIME COMPLETED TASKS
+  const isCompletedAllTimeQuery =
+    isCompletionVerb &&
+    (lower.includes('task') || lower.includes('todo') || lower.includes('to-do') || lower.includes('we have') || lower.includes('have we') || lower.includes('did we') || lower.includes('all') || lower.includes('which') || lower === 'completed') &&
+    !lower.includes('this week') && !lower.includes('last week') && !lower.includes('today') && !lower.includes('yesterday');
+
+  if (isCompletedAllTimeQuery) {
+    const completedTasks = await taskReportService.getCompletedTasks(userId, undefined, { projectId: projectFilter }, 15);
+    const count = completedTasks.length;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_COMPLETED_ALL_TIME | COUNT: ${count}`);
+
+    if (count === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_COMPLETED_ALL_TIME_EMPTY',
+        projectId: projectFilter,
+        speakText: 'No completed tasks recorded in your workspace yet.',
+        displayText: 'No completed tasks found in your workspace yet. Ready when you finish your next task.',
+        actionTaken: true
+      });
+      return;
+    }
+
+    const lines = completedTasks.slice(0, 8).map((t: any) => `• ✓ **${t.task_code}**: ${t.title}${t.project_name ? ` *(in ${t.project_name})*` : ''}`).join('\n');
+    const speakText = `You've completed ${count} task${count === 1 ? '' : 's'} so far. The most recent ones are ${completedTasks.slice(0, 3).map((t: any) => t.title).join(', ')}.`;
+    const displayText = `### COMPLETED WORK (${count} Tasks Total)\n\n${lines}${count > 8 ? `\n\n*...and ${count - 8} more completed tasks in history.*` : ''}`;
+
+    res.json({
+      success: true,
+      intent: 'TASK_COMPLETED_ALL_TIME',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // G. OVERDUE TASKS QUERY
+  if (
+    lower.includes("what's overdue") || 
+    lower.includes('what is overdue') || 
+    lower.includes('tasks are overdue') ||
+    lower.includes('show overdue') ||
+    lower.includes('overdue tasks') ||
+    lower.includes('what tasks are late') ||
+    lower === 'overdue'
+  ) {
+    const overdueTasks = await taskReportService.getOverdueTasks(userId, { projectId: projectFilter });
+    const count = overdueTasks.length;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_OVERDUE | COUNT: ${count}`);
+
+    if (count === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_OVERDUE_EMPTY',
+        projectId: projectFilter,
+        speakText: 'Nothing is overdue. Nice.',
+        displayText: 'Zero overdue tasks. All deadlines are in good standing. ✨',
+        actionTaken: true
+      });
+      return;
+    }
+
+    const lines = overdueTasks.map((t: any) => `• ⚠️ **${t.task_code}**: ${t.title} [${t.priority}] in *${t.project_name || 'SHIORI'}*`).join('\n');
+    const speakText = `You've got ${count} overdue task${count === 1 ? '' : 's'}: ${overdueTasks.slice(0, 3).map((t: any) => t.title).join(', ')}.`;
+    const displayText = `### ⚠️ OVERDUE TASKS (${count} Requiring Attention)\n\n${lines}`;
+
+    res.json({
+      success: true,
+      intent: 'TASK_OVERDUE',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // H. DUE TODAY
+  if (
+    lower.includes("what's due today") || 
+    lower.includes('what is due today') || 
+    lower.includes('what is due') ||
+    lower.includes('due today') ||
+    lower.includes("show today's tasks") ||
+    lower.includes('what needs to be done today') ||
+    lower.includes('what do i need to do today')
+  ) {
+    const dayRange = getUserDayRange();
+    const dueTodayTasks = await taskReportService.getDueTasks(userId, { start: dayRange.start, end: dayRange.end }, { projectId: projectFilter });
+    const count = dueTodayTasks.length;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_DUE_TODAY | COUNT: ${count}`);
+
+    if (count === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_DUE_TODAY_EMPTY',
+        projectId: projectFilter,
+        speakText: 'No tasks scheduled with deadlines for today.',
+        displayText: 'No tasks due today. You can focus on your active backlog.',
+        actionTaken: true
+      });
+      return;
+    }
+
+    const lines = dueTodayTasks.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}]`).join('\n');
+    const speakText = `You've got ${count} task${count === 1 ? '' : 's'} due today: ${dueTodayTasks.map((t: any) => t.title).join(', ')}.`;
+    const displayText = `### TASKS DUE TODAY (${count})\n\n${lines}`;
+
+    res.json({
+      success: true,
+      intent: 'TASK_DUE_TODAY',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // I. DUE THIS WEEK
+  if (
+    lower.includes('what do i need to finish this week') ||
+    lower.includes('what needs to be done this week') ||
+    lower.includes('what is due this week') ||
+    lower.includes('tasks due this week') ||
+    lower.includes('due this week')
+  ) {
+    const weekRange = getUserWeekRange(0);
+    const dueThisWeek = await taskReportService.getDueTasks(userId, { start: weekRange.start, end: weekRange.end }, { projectId: projectFilter });
+    const count = dueThisWeek.length;
+
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_DUE_THIS_WEEK | COUNT: ${count}`);
+
+    if (count === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_DUE_THIS_WEEK_EMPTY',
+        projectId: projectFilter,
+        speakText: 'No specific deadlines scheduled for this week.',
+        displayText: 'No tasks scheduled with deadlines this week.',
+        actionTaken: true
+      });
+      return;
+    }
+
+    const lines = dueThisWeek.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}] *(Due: ${t.deadline || t.due_date})*`).join('\n');
+    const speakText = `You have ${count} task${count === 1 ? '' : 's'} due this week.`;
+    const displayText = `### TASKS DUE THIS WEEK (${count})\n\n${lines}`;
+
+    res.json({
+      success: true,
+      intent: 'TASK_DUE_THIS_WEEK',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // J. ACTIVE / IN-PROGRESS TASKS
   if (
     lower.includes("what's running") || 
     lower.includes('what is running') || 
@@ -1903,29 +2263,22 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     lower.includes('active tasks') ||
     lower.includes('what am i actively working on')
   ) {
-    const runningTasks = await queryAll(
-      `SELECT t.task_code, t.title, p.name as project_name 
-       FROM tasks t
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE (t.status = 'IN_PROGRESS' OR t.status = 'IN PROGRESS' OR t.status = 'DOING') 
-       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.sequence_order ASC LIMIT 5`
-    );
+    const runningTasks = await taskReportService.getActiveTasks(userId, { projectId: projectFilter });
+    const count = runningTasks.length;
 
-    const count = (runningTasks || []).length;
-    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: ACTIVE_TASKS | RESULT: SUCCESS (${count})`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_TASK_INTELLIGENCE | INTENT: TASK_ACTIVE | COUNT: ${count}`);
 
     if (count === 0) {
-      const topPending = await queryOne(
-        `SELECT task_code, title FROM tasks WHERE status != 'DONE' AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY sequence_order ASC LIMIT 1`
-      );
+      const topPending = await taskReportService.getPendingTasks(userId, { projectId: projectFilter });
+      const nextOne = topPending[0];
 
-      if (topPending) {
+      if (nextOne) {
         res.json({
           success: true,
-          intent: 'ACTIVE_TASKS_EMPTY',
-          speakText: `No tasks in progress. Your next pending task is ${topPending.task_code}: ${topPending.title}.`,
-          displayText: `No task is currently marked **In Progress**.\n\nNext queued task: **${topPending.task_code}** ("${topPending.title}").`,
+          intent: 'TASK_ACTIVE_EMPTY',
+          projectId: projectFilter,
+          speakText: `No tasks in progress. Your next pending task is ${nextOne.task_code}: ${nextOne.title}.`,
+          displayText: `No task is currently marked **In Progress**.\n\n**Next queued task:** **${nextOne.task_code}** ("${nextOne.title}").`,
           actionTaken: true
         });
         return;
@@ -1933,7 +2286,8 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
 
       res.json({
         success: true,
-        intent: 'ACTIVE_TASKS_EMPTY',
+        intent: 'TASK_ACTIVE_EMPTY',
+        projectId: projectFilter,
         speakText: 'No tasks currently running.',
         displayText: 'No tasks marked In Progress right now. Workspace is clean.',
         actionTaken: true
@@ -1942,11 +2296,15 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     }
 
     const lines = runningTasks.map((t: any) => `• **${t.task_code}**: ${t.title} in *${t.project_name || 'SHIORI'}*`).join('\n');
+    const speakText = `You have ${count} active task${count === 1 ? '' : 's'}: ${runningTasks.map((t: any) => t.title).join(', ')}.`;
+    const displayText = `### ACTIVE TASKS IN PROGRESS (${count})\n\n${lines}`;
+
     res.json({
       success: true,
-      intent: 'ACTIVE_TASKS',
-      speakText: `You have ${count} active task${count === 1 ? '' : 's'}: ${runningTasks.map((t: any) => t.title).join(', ')}.`,
-      displayText: `**${count} Active Task${count === 1 ? '' : 's'} In Progress:**\n\n${lines}`,
+      intent: 'TASK_ACTIVE',
+      projectId: projectFilter,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
       actionTaken: true
     });
     return;

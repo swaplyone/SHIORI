@@ -97,7 +97,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSimulator, onOpenCom
                   { to: '/workspaces', label: 'Workspaces', icon: Building2 },
                   { to: '/connections', label: 'Connections (SHIORI ID)', icon: Users },
                   { to: '/github', label: 'GitHub Hub', icon: Github },
-                  { to: '/activity', label: 'Activity Journal', icon: Activity },
+                  { to: '/activity', label: 'Activity & Reports', icon: Activity },
                   { to: '/journal', label: 'Daily & Weekly Journal', icon: BookOpen },
                   { to: '/notifications', label: 'Notifications', icon: Bell, badge: unreadCount },
                   { to: '/settings', label: 'Settings', icon: Settings },

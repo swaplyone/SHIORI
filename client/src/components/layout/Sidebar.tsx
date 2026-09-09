@@ -33,7 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSimulator, onOpenCommand
     { to: '/connections', label: 'Connections (ID)', icon: Users, badge: null },
     { to: '/github', label: 'GitHub & Webhooks', icon: Github, badge: user?.github_connected ? 'Connected' : 'Connect' },
     { to: '/journal', label: 'Daily Journal', icon: BookOpen, badge: null },
-    { to: '/activity', label: 'Audit Activity', icon: Activity, badge: null },
+    { to: '/activity', label: 'Activity & Reports', icon: Activity, badge: null },
     { to: '/settings', label: 'Settings', icon: Settings, badge: null },
   ];
 

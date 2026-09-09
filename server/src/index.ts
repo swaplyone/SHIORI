@@ -46,6 +46,7 @@ app.options('*', cors());
 app.use(express.json());
 
 import { focusRouter } from './routes/focus.routes.js';
+import { reportsRouter } from './routes/reports.routes.js';
 
 // Routes
 app.use('/api/auth', authRouter);
@@ -57,6 +58,7 @@ app.use('/api/friends', friendsRouter);
 app.use('/api/github', githubRouter);
 app.use('/api/webhooks', githubRouter);
 app.use('/api/activity', activityRouter);
+app.use('/api/reports', reportsRouter);
 app.use('/api/journal', journalRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/simulator', simulatorRouter);
