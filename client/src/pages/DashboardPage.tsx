@@ -214,7 +214,7 @@ export const DashboardPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-8 select-none font-sans pb-12 animate-fade-in">
+    <div className="space-y-8 select-none font-sans pb-12">
       {/* 1. TODAY SUMMARY STRIP */}
       <div className="p-4 bg-eink-surface border-2 border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-technical shadow-eink-sm">
         <div>
@@ -244,7 +244,7 @@ export const DashboardPage: React.FC = () => {
 
       {/* PENDING WORK ASSIGNED BANNER */}
       {pendingAssignments.length > 0 && (
-        <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 shadow-eink-card animate-fade-in font-technical">
+        <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 shadow-eink-card font-technical">
           <div className="flex items-center justify-between border-b border-eink-border pb-2">
             <span className="font-bold text-xs uppercase text-eink-text tracking-wider flex items-center gap-2">
               <span>📋</span>
@@ -307,7 +307,7 @@ export const DashboardPage: React.FC = () => {
 
       {/* PENDING PROJECT INVITATIONS BANNER */}
       {pendingInvitations.length > 0 && (
-        <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 shadow-eink-card animate-fade-in font-technical">
+        <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 shadow-eink-card font-technical">
           <div className="flex items-center justify-between border-b border-eink-border pb-2">
             <span className="font-bold text-xs uppercase text-eink-text tracking-wider flex items-center gap-2">
               <span>✉️</span>
@@ -363,7 +363,7 @@ export const DashboardPage: React.FC = () => {
 
       {/* PENDING CONNECTION REQUESTS BANNER */}
       {pendingConnections.length > 0 && (
-        <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 shadow-eink-card animate-fade-in font-technical">
+        <div className="p-4 bg-eink-surface border-2 border-eink-text rounded-sm space-y-3 shadow-eink-card font-technical">
           <div className="flex items-center justify-between border-b border-eink-border pb-2">
             <span className="font-bold text-xs uppercase text-eink-text tracking-wider flex items-center gap-2">
               <Users className="w-4 h-4" />

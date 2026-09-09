@@ -20,7 +20,7 @@ export const SparkGreetingBanner: React.FC = () => {
   const { greeting, punchline, summarySentence, counts, recommendation } = briefingData;
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 md:px-8 mb-6 animate-fade-in select-none">
+    <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 md:px-8 mb-6 select-none">
       <div className="bg-eink-surface border-2 border-eink-text p-4 rounded-sm shadow-eink-sm relative font-technical text-xs overflow-hidden">
         {/* Top Header */}
         <div className="flex items-start justify-between gap-3">

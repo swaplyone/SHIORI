@@ -15,7 +15,7 @@ export const EInkNoticeBanner: React.FC<EInkNoticeBannerProps> = ({ onViewTask }
   const isRecovered = activeNotice.type === 'BUILD_RECOVERED';
 
   return (
-    <aside aria-label="Development Alert" className="w-full bg-eink-surface border-b border-eink-border px-4 py-3 font-sans transition-all animate-fade-in select-none">
+    <aside aria-label="Development Alert" className="w-full bg-eink-surface border-b border-eink-border px-4 py-3 font-sans transition-all select-none">
       <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-start sm:items-center gap-3">
           <div
