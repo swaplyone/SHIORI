@@ -45,7 +45,7 @@ export const PwaInstallPrompt: React.FC = () => {
   if (!showPrompt) return null;
 
   return (
-    <div className="fixed bottom-16 md:bottom-6 right-4 md:right-6 z-40 max-w-sm w-[calc(100vw-2rem)] bg-eink-bg border border-eink-border shadow-2xl p-4 rounded-sm font-sans select-none animate-fade-in">
+    <div className="fixed bottom-16 md:bottom-6 right-4 md:right-6 z-40 max-w-sm w-[calc(100%-2rem)] bg-eink-bg border border-eink-border shadow-2xl p-4 rounded-sm font-sans select-none animate-fade-in">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-6 h-6 bg-eink-text text-eink-bg flex items-center justify-center font-technical font-bold text-xs rounded-sm">
