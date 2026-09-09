@@ -740,10 +740,10 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Spark Fullscreen Voice Assistant"
-      className="fixed inset-0 z-[99999] flex flex-col justify-between w-screen h-[100dvh] bg-black/40 backdrop-blur-2xl backdrop-saturate-[150%] select-none font-sans text-white overflow-hidden pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] px-6 sm:px-12 transition-opacity duration-300"
+      className="fixed inset-0 z-[99999] flex flex-col justify-between w-screen h-[100dvh] bg-white/[0.03] backdrop-blur-[40px] backdrop-saturate-[180%] bg-gradient-to-b from-white/[0.08] via-black/20 to-black/45 select-none font-sans text-white overflow-hidden pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] px-6 sm:px-12 transition-opacity duration-300"
     >
-      {/* Subtle radial vignette that keeps the underlying home page visible */}
-      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.1)_0%,rgba(0,0,0,0.65)_100%)] pointer-events-none z-0" />
+      {/* Frosted glass luminous diffuse gradient */}
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.07)_0%,rgba(0,0,0,0.35)_100%)] pointer-events-none z-0" />
 
       {/* ========================================================================= */}
       {/* 1. TOP HEADER */}
@@ -814,7 +814,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
         {/* State Indicator Pill */}
         <div className="flex flex-col items-center justify-center space-y-2">
-          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/40 border border-white/15 backdrop-blur-xl shadow-lg">
+          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/[0.08] border border-white/20 backdrop-blur-xl shadow-lg">
             {state === 'LISTENING' ? (
               <span className="flex items-center gap-0.5 text-emerald-400">
                 <span className="w-0.5 h-3 bg-emerald-400 animate-pulse" />
@@ -835,7 +835,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           </div>
 
           {/* Subtitle / Caption */}
-          <p className="text-sm sm:text-base font-sans text-white/75 italic max-w-lg px-4 transition-all leading-relaxed whitespace-pre-line">
+          <p className="text-sm sm:text-base font-sans text-white/80 italic max-w-lg px-4 transition-all leading-relaxed whitespace-pre-line">
             {getSubStatusText()}
           </p>
         </div>
@@ -850,9 +850,9 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
               setIsTypingMode(true);
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
-            className="w-full px-5 py-3 rounded-full bg-black/35 backdrop-blur-2xl border border-white/15 shadow-2xl flex items-center gap-3 transition-all focus-within:border-white/35 focus-within:bg-black/50 cursor-text"
+            className="w-full px-5 py-3.5 rounded-full bg-white/[0.07] hover:bg-white/[0.1] backdrop-blur-2xl border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.3)] flex items-center gap-3 transition-all focus-within:border-white/40 focus-within:bg-white/[0.12] cursor-text"
           >
-            <Mic className="w-4 h-4 text-white/50 shrink-0" />
+            <Mic className="w-4 h-4 text-white/60 shrink-0" />
 
             {isTypingMode ? (
               <input
@@ -874,14 +874,14 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
             ) : (
               <div className="flex-1 text-left overflow-hidden">
                 {interimTranscript || inputText ? (
-                  <p className="text-xs sm:text-sm font-mono text-white/90 truncate">
+                  <p className="text-xs sm:text-sm font-mono text-white/95 truncate">
                     "{interimTranscript || inputText}"
                     {state === 'LISTENING' && (
                       <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
                     )}
                   </p>
                 ) : (
-                  <p className="text-xs sm:text-sm font-mono text-white/40 truncate">
+                  <p className="text-xs sm:text-sm font-mono text-white/50 truncate">
                     {state === 'LISTENING' ? 'Speak a command or tap to type...' : 'Tap to type command...'}
                   </p>
                 )}
