@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   X,
@@ -645,15 +646,15 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     return 'Go ahead.';
   };
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Spark Fullscreen Voice Assistant"
-      className="fixed inset-0 z-50 flex flex-col justify-between w-full h-[100dvh] bg-[#0c0d0e]/85 backdrop-blur-[40px] backdrop-saturate-[180%] select-none font-sans text-white overflow-hidden pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] px-6 sm:px-12 transition-opacity duration-300"
+      className="fixed inset-0 z-[99999] flex flex-col justify-between w-screen h-[100dvh] bg-black/40 backdrop-blur-2xl backdrop-saturate-[150%] select-none font-sans text-white overflow-hidden pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] px-6 sm:px-12 transition-opacity duration-300"
     >
-      {/* Subtle radial vignette */}
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.35)_55%,rgba(0,0,0,0.85)_100%)] pointer-events-none z-0" />
+      {/* Subtle radial vignette that keeps the underlying home page visible */}
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.1)_0%,rgba(0,0,0,0.65)_100%)] pointer-events-none z-0" />
 
       {/* ========================================================================= */}
       {/* 1. TOP HEADER */}
@@ -661,7 +662,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       <header className="relative z-10 w-full flex items-center justify-between shrink-0">
         {/* Top Left: SHIORI Brand */}
         <div className="flex items-center gap-2">
-          <span className="text-sm font-serif tracking-[0.25em] text-white/80 font-medium flex items-center gap-1.5 uppercase">
+          <span className="text-sm font-serif tracking-[0.28em] text-white/85 font-medium flex items-center gap-1.5 uppercase">
             <span className="text-amber-300 text-xs">✦</span> SHIORI
           </span>
         </div>
@@ -679,7 +680,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
         {/* Top Right: Status Pill & Close (X) Button */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-white/80 text-[11px] font-mono tracking-wider">
+          <div className="hidden sm:flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/[0.08] border border-white/15 text-white/90 text-[11px] font-mono tracking-wider shadow-sm">
             <span className="text-amber-300 text-xs">✦</span>
             <span>SPARK</span>
           </div>
@@ -715,16 +716,16 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center my-auto w-full max-w-2xl mx-auto text-center space-y-5 sm:space-y-6">
         {/* Spherical Lens containing the WebGL Strands Animation */}
         <div className="relative flex items-center justify-center">
-          <div className="w-[68vw] h-[68vw] max-w-[340px] max-h-[340px] sm:w-[380px] sm:h-[380px] md:w-[420px] md:h-[420px] rounded-full overflow-hidden relative shadow-[0_0_90px_rgba(0,0,0,0.9),inset_0_0_30px_rgba(255,255,255,0.08)] border border-white/15 backdrop-blur-md">
+          <div className="w-[68vw] h-[68vw] max-w-[340px] max-h-[340px] sm:w-[380px] sm:h-[380px] md:w-[420px] md:h-[420px] rounded-full overflow-hidden relative shadow-[0_0_80px_rgba(0,0,0,0.8),inset_0_0_25px_rgba(255,255,255,0.08)] border border-white/15 backdrop-blur-md">
             <Strands {...strandsProps} className="w-full h-full" />
             {/* Glass refraction reflection overlay */}
-            <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/10 via-transparent to-black/40 pointer-events-none" />
+            <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/10 via-transparent to-black/35 pointer-events-none" />
           </div>
         </div>
 
         {/* State Indicator Pill */}
         <div className="flex flex-col items-center justify-center space-y-2">
-          <div className="flex items-center gap-2 px-4 py-1 rounded-full bg-black/45 border border-white/15 backdrop-blur-xl shadow-lg">
+          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/40 border border-white/15 backdrop-blur-xl shadow-lg">
             {state === 'LISTENING' ? (
               <span className="flex items-center gap-0.5 text-emerald-400">
                 <span className="w-0.5 h-3 bg-emerald-400 animate-pulse" />
@@ -745,7 +746,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           </div>
 
           {/* Subtitle / Caption */}
-          <p className="text-sm sm:text-base font-sans text-white/70 italic max-w-lg px-4 transition-all leading-relaxed whitespace-pre-line">
+          <p className="text-sm sm:text-base font-sans text-white/75 italic max-w-lg px-4 transition-all leading-relaxed whitespace-pre-line">
             {getSubStatusText()}
           </p>
         </div>
@@ -760,7 +761,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
               setIsTypingMode(true);
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
-            className="w-full px-5 py-3 rounded-full bg-black/40 backdrop-blur-2xl border border-white/15 shadow-2xl flex items-center gap-3 transition-all focus-within:border-white/35 focus-within:bg-black/60 cursor-text"
+            className="w-full px-5 py-3 rounded-full bg-black/35 backdrop-blur-2xl border border-white/15 shadow-2xl flex items-center gap-3 transition-all focus-within:border-white/35 focus-within:bg-black/50 cursor-text"
           >
             <Mic className="w-4 h-4 text-white/50 shrink-0" />
 
@@ -891,7 +892,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
                 isConversationActiveRef.current = false;
                 closeSpark();
               }}
-              className="w-11 h-11 rounded-full bg-white/[0.08] hover:bg-white/[0.16] border border-white/15 flex items-center justify-center text-white/70 hover:text-white transition-all active:scale-95 shadow-md cursor-pointer"
+              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 flex items-center justify-center text-white/70 hover:text-white transition-all active:scale-95 shadow-md cursor-pointer"
               title="Cancel (Esc)"
               aria-label="Cancel"
             >
@@ -908,13 +909,13 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
               onClick={handleMicToggle}
               className={`w-16 h-16 sm:w-18 sm:h-18 rounded-full p-[2.5px] transition-all duration-300 active:scale-90 cursor-pointer ${
                 state === 'LISTENING'
-                  ? 'bg-gradient-to-tr from-[#FF4242] via-[#EAB308] to-[#10B981] shadow-[0_0_35px_rgba(234,179,8,0.45)] scale-105'
+                  ? 'bg-gradient-to-tr from-[#FF5E5E] via-[#F59E0B] to-[#10B981] shadow-[0_0_30px_rgba(245,158,11,0.35)] scale-105'
                   : 'bg-white/20 hover:bg-white/30 border border-white/20'
               }`}
               title={state === 'LISTENING' ? 'Stop Listening' : 'Start Speaking'}
               aria-label="Toggle Microphone"
             >
-              <div className="w-full h-full rounded-full bg-[#131416] flex items-center justify-center text-white">
+              <div className="w-full h-full rounded-full bg-[#131418] flex items-center justify-center text-white">
                 {state === 'LISTENING' ? (
                   <MicOff className="w-6 h-6 text-emerald-400 animate-pulse" />
                 ) : (
@@ -922,7 +923,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
                 )}
               </div>
             </button>
-            <span className="text-[10px] font-mono tracking-wider text-white/60 uppercase">
+            <span className="text-[10px] font-mono tracking-wider text-white/60">
               {state === 'LISTENING' ? 'Listening...' : state === 'SPEAKING' ? 'Tap to speak' : 'Tap to speak'}
             </span>
           </div>
@@ -931,7 +932,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           <div className="flex flex-col items-center gap-1.5">
             <button
               onClick={handleRetry}
-              className="w-11 h-11 rounded-full bg-white/[0.08] hover:bg-white/[0.16] border border-white/15 flex items-center justify-center text-white/70 hover:text-white transition-all active:scale-95 shadow-md cursor-pointer"
+              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 flex items-center justify-center text-white/70 hover:text-white transition-all active:scale-95 shadow-md cursor-pointer"
               title="Retry Voice Input"
               aria-label="Retry"
             >
@@ -960,6 +961,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           <span>to close</span>
         </div>
       </footer>
-    </div>
+    </div>,
+    document.body
   );
 };
