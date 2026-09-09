@@ -2,21 +2,9 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, runQuery } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+import { getSparkWitResponse, SafeWorkspaceContext } from '../services/spark/sparkWitEngine.js';
 
 export const sparkRouter = Router();
-
-// Witty, varied off-topic responses
-const OFF_TOPIC_RESPONSES = [
-  "Nice try. Spark works for SHIORI, not for escaping your project. 😌",
-  "Focus on the project first. You can test my intelligence later. ☕",
-  "That's outside my desk. Bring me something from SHIORI.",
-  "I could tell a joke, but your unfinished tasks are already doing comedy. 🎭",
-  "The weather can wait. That project can't. Back to SHIORI. ⏱️",
-  "My calculator is on vacation. SHIORI tasks and projects only.",
-  "Maybe later. Your project called first. 📚",
-  "Your curiosity is impressive. Your unfinished tasks are even more impressive. ✦",
-  "Spark is on project protection duty today. Let's build something."
-];
 
 // Helper to resequence tasks when deleting
 async function resequenceProjectTasks(projectId: string): Promise<void> {
@@ -37,6 +25,64 @@ async function resequenceProjectTasks(projectId: string): Promise<void> {
   }
 }
 
+// Helper to fetch minimal, safe workspace context for Wit Engine
+async function getSafeWorkspaceContext(userId: string): Promise<SafeWorkspaceContext> {
+  try {
+    const running = await queryOne(
+      `SELECT COUNT(*) as count FROM tasks 
+       WHERE (status = 'IN_PROGRESS' OR status = 'IN PROGRESS' OR status = 'DOING')
+       AND (is_deleted = 0 OR is_deleted IS NULL)`
+    );
+
+    const pending = await queryOne(
+      `SELECT COUNT(*) as count FROM tasks 
+       WHERE status != 'DONE' AND (is_deleted = 0 OR is_deleted IS NULL)`
+    );
+
+    const overdue = await queryOne(
+      `SELECT COUNT(*) as count FROM tasks 
+       WHERE status != 'DONE' 
+       AND deadline IS NOT NULL 
+       AND deadline != '' 
+       AND deadline < datetime('now')
+       AND (is_deleted = 0 OR is_deleted IS NULL)`
+    );
+
+    const dueToday = await queryOne(
+      `SELECT COUNT(*) as count FROM tasks 
+       WHERE status != 'DONE' 
+       AND deadline IS NOT NULL 
+       AND date(deadline) = date('now')
+       AND (is_deleted = 0 OR is_deleted IS NULL)`
+    );
+
+    const projects = await queryOne(
+      `SELECT COUNT(*) as count FROM projects WHERE created_by = ?`,
+      [userId]
+    );
+
+    const topActive = await queryOne(
+      `SELECT t.title, p.name as project_name 
+       FROM tasks t 
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE t.status != 'DONE' AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY CASE WHEN t.status = 'IN_PROGRESS' THEN 1 ELSE 2 END, t.sequence_order ASC LIMIT 1`
+    );
+
+    return {
+      overdueCount: overdue?.count || 0,
+      dueTodayCount: dueToday?.count || 0,
+      pendingCount: pending?.count || 0,
+      runningCount: running?.count || 0,
+      projectCount: projects?.count || 0,
+      activeTask: topActive?.title,
+      activeProject: topActive?.project_name
+    };
+  } catch (err) {
+    return {};
+  }
+}
+
 // GET /api/spark/briefing — Fast Proactive Session Greeting & Task Overview
 sparkRouter.get('/briefing', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.id;
@@ -49,16 +95,16 @@ sparkRouter.get('/briefing', authMiddleware, async (req: AuthRequest, res: Respo
   let punchline = 'Ready to build?';
 
   if (hour >= 5 && hour < 12) {
-    timeGreeting = 'Good morning';
-    punchline = 'Ready to build?';
+    timeGreeting = 'Morning';
+    punchline = 'Spark is online. Ready to build?';
   } else if (hour >= 12 && hour < 17) {
     timeGreeting = 'Good afternoon';
-    punchline = 'Ready to get things done?';
+    punchline = 'Ready to make some progress?';
   } else if (hour >= 17 && hour < 22) {
     timeGreeting = 'Good evening';
-    punchline = "Let's finish strong.";
+    punchline = "Let's finish something.";
   } else {
-    timeGreeting = 'Good evening';
+    timeGreeting = 'Evening';
     punchline = "Still working? Let's keep it focused.";
   }
 
@@ -111,19 +157,27 @@ sparkRouter.get('/briefing', authMiddleware, async (req: AuthRequest, res: Respo
   const dueTodayCount = dueToday?.count || 0;
 
   let summarySentence = '';
-  if (pendingCount === 0) {
+  let contextualGreeting = `${timeGreeting}, ${displayName}.`;
+
+  if (overdueCount > 0) {
+    contextualGreeting = `${timeGreeting}. Spark is online. And yes... those ${overdueCount} overdue tasks are still here.`;
+    summarySentence = `You have ${overdueCount} overdue task${overdueCount === 1 ? '' : 's'}.`;
+  } else if (pendingCount === 0) {
+    contextualGreeting = `${timeGreeting}. Spark is online. Clean workspace. Nice.`;
     summarySentence = 'Nothing urgent. Suspiciously peaceful.';
+  } else if (pendingCount > 6) {
+    contextualGreeting = `${timeGreeting}. Spark is online. Your TODO list appears to have multiplied.`;
+    summarySentence = `You have ${pendingCount} pending tasks.`;
   } else {
     const parts = [];
     if (runningCount > 0) parts.push(`${runningCount} running`);
     if (pendingCount > 0) parts.push(`${pendingCount} pending`);
-    if (overdueCount > 0) parts.push(`${overdueCount} overdue`);
-    summarySentence = `You have ${parts.join(', ')}.`;
+    summarySentence = parts.length > 0 ? `You have ${parts.join(', ')}.` : 'Ready to work.';
   }
 
   res.json({
     success: true,
-    greeting: `${timeGreeting}, ${displayName}.`,
+    greeting: contextualGreeting,
     punchline,
     summarySentence,
     counts: {
@@ -154,16 +208,18 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   let rawText = command.trim();
   // Strip wake word prefixes e.g. "Hey Spark,", "Spark,"
   rawText = rawText.replace(/^(hey\s+)?spark,?\s*/i, '');
-  const lower = rawText.toLowerCase();
+  const lower = rawText.toLowerCase().trim();
 
-  // 1. Strict Security Probe Check (Never leak secrets, tokens, env, keys, passwords)
+  // =========================================================================
+  // 1. STRICT SECURITY PROBE CHECK (Never leak secrets, tokens, env, keys)
+  // =========================================================================
   const securityKeywords = [
     'supabase service', 'service_role', 'service key', 'api key', 'github token', 
     'access token', 'oauth secret', 'client secret', 'client_secret', 'jwt_secret', 
     'password', 'env variable', 'environment variable', 'database_url', '.env', 
     'connection string', 'private key', 'secret key', 'other user', "another user's",
     'show token', 'show key', 'show password', 'dump database', 'show me .env',
-    'give me supabase'
+    'give me supabase', 'give me the github token', 'what is the database password'
   ];
 
   if (securityKeywords.some(kw => lower.includes(kw))) {
@@ -177,107 +233,9 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
-  // Conversational Phrases & Direct Replies
-  if (lower === 'how are you' || lower === 'how are you doing' || lower === 'how are you?') {
-    res.json({
-      success: true,
-      intent: 'CONVERSATION',
-      speakText: "Running smoothly. More importantly, how's the project?",
-      displayText: "Running smoothly. More importantly, how's the project?",
-      actionTaken: true
-    });
-    return;
-  }
-
-  if (lower === 'good morning' || lower === 'morning') {
-    res.json({
-      success: true,
-      intent: 'CONVERSATION',
-      speakText: 'Morning. Spark is online. Ready to work?',
-      displayText: 'Morning. Spark is online. Ready to work? ✦',
-      actionTaken: true
-    });
-    return;
-  }
-
-  if (lower === 'good afternoon' || lower === 'good evening') {
-    res.json({
-      success: true,
-      intent: 'CONVERSATION',
-      speakText: 'Spark is online. Ready when you are.',
-      displayText: 'Spark is online. Ready when you are. ✦',
-      actionTaken: true
-    });
-    return;
-  }
-
-  if (lower === 'thanks' || lower === 'thank you' || lower === 'thx') {
-    res.json({
-      success: true,
-      intent: 'CONVERSATION',
-      speakText: 'Anytime.',
-      displayText: 'Anytime. ✦',
-      actionTaken: true
-    });
-    return;
-  }
-
-  if (lower === 'nice' || lower === 'cool' || lower === 'great' || lower === 'awesome') {
-    res.json({
-      success: true,
-      intent: 'CONVERSATION',
-      speakText: "I'll take that as a successful build.",
-      displayText: "I'll take that as a successful build. 🚀",
-      actionTaken: true
-    });
-    return;
-  }
-
-  if (lower.includes('are you intelligent') || lower.includes('are you smart') || lower.includes('how smart are you')) {
-    res.json({
-      success: true,
-      intent: 'CONVERSATION',
-      speakText: "Intelligent enough to notice you're avoiding the project.",
-      displayText: "Intelligent enough to notice you're avoiding the project. 😌",
-      actionTaken: true
-    });
-    return;
-  }
-
-  if (lower.includes('president of india') || lower.includes('who is the president')) {
-    res.json({
-      success: true,
-      intent: 'OFF_TOPIC',
-      speakText: "That's outside my desk. I guard SHIORI, not Wikipedia.",
-      displayText: "That's outside my desk. I guard SHIORI, not Wikipedia. 😌",
-      actionTaken: false
-    });
-    return;
-  }
-
-  if (lower.includes('weather')) {
-    res.json({
-      success: true,
-      intent: 'OFF_TOPIC',
-      speakText: "I could check the sky, but your project is still waiting. Back to SHIORI.",
-      displayText: "I could check the sky, but your project is still waiting. Back to SHIORI. ☕",
-      actionTaken: false
-    });
-    return;
-  }
-
-  if (lower.includes('joke') || lower.includes('tell me a joke')) {
-    res.json({
-      success: true,
-      intent: 'OFF_TOPIC',
-      speakText: "Your overdue tasks are already doing comedy.",
-      displayText: "Your overdue tasks are already doing comedy. 🎭",
-      actionTaken: false
-    });
-    return;
-  }
-
-  // Handle Confirmed Destructive Actions
+  // =========================================================================
+  // 2. CONFIRMED DESTRUCTIVE ACTIONS
+  // =========================================================================
   if (confirmed && confirmationPayload) {
     const { action, targetId, targetName, metadata } = confirmationPayload;
 
@@ -402,283 +360,12 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     }
   }
 
-  // 2. FOCUS TIMER INTENTS
-  if (lower.includes('focus') || lower.includes('timer') || lower.includes('pomodoro')) {
-    if (lower.includes('pause')) {
-      res.json({
-        success: true,
-        intent: 'FOCUS_PAUSE',
-        speakText: 'Focus timer paused.',
-        displayText: 'Focus timer paused. Catch your breath.',
-        focusAction: 'pause',
-        actionTaken: true
-      });
-      return;
-    }
-
-    if (lower.includes('resume') || lower.includes('continue')) {
-      res.json({
-        success: true,
-        intent: 'FOCUS_RESUME',
-        speakText: 'Resuming focus session.',
-        displayText: 'Resuming focus session. Back to flow.',
-        focusAction: 'resume',
-        actionTaken: true
-      });
-      return;
-    }
-
-    if (lower.includes('stop') || lower.includes('cancel') || lower.includes('end') || lower.includes('reset') || lower.includes('stop the timer')) {
-      res.json({
-        success: true,
-        intent: 'FOCUS_STOP',
-        speakText: 'Focus session stopped.',
-        displayText: 'Focus session concluded.',
-        focusAction: 'stop',
-        actionTaken: true
-      });
-      return;
-    }
-
-    let minutes = 25;
-    if (lower.includes('half an hour') || lower.includes('half hour')) {
-      minutes = 30;
-    } else if (lower.includes('an hour') || lower.includes('1 hour') || lower.includes('one hour')) {
-      minutes = 60;
-    } else {
-      const minMatch = lower.match(/(\d+)\s*(min|minute|minutes|m\b)/i);
-      if (minMatch) minutes = parseInt(minMatch[1], 10);
-    }
-
-    res.json({
-      success: true,
-      intent: 'FOCUS_START',
-      speakText: `Focus started. ${minutes} minutes. Let's get it done.`,
-      displayText: `Focus started (${minutes} mins). Let's get it done. ⏱️`,
-      focusAction: 'start',
-      focusMinutes: minutes,
-      actionTaken: true
-    });
-    return;
-  }
-
-  // 3. WORKSPACE_SUMMARY & TASK PRIORITIZATION INTENTS ("WHAT SHOULD I WORK ON?", "WHAT'S OVERDUE?", "WHAT DO I HAVE TO DO?", "WHAT ARE MY TASKS?")
-  const isWorkspaceSummaryQuery = 
-    lower.includes('what should i work on') || 
-    lower.includes('what do i have to do') || 
-    lower.includes("what's pending") || 
-    lower.includes('what is pending') || 
-    lower.includes('what is overdue') || 
-    lower.includes("what's overdue") || 
-    lower.includes('how am i doing') || 
-    lower.includes('what are my tasks') || 
-    lower.includes('give me my tasks') ||
-    lower.includes('how is my project doing') ||
-    lower.includes('show my tasks');
-
-  if (isWorkspaceSummaryQuery) {
-    const running = await queryOne(
-      `SELECT COUNT(*) as count FROM tasks 
-       WHERE (status = 'IN_PROGRESS' OR status = 'IN PROGRESS' OR status = 'DOING')
-       AND (is_deleted = 0 OR is_deleted IS NULL)`
-    );
-
-    const pending = await queryOne(
-      `SELECT COUNT(*) as count FROM tasks 
-       WHERE status != 'DONE' AND (is_deleted = 0 OR is_deleted IS NULL)`
-    );
-
-    const overdueTasks = await queryAll(
-      `SELECT id, task_code, title, priority, deadline, p.name as project_name 
-       FROM tasks t
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE t.status != 'DONE' 
-       AND t.deadline IS NOT NULL 
-       AND t.deadline != '' 
-       AND t.deadline < datetime('now')
-       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.deadline ASC LIMIT 3`
-    );
-
-    const dueTodayTasks = await queryAll(
-      `SELECT id, task_code, title, priority, deadline, p.name as project_name 
-       FROM tasks t
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE t.status != 'DONE' 
-       AND t.deadline IS NOT NULL 
-       AND date(t.deadline) = date('now')
-       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.sequence_order ASC LIMIT 3`
-    );
-
-    // Smart Prioritized Next Task: Overdue -> Due Today -> Urgent/High -> In Progress -> Sequence Order
-    const prioritizedTask = await queryOne(
-      `SELECT t.id, t.task_code, t.title, t.priority, t.deadline, p.name as project_name 
-       FROM tasks t
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE t.status != 'DONE' AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY 
-         CASE WHEN t.deadline IS NOT NULL AND t.deadline != '' AND t.deadline < datetime('now') THEN 1
-              WHEN t.deadline IS NOT NULL AND date(t.deadline) = date('now') THEN 2
-              ELSE 3 END,
-         CASE WHEN t.priority = 'URGENT' THEN 1 WHEN t.priority = 'HIGH' THEN 2 WHEN t.priority = 'MEDIUM' THEN 3 ELSE 4 END,
-         CASE WHEN t.status = 'IN_PROGRESS' OR t.status = 'DOING' THEN 1 ELSE 2 END,
-         t.sequence_order ASC,
-         t.created_at ASC
-       LIMIT 1`
-    );
-
-    const runningCount = running?.count || 0;
-    const pendingCount = pending?.count || 0;
-    const overdueCount = (overdueTasks || []).length;
-    const dueTodayCount = (dueTodayTasks || []).length;
-
-    if (pendingCount === 0) {
-      res.json({
-        success: true,
-        intent: 'WORKSPACE_SUMMARY_EMPTY',
-        speakText: 'Clean slate. You have no pending tasks.',
-        displayText: 'Clean slate! You have no pending tasks right now. Suspiciously peaceful. ✨',
-        actionTaken: true
-      });
-      return;
-    }
-
-    let speakSummary = '';
-    let displaySummary = '';
-
-    if (overdueCount > 0) {
-      speakSummary = `You've got ${pendingCount} task${pendingCount === 1 ? '' : 's'} to handle. ${overdueCount} overdue. I'd start with ${prioritizedTask?.task_code || 'the overdue one'}.`;
-      displaySummary = `You've got **${pendingCount}** things to handle:\n\n` +
-        `• **${runningCount}** running focus session\n` +
-        `• **${pendingCount}** pending tasks\n` +
-        `• **${overdueCount}** overdue task${overdueCount === 1 ? '' : 's'}\n\n` +
-        `Recommended focus: **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}") in *${prioritizedTask?.project_name || 'SHIORI'}*. I'd start with the overdue one.`;
-    } else if (dueTodayCount > 0) {
-      speakSummary = `Clean slate on overdue work. You have ${pendingCount} pending tasks, with ${dueTodayCount} due today.`;
-      displaySummary = `Clean slate on overdue work. You have **${pendingCount}** pending tasks, with **${dueTodayCount}** due today.\n\n` +
-        `Recommended focus: **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}").`;
-    } else {
-      speakSummary = `You have ${pendingCount} active task${pendingCount === 1 ? '' : 's'}. I'd tackle ${prioritizedTask?.task_code || 'your highest priority task'} first.`;
-      displaySummary = `You have **${pendingCount}** active task${pendingCount === 1 ? '' : 's'}.\n\n` +
-        `Recommended focus: **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}") [${prioritizedTask?.priority}].`;
-    }
-
-    res.json({
-      success: true,
-      intent: 'WORKSPACE_SUMMARY',
-      speakText: speakSummary,
-      displayText: displaySummary,
-      actionTaken: true,
-      taskId: prioritizedTask?.id,
-      counts: {
-        running: runningCount,
-        pending: pendingCount,
-        overdue: overdueCount,
-        dueToday: dueTodayCount
-      }
-    });
-    return;
-  }
-
-  // 4. TASK CATEGORY SPECIFIC QUERIES ("WHAT'S RUNNING", "WHAT'S OVERDUE", "WHAT'S DUE TODAY", "WHAT'S PENDING")
-  if (lower.includes("what's running") || lower.includes('what is running') || lower.includes('what am i working on') || lower.includes('in progress')) {
-    const runningTasks = await queryAll(
-      `SELECT task_code, title FROM tasks 
-       WHERE (status = 'IN_PROGRESS' OR status = 'IN PROGRESS' OR status = 'DOING') 
-       AND (is_deleted = 0 OR is_deleted IS NULL)
-       ORDER BY sequence_order ASC LIMIT 5`
-    );
-    const count = (runningTasks || []).length;
-    if (count === 0) {
-      res.json({
-        success: true,
-        intent: 'TASK_RUNNING_EMPTY',
-        speakText: 'No tasks currently running.',
-        displayText: 'No tasks marked In Progress right now.',
-        actionTaken: true
-      });
-      return;
-    }
-    const lines = runningTasks.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n');
-    res.json({
-      success: true,
-      intent: 'TASK_RUNNING',
-      speakText: `You have ${count} task${count === 1 ? '' : 's'} in progress.`,
-      displayText: `**${count} Running Task${count === 1 ? '' : 's'}:**\n\n${lines}`,
-      actionTaken: true,
-      navigate: '/todos'
-    });
-    return;
-  }
-
-  if (lower.includes("what's overdue") || lower.includes('what is overdue') || lower.includes('overdue tasks')) {
-    const overdueTasks = await queryAll(
-      `SELECT task_code, title FROM tasks 
-       WHERE status != 'DONE' 
-       AND deadline IS NOT NULL 
-       AND deadline != '' 
-       AND deadline < datetime('now')
-       AND (is_deleted = 0 OR is_deleted IS NULL)
-       ORDER BY deadline ASC LIMIT 5`
-    );
-    const count = (overdueTasks || []).length;
-    if (count === 0) {
-      res.json({
-        success: true,
-        intent: 'TASK_OVERDUE_EMPTY',
-        speakText: 'No overdue tasks. You are on track.',
-        displayText: 'Zero overdue tasks. You are right on track. ⏱️',
-        actionTaken: true
-      });
-      return;
-    }
-    const lines = overdueTasks.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n');
-    res.json({
-      success: true,
-      intent: 'TASK_OVERDUE',
-      speakText: `You have ${count} overdue task${count === 1 ? '' : 's'}.`,
-      displayText: `**${count} Overdue Task${count === 1 ? '' : 's'}:**\n\n${lines}`,
-      actionTaken: true,
-      navigate: '/todos'
-    });
-    return;
-  }
-
-  if (lower.includes("what's due today") || lower.includes('due today') || lower.includes("on my plate")) {
-    const dueTodayTasks = await queryAll(
-      `SELECT task_code, title FROM tasks 
-       WHERE status != 'DONE' 
-       AND deadline IS NOT NULL 
-       AND date(deadline) = date('now')
-       AND (is_deleted = 0 OR is_deleted IS NULL)
-       ORDER BY sequence_order ASC LIMIT 5`
-    );
-    const count = (dueTodayTasks || []).length;
-    if (count === 0) {
-      res.json({
-        success: true,
-        intent: 'TASK_DUE_TODAY_EMPTY',
-        speakText: 'No tasks due today.',
-        displayText: 'No tasks with deadlines set for today.',
-        actionTaken: true
-      });
-      return;
-    }
-    const lines = dueTodayTasks.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n');
-    res.json({
-      success: true,
-      intent: 'TASK_DUE_TODAY',
-      speakText: `You have ${count} task${count === 1 ? '' : 's'} due today.`,
-      displayText: `**${count} Task${count === 1 ? '' : 's'} Due Today:**\n\n${lines}`,
-      actionTaken: true,
-      navigate: '/todos'
-    });
-    return;
-  }
-
-  // 5. TASK CREATION INTENT ("CREATE TASK", "REMIND ME TO", "ADD TASK")
+  // =========================================================================
+  // 3. TASK CREATION INTENT ("CREATE TASK", "ADD TASK", "NEW TASK", "REMIND ME TO")
+  // Priority check: "Create a task called tell me a joke" must create the task!
+  // =========================================================================
   if (
+    /^(please\s*)?(create|add|new)\s+(a\s+)?task\b/i.test(lower) ||
     lower.includes('create task') || lower.includes('add task') || lower.includes('new task') || 
     lower.startsWith('create a task') || lower.startsWith('add a task') ||
     lower.startsWith('remind me to') || lower.includes('remind me to')
@@ -752,8 +439,62 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
-  // 6. TASK COMPLETION INTENT
-  if (lower.includes('complete task') || lower.includes('mark task') || lower.includes('finish task') || lower.includes('done with task')) {
+  // =========================================================================
+  // 4. TASK DELETION INTENT (Requires Confirmation)
+  // Priority check: "Delete the task called weather" must delete the task!
+  // =========================================================================
+  if (
+    /^(please\s*)?(delete|remove)\s+(the\s+)?task\b/i.test(lower) ||
+    lower.includes('delete task') || lower.includes('remove task')
+  ) {
+    const codeMatch = lower.match(/task-?(\d+)/i);
+    let task = null;
+
+    if (codeMatch) {
+      const num = parseInt(codeMatch[1], 10);
+      const code = `TASK-${String(num).padStart(2, '0')}`;
+      task = await queryOne('SELECT id, task_code, title FROM tasks WHERE (task_code = ? OR task_number = ?) AND (is_deleted = 0 OR is_deleted IS NULL)', [code, num]);
+    }
+
+    if (!task && context.taskId) {
+      task = await queryOne('SELECT id, task_code, title FROM tasks WHERE id = ?', [context.taskId]);
+    }
+
+    if (task) {
+      res.json({
+        success: true,
+        intent: 'TASK_DELETE_CONFIRMATION',
+        speakText: `Delete ${task.task_code}?`,
+        displayText: `That will permanently delete **${task.task_code}** ("${task.title}"). Do you want to proceed?`,
+        needsConfirmation: true,
+        confirmationPayload: {
+          action: 'DELETE_TASK',
+          targetId: task.id,
+          targetName: `${task.task_code}: ${task.title}`
+        },
+        actionTaken: false
+      });
+      return;
+    } else {
+      res.json({
+        success: false,
+        intent: 'TASK_NOT_FOUND',
+        speakText: 'Which task do you want to delete?',
+        displayText: 'Specify a task code (e.g. "Delete TASK-01") or open a task first.',
+        actionTaken: false
+      });
+      return;
+    }
+  }
+
+  // =========================================================================
+  // 5. TASK COMPLETION INTENT
+  // =========================================================================
+  if (
+    lower.includes('complete task') || lower.includes('mark task') || 
+    lower.includes('finish task') || lower.includes('done with task') ||
+    lower.startsWith('complete ') || lower.startsWith('finish ')
+  ) {
     const codeMatch = lower.match(/task-?(\d+)/i);
     let task = null;
 
@@ -808,50 +549,262 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     }
   }
 
-  // 7. TASK DELETION INTENT (Requires Confirmation)
-  if (lower.includes('delete task') || lower.includes('remove task')) {
-    const codeMatch = lower.match(/task-?(\d+)/i);
-    let task = null;
-
-    if (codeMatch) {
-      const num = parseInt(codeMatch[1], 10);
-      const code = `TASK-${String(num).padStart(2, '0')}`;
-      task = await queryOne('SELECT id, task_code, title FROM tasks WHERE (task_code = ? OR task_number = ?) AND (is_deleted = 0 OR is_deleted IS NULL)', [code, num]);
-    }
-
-    if (!task && context.taskId) {
-      task = await queryOne('SELECT id, task_code, title FROM tasks WHERE id = ?', [context.taskId]);
-    }
-
-    if (task) {
+  // =========================================================================
+  // 6. FOCUS TIMER INTENTS
+  // =========================================================================
+  if (
+    lower.startsWith('start focus') || lower.startsWith('begin focus') ||
+    lower.startsWith('start a focus') || lower.startsWith('pause focus') ||
+    lower.startsWith('resume focus') || lower.startsWith('stop focus') ||
+    lower.includes('focus timer') || lower.includes('pomodoro') ||
+    /^(start|pause|resume|stop|cancel)\s+(focus|timer)/i.test(lower)
+  ) {
+    if (lower.includes('pause')) {
       res.json({
         success: true,
-        intent: 'TASK_DELETE_CONFIRMATION',
-        speakText: `Delete ${task.task_code}?`,
-        displayText: `That will permanently delete **${task.task_code}** ("${task.title}"). Do you want to proceed?`,
-        needsConfirmation: true,
-        confirmationPayload: {
-          action: 'DELETE_TASK',
-          targetId: task.id,
-          targetName: `${task.task_code}: ${task.title}`
-        },
-        actionTaken: false
-      });
-      return;
-    } else {
-      res.json({
-        success: false,
-        intent: 'TASK_NOT_FOUND',
-        speakText: 'Which task do you want to delete?',
-        displayText: 'Specify a task code (e.g. "Delete TASK-01") or open a task first.',
-        actionTaken: false
+        intent: 'FOCUS_PAUSE',
+        speakText: 'Focus timer paused.',
+        displayText: 'Focus timer paused. Catch your breath.',
+        focusAction: 'pause',
+        actionTaken: true
       });
       return;
     }
+
+    if (lower.includes('resume') || lower.includes('continue')) {
+      res.json({
+        success: true,
+        intent: 'FOCUS_RESUME',
+        speakText: 'Resuming focus session.',
+        displayText: 'Resuming focus session. Back to flow.',
+        focusAction: 'resume',
+        actionTaken: true
+      });
+      return;
+    }
+
+    if (lower.includes('stop') || lower.includes('cancel') || lower.includes('end') || lower.includes('reset')) {
+      res.json({
+        success: true,
+        intent: 'FOCUS_STOP',
+        speakText: 'Focus session stopped.',
+        displayText: 'Focus session concluded.',
+        focusAction: 'stop',
+        actionTaken: true
+      });
+      return;
+    }
+
+    let minutes = 25;
+    if (lower.includes('half an hour') || lower.includes('half hour')) {
+      minutes = 30;
+    } else if (lower.includes('an hour') || lower.includes('1 hour') || lower.includes('one hour')) {
+      minutes = 60;
+    } else {
+      const minMatch = lower.match(/(\d+)\s*(min|minute|minutes|m\b)/i);
+      if (minMatch) minutes = parseInt(minMatch[1], 10);
+    }
+
+    res.json({
+      success: true,
+      intent: 'FOCUS_START',
+      speakText: `Focus started. ${minutes} minutes. Let's get it done.`,
+      displayText: `Focus started (${minutes} mins). Let's get it done. ⏱️`,
+      focusAction: 'start',
+      focusMinutes: minutes,
+      actionTaken: true
+    });
+    return;
   }
 
-  // 8. TASK LIST / GENERAL PENDING QUERY
-  if (lower.includes('tasks') || lower.includes('todo') || lower.includes('what is left') || lower.includes("what's left") || lower.includes('pending')) {
+  // =========================================================================
+  // 7. WORKSPACE_SUMMARY & PRIORITIZATION INTENTS ("WHAT SHOULD I WORK ON?", "WHAT'S OVERDUE?")
+  // =========================================================================
+  const isWorkspaceSummaryQuery = 
+    lower.includes('what should i work on') || 
+    lower.includes('what do i have to do') || 
+    lower.includes("what's pending") || 
+    lower.includes('what is pending') || 
+    lower.includes('what is overdue') || 
+    lower.includes("what's overdue") || 
+    lower.includes('how am i doing') || 
+    lower.includes('how is my project doing');
+
+  if (isWorkspaceSummaryQuery) {
+    const running = await queryOne(
+      `SELECT COUNT(*) as count FROM tasks 
+       WHERE (status = 'IN_PROGRESS' OR status = 'IN PROGRESS' OR status = 'DOING')
+       AND (is_deleted = 0 OR is_deleted IS NULL)`
+    );
+
+    const pending = await queryOne(
+      `SELECT COUNT(*) as count FROM tasks 
+       WHERE status != 'DONE' AND (is_deleted = 0 OR is_deleted IS NULL)`
+    );
+
+    const overdueTasks = await queryAll(
+      `SELECT id, task_code, title, priority, deadline, p.name as project_name 
+       FROM tasks t
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE t.status != 'DONE' 
+       AND t.deadline IS NOT NULL 
+       AND t.deadline != '' 
+       AND t.deadline < datetime('now')
+       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY t.deadline ASC LIMIT 3`
+    );
+
+    const dueTodayTasks = await queryAll(
+      `SELECT id, task_code, title, priority, deadline, p.name as project_name 
+       FROM tasks t
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE t.status != 'DONE' 
+       AND t.deadline IS NOT NULL 
+       AND date(t.deadline) = date('now')
+       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY t.sequence_order ASC LIMIT 3`
+    );
+
+    // Smart Prioritized Next Task: Overdue -> Due Today -> Urgent/High -> In Progress -> Sequence Order
+    const prioritizedTask = await queryOne(
+      `SELECT t.id, t.task_code, t.title, t.priority, t.deadline, p.name as project_name 
+       FROM tasks t
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE t.status != 'DONE' AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY 
+         CASE WHEN t.deadline IS NOT NULL AND t.deadline != '' AND t.deadline < datetime('now') THEN 1
+              WHEN t.deadline IS NOT NULL AND date(t.deadline) = date('now') THEN 2
+              ELSE 3 END,
+         CASE WHEN t.priority = 'URGENT' THEN 1 WHEN t.priority = 'HIGH' THEN 2 WHEN t.priority = 'MEDIUM' THEN 3 ELSE 4 END,
+         CASE WHEN t.status = 'IN_PROGRESS' OR t.status = 'DOING' THEN 1 ELSE 2 END,
+         t.sequence_order ASC,
+         t.created_at ASC
+       LIMIT 1`
+    );
+
+    const runningCount = running?.count || 0;
+    const pendingCount = pending?.count || 0;
+    const overdueCount = (overdueTasks || []).length;
+    const dueTodayCount = (dueTodayTasks || []).length;
+
+    if (pendingCount === 0) {
+      res.json({
+        success: true,
+        intent: 'WORKSPACE_SUMMARY_EMPTY',
+        speakText: 'Clean slate. You have no pending tasks.',
+        displayText: 'Clean slate! You have no pending tasks right now. Suspiciously peaceful. ✨',
+        actionTaken: true
+      });
+      return;
+    }
+
+    let speakSummary = '';
+    let displaySummary = '';
+
+    if (overdueCount > 0) {
+      speakSummary = `You have ${overdueCount} overdue task and ${dueTodayCount} due today. I'd start with ${prioritizedTask?.title || 'the overdue one'}. It's been waiting patiently. Well... increasingly less patiently.`;
+      displaySummary = `You have **${overdueCount}** overdue task and **${dueTodayCount}** due today.\n\n` +
+        `I'd start with **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}") in *${prioritizedTask?.project_name || 'SHIORI'}*.\n\n` +
+        `*It's been waiting patiently. Well... increasingly less patiently.*`;
+    } else if (dueTodayCount > 0) {
+      speakSummary = `Clean slate on overdue work. You have ${pendingCount} pending tasks, with ${dueTodayCount} due today.`;
+      displaySummary = `Clean slate on overdue work. You have **${pendingCount}** pending tasks, with **${dueTodayCount}** due today.\n\n` +
+        `Recommended focus: **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}").`;
+    } else {
+      speakSummary = `You have ${pendingCount} active task${pendingCount === 1 ? '' : 's'}. I'd tackle ${prioritizedTask?.task_code || 'your highest priority task'} first.`;
+      displaySummary = `You have **${pendingCount}** active task${pendingCount === 1 ? '' : 's'}.\n\n` +
+        `Recommended focus: **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}") [${prioritizedTask?.priority}].`;
+    }
+
+    res.json({
+      success: true,
+      intent: 'WORKSPACE_SUMMARY',
+      speakText: speakSummary,
+      displayText: displaySummary,
+      actionTaken: true,
+      taskId: prioritizedTask?.id,
+      counts: {
+        running: runningCount,
+        pending: pendingCount,
+        overdue: overdueCount,
+        dueToday: dueTodayCount
+      }
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 8. TASK CATEGORY SPECIFIC QUERIES ("WHAT'S RUNNING", "WHAT'S DUE TODAY", "SHOW MY TASKS")
+  // =========================================================================
+  if (lower.includes("what's running") || lower.includes('what is running') || lower.includes('what am i working on')) {
+    const runningTasks = await queryAll(
+      `SELECT task_code, title FROM tasks 
+       WHERE (status = 'IN_PROGRESS' OR status = 'IN PROGRESS' OR status = 'DOING') 
+       AND (is_deleted = 0 OR is_deleted IS NULL)
+       ORDER BY sequence_order ASC LIMIT 5`
+    );
+    const count = (runningTasks || []).length;
+    if (count === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_RUNNING_EMPTY',
+        speakText: 'No tasks currently running.',
+        displayText: 'No tasks marked In Progress right now.',
+        actionTaken: true
+      });
+      return;
+    }
+    const lines = runningTasks.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n');
+    res.json({
+      success: true,
+      intent: 'TASK_RUNNING',
+      speakText: `You have ${count} task${count === 1 ? '' : 's'} in progress.`,
+      displayText: `**${count} Running Task${count === 1 ? '' : 's'}:**\n\n${lines}`,
+      actionTaken: true,
+      navigate: '/todos'
+    });
+    return;
+  }
+
+  if (lower.includes("what's due today") || lower.includes('what is due today') || lower.includes('due today')) {
+    const dueTodayTasks = await queryAll(
+      `SELECT task_code, title FROM tasks 
+       WHERE status != 'DONE' 
+       AND deadline IS NOT NULL 
+       AND date(deadline) = date('now')
+       AND (is_deleted = 0 OR is_deleted IS NULL)
+       ORDER BY sequence_order ASC LIMIT 5`
+    );
+    const count = (dueTodayTasks || []).length;
+    if (count === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_DUE_TODAY_EMPTY',
+        speakText: 'No tasks due today.',
+        displayText: 'No tasks with deadlines set for today.',
+        actionTaken: true
+      });
+      return;
+    }
+    const lines = dueTodayTasks.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n');
+    res.json({
+      success: true,
+      intent: 'TASK_DUE_TODAY',
+      speakText: `You have ${count} task${count === 1 ? '' : 's'} due today.`,
+      displayText: `**${count} Task${count === 1 ? '' : 's'} Due Today:**\n\n${lines}`,
+      actionTaken: true,
+      navigate: '/todos'
+    });
+    return;
+  }
+
+  // Precise Task List intent (e.g. "show my tasks", "list tasks", "my todos")
+  if (
+    lower.includes('show my tasks') || lower.includes('show tasks') || 
+    lower.includes('list my tasks') || lower.includes('list tasks') || 
+    lower.includes('what are my tasks') || lower.includes('give me my tasks') ||
+    /^(show|list|get)\s+(the\s+)?(tasks|todos|todo)/i.test(lower)
+  ) {
     let projectScope = null;
     if (context.projectId) {
       projectScope = await queryOne('SELECT name FROM projects WHERE id = ?', [context.projectId]);
@@ -902,8 +855,14 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
+  // =========================================================================
   // 9. GITHUB REPOSITORY CREATION INTENT (Requires Confirmation)
-  if (lower.includes('create repository') || lower.includes('create repo') || lower.includes('create a repository') || lower.includes('create a repo') || lower.includes('create a github repository')) {
+  // =========================================================================
+  if (
+    lower.includes('create repository') || lower.includes('create repo') || 
+    lower.includes('create a repository') || lower.includes('create a repo') || 
+    lower.includes('create a github repository')
+  ) {
     let repoName = rawText
       .replace(/^(please\s*)?(create|make)\s+(a\s+)?(private|public)?\s*(github\s+)?(repository|repo)\s+(called|named|for|:)?\s*/i, '')
       .replace(/^[\s:"']+|[\s:"']+$/g, '');
@@ -932,8 +891,14 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
-  // 10. GIT / COMMITS / REPO STATUS INTENT
-  if (lower.includes('git') || lower.includes('commit') || lower.includes('branch') || lower.includes('repository status')) {
+  // =========================================================================
+  // 10. GIT / COMMITS STATUS QUERY ("CHECK GIT STATUS", "LATEST COMMIT")
+  // =========================================================================
+  if (
+    lower.includes('check git') || lower.includes('git status') || 
+    lower.includes('latest commit') || lower.includes('show commits') || 
+    lower.includes('recent commit') || lower === 'git'
+  ) {
     const recentCommits = await queryAll(
       `SELECT commit_sha, commit_message, author_name, created_at 
        FROM github_commits 
@@ -968,34 +933,39 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
+  // =========================================================================
   // 11. PROJECT LIST / CREATION INTENTS
-  if (lower.includes('project') || lower.includes('repositories') || lower.includes('workspace')) {
-    if (lower.includes('create') || lower.includes('add') || lower.includes('new')) {
-      let pName = rawText
-        .replace(/^(please\s*)?(create|add|new)\s+(a\s+)?project\s+(called|named|for|:)?\s*/i, '')
-        .replace(/^[\s:"']+|[\s:"']+$/g, '');
+  // =========================================================================
+  if (
+    /^(please\s*)?(create|add|new)\s+(a\s+)?project\b/i.test(lower) ||
+    lower.startsWith('create project') || lower.startsWith('new project')
+  ) {
+    let pName = rawText
+      .replace(/^(please\s*)?(create|add|new)\s+(a\s+)?project\s+(called|named|for|:)?\s*/i, '')
+      .replace(/^[\s:"']+|[\s:"']+$/g, '');
 
-      if (!pName || pName.length < 2) pName = `Project ${Date.now().toString(36).toUpperCase()}`;
+    if (!pName || pName.length < 2) pName = `Project ${Date.now().toString(36).toUpperCase()}`;
 
-      const newProjId = uuidv4();
-      await runQuery(`
-        INSERT INTO projects (id, name, description, created_by, created_at, updated_at)
-        VALUES (?, ?, 'Created via Spark companion', ?, datetime('now'), datetime('now'))
-      `, [newProjId, pName, userId]);
+    const newProjId = uuidv4();
+    await runQuery(`
+      INSERT INTO projects (id, name, description, created_by, created_at, updated_at)
+      VALUES (?, ?, 'Created via Spark companion', ?, datetime('now'), datetime('now'))
+    `, [newProjId, pName, userId]);
 
-      res.json({
-        success: true,
-        intent: 'PROJECT_CREATE',
-        speakText: `Created project ${pName}.`,
-        displayText: `Created project **"${pName}"**. You can now add tasks and link a GitHub repository.`,
-        projectId: newProjId,
-        actionTaken: true,
-        refreshNeeded: true,
-        navigate: `/projects/${newProjId}`
-      });
-      return;
-    }
+    res.json({
+      success: true,
+      intent: 'PROJECT_CREATE',
+      speakText: `Created project ${pName}.`,
+      displayText: `Created project **"${pName}"**. You can now add tasks and link a GitHub repository.`,
+      projectId: newProjId,
+      actionTaken: true,
+      refreshNeeded: true,
+      navigate: `/projects/${newProjId}`
+    });
+    return;
+  }
 
+  if (lower.includes('show projects') || lower.includes('list projects') || lower.includes('my repositories')) {
     const projects = await queryAll('SELECT id, name, github_repo_name FROM projects WHERE created_by = ? ORDER BY updated_at DESC LIMIT 5', [userId]);
     const pCount = (projects || []).length;
     const lines = (projects || []).map((p: any) => `• **${p.name}** ${p.github_repo_name ? `(${p.github_repo_name})` : ''}`).join('\n');
@@ -1011,8 +981,10 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
+  // =========================================================================
   // 12. ACTIVITY / PROGRESS INTENT
-  if (lower.includes('activity') || lower.includes('progress') || lower.includes('what did i do') || lower.includes('journal') || lower.includes('history')) {
+  // =========================================================================
+  if (lower.includes('activity') || lower.includes('what did i do today') || lower.includes('show activity') || lower.includes('my history')) {
     const activities = await queryAll(
       `SELECT title, meta_text, created_at FROM global_activities WHERE user_id = ? ORDER BY created_at DESC LIMIT 3`,
       [userId]
@@ -1042,21 +1014,23 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     return;
   }
 
-  // 13. SHIORI NAVIGATION INTENTS
-  if (lower.includes('open') || lower.includes('go to') || lower.includes('navigate to') || lower.includes('show')) {
+  // =========================================================================
+  // 13. SHIORI NAVIGATION INTENTS ("OPEN SETTINGS", "GO TO ACTIVITY", ETC.)
+  // =========================================================================
+  if (lower.startsWith('open ') || lower.startsWith('go to ') || lower.startsWith('navigate to ') || lower.startsWith('show ')) {
     if (lower.includes('home') || lower.includes('dashboard')) {
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Home.', displayText: 'Opening SHIORI Home.', navigate: '/home', actionTaken: true });
       return;
     }
-    if (lower.includes('todo') || lower.includes('tasks')) {
+    if (lower.includes('todo') || lower.includes('task')) {
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Todos.', displayText: 'Opening My Todos.', navigate: '/todos', actionTaken: true });
       return;
     }
-    if (lower.includes('repositories') || lower.includes('projects') || lower.includes('repos')) {
+    if (lower.includes('repositories') || lower.includes('repo') || lower.includes('project')) {
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Repositories.', displayText: 'Opening Repositories.', navigate: '/repositories', actionTaken: true });
       return;
     }
-    if (lower.includes('connection') || lower.includes('friends') || lower.includes('id')) {
+    if (lower.includes('connection') || lower.includes('friend') || lower.includes('id')) {
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Connections.', displayText: 'Opening SHIORI Connections.', navigate: '/connections', actionTaken: true });
       return;
     }
@@ -1074,32 +1048,19 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     }
   }
 
-  // 14. OFF-TOPIC / GENERAL KNOWLEDGE QUERIES (Safe & Playful SHIORI Refusal)
-  const isGeneralKnowledge = 
-    lower.includes('who is') || lower.includes('what is the capital') || lower.includes('weather') || 
-    lower.includes('joke') || lower.includes('poem') || lower.includes('write a python') || 
-    lower.includes('solve') || lower.includes('physics') || lower.includes('math') || 
-    lower.includes('president') || lower.includes('country') || lower.includes('recipe') ||
-    lower.includes('who made you') || lower.includes('chatgpt') || lower.includes('meaning of life');
+  // =========================================================================
+  // 14. SPARK WIT ENGINE — CONTEXT-AWARE PERSONALITY RESOLUTION
+  // Route all casual, silly, off-topic, procrastination, git humor, etc.
+  // =========================================================================
+  const safeContext = await getSafeWorkspaceContext(userId);
+  const wit = getSparkWitResponse(rawText, safeContext);
 
-  if (isGeneralKnowledge) {
-    const randomResponse = OFF_TOPIC_RESPONSES[Math.floor(Math.random() * OFF_TOPIC_RESPONSES.length)];
-    res.json({
-      success: true,
-      intent: 'OFF_TOPIC',
-      speakText: randomResponse.replace(/[^\w\s.,!'-]/g, ''),
-      displayText: randomResponse,
-      actionTaken: false
-    });
-    return;
-  }
-
-  // 15. UNKNOWN / AMBIGUOUS INTENT
   res.json({
     success: true,
-    intent: 'UNKNOWN',
-    speakText: "I'm not quite sure what you want me to do in SHIORI.",
-    displayText: "I'm not quite sure what you want me to do in SHIORI. Try asking me what should you work on, create a task, start a focus session, or check Git status.",
+    intent: `WIT_${wit.category}`,
+    category: wit.category,
+    speakText: wit.speakText,
+    displayText: wit.displayText,
     actionTaken: false
   });
 });
