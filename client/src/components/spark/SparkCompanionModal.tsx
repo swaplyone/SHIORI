@@ -8,10 +8,8 @@ import {
   Volume2,
   VolumeX,
   AlertTriangle,
-  Radio,
-  Sparkles,
-  ShieldCheck,
-  CornerDownLeft
+  CornerDownLeft,
+  ShieldCheck
 } from 'lucide-react';
 import Strands from './Strands';
 import { useAuth } from '../../context/AuthContext';
@@ -53,11 +51,16 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isTypingMode, setIsTypingMode] = useState<boolean>(false);
 
+  const stateRef = useRef<SparkState>('LISTENING');
+  stateRef.current = state;
+
+  const isConversationActiveRef = useRef<boolean>(false);
   const recognitionRef = useRef<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isExecutingRef = useRef(false);
   const lastExecutedTextRef = useRef('');
   const silenceTimerRef = useRef<any>(null);
+  const autoRestartTimerRef = useRef<any>(null);
 
   // Prevent background scrolling while Spark is open
   useEffect(() => {
@@ -70,115 +73,75 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     }
   }, [isSparkOpen]);
 
-  // Speech output using Web SpeechSynthesis API
-  const speakText = useCallback((text: string) => {
-    if (!voiceResponsesEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  // Speech output using Web SpeechSynthesis API with seamless handoff to listening
+  const speakText = useCallback((text: string, onDone?: () => void) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      if (onDone) onDone();
+      return;
+    }
+
     try {
       window.speechSynthesis.cancel();
       const clean = text
         .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '')
         .replace(/[*_~`#\[\]\(\)]/g, '')
         .trim();
-      if (!clean) return;
+
+      if (!clean || !voiceResponsesEnabled) {
+        if (onDone) onDone();
+        return;
+      }
 
       const utterance = new SpeechSynthesisUtterance(clean);
       utterance.lang = recognitionLanguage || 'en-IN';
       utterance.rate = 1.02;
       utterance.pitch = 1.0;
-      utterance.onstart = () => setState('SPEAKING');
-      utterance.onend = () => setState('IDLE');
-      utterance.onerror = () => setState('IDLE');
-      window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      console.warn('Speech synthesis error:', e);
-      setState('IDLE');
-    }
-  }, [voiceResponsesEnabled, recognitionLanguage]);
 
-  // Execute Command via Secure Backend Router
-  const handleExecuteCommand = async (commandToRun?: string, isConfirmed = false) => {
-    const text = (commandToRun || inputText).trim();
-    if (!text || !token) return;
+      utterance.onstart = () => {
+        setState('SPEAKING');
+      };
 
-    if (text === lastExecutedTextRef.current && isExecutingRef.current) return;
-    lastExecutedTextRef.current = text;
-
-    isExecutingRef.current = true;
-    setState('PROCESSING');
-    setErrorMessage('');
-    setInterimTranscript('');
-    setIsTypingMode(false);
-
-    try {
-      const res = await fetch('/api/spark/command', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          command: text,
-          context,
-          confirmed: isConfirmed,
-          confirmationPayload
-        })
-      });
-
-      const data = await res.json();
-      isExecutingRef.current = false;
-
-      if (res.ok && data.success) {
-        setResponseMessage(data.displayText || 'Done.');
-
-        if (data.speakText && voiceResponsesEnabled) {
-          speakText(data.speakText);
+      utterance.onend = () => {
+        if (onDone) {
+          onDone();
+        } else if (isConversationActiveRef.current) {
+          // Continuous conversation loop: Return to LISTENING automatically!
+          setState('LISTENING');
+          setInputText('');
+          setInterimTranscript('');
+          setTimeout(() => {
+            if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
+              startListening();
+            }
+          }, 250);
         } else {
           setState('IDLE');
         }
+      };
 
-        if (data.focusAction) {
-          if (data.focusAction === 'start') {
-            startFocusTimer(data.focusMinutes || 25, 'Spark Focus Session');
-          } else if (data.focusAction === 'pause') {
-            pauseFocusTimer();
-          } else if (data.focusAction === 'resume') {
-            resumeFocusTimer();
-          } else if (data.focusAction === 'stop') {
-            stopFocusTimer();
-          }
-        }
-
-        if (data.needsConfirmation) {
-          setState('CONFIRMATION');
-          setConfirmationPayload(data.confirmationPayload);
-          return;
-        } else {
-          setConfirmationPayload(null);
-        }
-
-        if (data.refreshNeeded) {
-          window.dispatchEvent(new Event('shiori-refresh'));
-        }
-
-        if (data.navigate) {
+      utterance.onerror = () => {
+        if (onDone) {
+          onDone();
+        } else if (isConversationActiveRef.current) {
+          setState('LISTENING');
           setTimeout(() => {
-            navigate(data.navigate);
-            closeSpark();
-          }, 1400);
+            if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
+              startListening();
+            }
+          }, 250);
+        } else {
+          setState('IDLE');
         }
-      } else {
-        setState('ERROR');
-        setResponseMessage(data.displayText || data.error || 'I could not reach SHIORI right now.');
-        if (data.speakText && voiceResponsesEnabled) speakText(data.speakText);
-      }
-    } catch (err) {
-      console.error(err);
-      isExecutingRef.current = false;
-      setState('ERROR');
-      setResponseMessage("I couldn't reach SHIORI right now. Try again.");
-    }
-  };
+      };
 
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('Speech synthesis error:', e);
+      if (onDone) onDone();
+    }
+  }, [voiceResponsesEnabled, recognitionLanguage]);
+
+  // Start Speech Recognition
   const startListening = useCallback(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -188,15 +151,18 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     }
 
     try {
-      if ('speechSynthesis' in window) {
+      // Pause any ongoing speech synthesis to prevent feedback loop
+      if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
         window.speechSynthesis.cancel();
       }
+
       setInputText('');
       setInterimTranscript('');
       setErrorMessage('');
 
       if (recognitionRef.current) {
         try { recognitionRef.current.abort(); } catch {}
+        recognitionRef.current = null;
       }
 
       const recognition = new SpeechRecognition();
@@ -227,14 +193,15 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
         if (cleanedInterim) {
           setInterimTranscript(cleanedInterim);
-          // 2.2s silence debounce execution for hands-free natural speaking
+
+          // 2.0s silence debounce execution for hands-free natural speaking
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
           silenceTimerRef.current = setTimeout(() => {
             if (cleanedInterim.length > 2 && !isExecutingRef.current) {
               setInputText(cleanedInterim);
               handleExecuteCommand(cleanedInterim);
             }
-          }, 2200);
+          }, 2000);
         }
 
         if (cleanedFinal) {
@@ -251,37 +218,206 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           setErrorMessage('Microphone access denied. Check your browser permissions.');
           setState('IDLE');
         } else if (event.error === 'no-speech') {
-          setState('IDLE');
-        } else {
-          setState('IDLE');
+          // Keep listening in conversation mode
+          if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
+            if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
+            autoRestartTimerRef.current = setTimeout(() => {
+              if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
+                startListening();
+              }
+            }, 250);
+          }
         }
       };
 
       recognition.onend = () => {
         setInterimTranscript('');
-        setState((prev) => (prev === 'LISTENING' ? 'IDLE' : prev));
+        // Automatically keep listening while conversation session is active
+        if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
+          if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
+          autoRestartTimerRef.current = setTimeout(() => {
+            if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
+              startListening();
+            }
+          }, 250);
+        }
       };
 
       recognition.start();
       recognitionRef.current = recognition;
     } catch (e) {
       console.warn('Recognition start failed:', e);
-      setState('IDLE');
     }
   }, [recognitionLanguage]);
 
   const stopListening = useCallback(() => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
       } catch {}
+      recognitionRef.current = null;
     }
     setInterimTranscript('');
     setState('IDLE');
   }, []);
 
+  // Check for natural exit phrases
+  const isExitPhrase = (cmd: string) => {
+    const l = cmd.toLowerCase().trim();
+    return (
+      l === 'stop' || l === 'stop listening' || l === 'close' || l === 'close spark' ||
+      l === 'exit' || l === 'exit spark' || l === "that's all" || l === "that is all" ||
+      l === "that's all spark" || l === 'goodbye' || l === 'goodbye spark' ||
+      l === 'bye' || l === 'bye spark' || l === "i'm done" || l === 'im done'
+    );
+  };
+
+  // Execute Command via Secure Backend Router
+  const handleExecuteCommand = async (commandToRun?: string, isConfirmed = false) => {
+    const text = (commandToRun || inputText).trim();
+    if (!text || !token) return;
+
+    if (text === lastExecutedTextRef.current && isExecutingRef.current) return;
+    lastExecutedTextRef.current = text;
+
+    // 1. Check for natural exit commands
+    if (isExitPhrase(text)) {
+      isConversationActiveRef.current = false;
+      stopListening();
+      setState('SPEAKING');
+      setResponseMessage('Alright. Back to the workbench. ✦');
+      speakText('Alright. Back to the workbench.', () => {
+        setTimeout(() => closeSpark(), 300);
+      });
+      return;
+    }
+
+    // Stop speech recognition immediately while processing/speaking to prevent echo
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+      recognitionRef.current = null;
+    }
+
+    isExecutingRef.current = true;
+    setState('PROCESSING');
+    setErrorMessage('');
+    setInterimTranscript('');
+    setIsTypingMode(false);
+
+    try {
+      const res = await fetch('/api/spark/command', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          command: text,
+          context,
+          confirmed: isConfirmed,
+          confirmationPayload
+        })
+      });
+
+      const data = await res.json();
+      isExecutingRef.current = false;
+
+      if (res.ok && data.success) {
+        setResponseMessage(data.displayText || 'Done.');
+
+        if (data.focusAction) {
+          if (data.focusAction === 'start') {
+            startFocusTimer(data.focusMinutes || 25, 'Spark Focus Session');
+          } else if (data.focusAction === 'pause') {
+            pauseFocusTimer();
+          } else if (data.focusAction === 'resume') {
+            resumeFocusTimer();
+          } else if (data.focusAction === 'stop') {
+            stopFocusTimer();
+          }
+        }
+
+        if (data.needsConfirmation) {
+          setState('CONFIRMATION');
+          setConfirmationPayload(data.confirmationPayload);
+          if (data.speakText && voiceResponsesEnabled) {
+            speakText(data.speakText);
+          }
+          return;
+        } else {
+          setConfirmationPayload(null);
+        }
+
+        if (data.refreshNeeded) {
+          window.dispatchEvent(new Event('shiori-refresh'));
+        }
+
+        if (data.navigate) {
+          if (data.speakText && voiceResponsesEnabled) {
+            speakText(data.speakText, () => {
+              navigate(data.navigate);
+              // Stay in conversation mode or close after navigation
+              setState('LISTENING');
+              setTimeout(() => startListening(), 400);
+            });
+          } else {
+            navigate(data.navigate);
+            setState('LISTENING');
+            setTimeout(() => startListening(), 400);
+          }
+          return;
+        }
+
+        // Voice handoff: Speak text, then automatically return to LISTENING
+        if (data.speakText && voiceResponsesEnabled) {
+          speakText(data.speakText);
+        } else {
+          // If muted or text-only, briefly show result then return to LISTENING
+          setTimeout(() => {
+            if (isConversationActiveRef.current) {
+              setState('LISTENING');
+              setInputText('');
+              setInterimTranscript('');
+              startListening();
+            } else {
+              setState('IDLE');
+            }
+          }, 1200);
+        }
+      } else {
+        setState('ERROR');
+        setResponseMessage(data.displayText || data.error || 'I could not reach SHIORI right now.');
+        if (data.speakText && voiceResponsesEnabled) {
+          speakText(data.speakText);
+        } else {
+          setTimeout(() => {
+            if (isConversationActiveRef.current) {
+              setState('LISTENING');
+              startListening();
+            }
+          }, 1500);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      isExecutingRef.current = false;
+      setState('ERROR');
+      setResponseMessage("I couldn't reach SHIORI right now. Try again.");
+      setTimeout(() => {
+        if (isConversationActiveRef.current) {
+          setState('LISTENING');
+          startListening();
+        }
+      }, 1500);
+    }
+  };
+
   const handleRetry = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     setInputText('');
     setInterimTranscript('');
     setResponseMessage('');
@@ -289,9 +425,26 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     startListening();
   };
 
-  // On open: initialize and start listening smoothly
+  // Barge-in interruption handler: tapping mic or typing cancels current speech and listens
+  const handleMicToggle = () => {
+    if (state === 'SPEAKING' || state === 'PROCESSING') {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      isExecutingRef.current = false;
+      setState('LISTENING');
+      startListening();
+    } else if (state === 'LISTENING') {
+      stopListening();
+    } else {
+      startListening();
+    }
+  };
+
+  // On open: initialize conversation session and start listening smoothly
   useEffect(() => {
     if (isSparkOpen) {
+      isConversationActiveRef.current = true;
       isExecutingRef.current = false;
       lastExecutedTextRef.current = '';
       setConfirmationPayload(null);
@@ -318,11 +471,14 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         return () => clearTimeout(timer);
       }
     } else {
+      isConversationActiveRef.current = false;
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
         } catch {}
+        recognitionRef.current = null;
       }
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -334,6 +490,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isSparkOpen) {
+        isConversationActiveRef.current = false;
         closeSpark();
       }
     };
@@ -478,7 +635,9 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   };
 
   const getSubStatusText = () => {
-    if (state === 'LISTENING') return 'Go ahead.';
+    if (state === 'LISTENING') {
+      return responseMessage ? responseMessage : 'Go ahead.';
+    }
     if (state === 'PROCESSING') return 'One second...';
     if (responseMessage) return responseMessage;
     if (state === 'IDLE') return 'Ready when you are.';
@@ -533,7 +692,10 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           </button>
 
           <button
-            onClick={closeSpark}
+            onClick={() => {
+              isConversationActiveRef.current = false;
+              closeSpark();
+            }}
             className="p-2 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10 cursor-pointer"
             title="Close (Esc)"
             aria-label="Close Spark"
@@ -667,9 +829,10 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
               <div className="flex items-center justify-end gap-2 pt-1">
                 <button
                   onClick={() => {
-                    setState('IDLE');
+                    setState('LISTENING');
                     setConfirmationPayload(null);
-                    setResponseMessage('Action cancelled.');
+                    setResponseMessage('Action cancelled. Go ahead.');
+                    setTimeout(() => startListening(), 200);
                   }}
                   className="px-4 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold transition-all cursor-pointer"
                 >
@@ -693,7 +856,10 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           {/* Cancel Button */}
           <div className="flex flex-col items-center gap-1.5">
             <button
-              onClick={closeSpark}
+              onClick={() => {
+                isConversationActiveRef.current = false;
+                closeSpark();
+              }}
               className="w-11 h-11 rounded-full bg-white/[0.08] hover:bg-white/[0.16] border border-white/15 flex items-center justify-center text-white/70 hover:text-white transition-all active:scale-95 shadow-md cursor-pointer"
               title="Cancel (Esc)"
               aria-label="Cancel"
@@ -708,7 +874,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           {/* Central Microphone Button with Rainbow/Gold Glowing Border */}
           <div className="flex flex-col items-center gap-1.5">
             <button
-              onClick={state === 'LISTENING' ? stopListening : startListening}
+              onClick={handleMicToggle}
               className={`w-16 h-16 sm:w-18 sm:h-18 rounded-full p-[2.5px] transition-all duration-300 active:scale-90 cursor-pointer ${
                 state === 'LISTENING'
                   ? 'bg-gradient-to-tr from-[#FF4242] via-[#EAB308] to-[#10B981] shadow-[0_0_35px_rgba(234,179,8,0.45)] scale-105'
@@ -726,7 +892,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
               </div>
             </button>
             <span className="text-[10px] font-mono tracking-wider text-white/60 uppercase">
-              {state === 'LISTENING' ? 'Listening...' : 'Tap to speak'}
+              {state === 'LISTENING' ? 'Listening...' : state === 'SPEAKING' ? 'Tap to speak' : 'Tap to speak'}
             </span>
           </div>
 
