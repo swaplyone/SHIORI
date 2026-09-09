@@ -25,6 +25,7 @@ export const ForgotPasswordPage: React.FC = () => {
   const [usernameSent, setUsernameSent] = useState(false);
 
   // Common UI States
+  const [authPayload, setAuthPayload] = useState<{ token: string; user: any } | null>(null);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -152,7 +153,7 @@ export const ForgotPasswordPage: React.FC = () => {
 
       if (ok) {
         if (data?.token && data?.user) {
-          login(data.token, data.user);
+          setAuthPayload({ token: data.token, user: data.user });
         }
         setStep('SUCCESS');
       } else {
@@ -403,18 +404,30 @@ export const ForgotPasswordPage: React.FC = () => {
                 <div className="space-y-1">
                   <h2 className="text-base font-bold text-eink-text uppercase">Password Reset Successfully</h2>
                   <p className="text-xs text-eink-textSecondary">
-                    Your password has been updated. You are now logged in and can proceed to your dashboard.
+                    Your password has been updated. You can now proceed to your dashboard or sign in with your new password.
                   </p>
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-2 flex flex-col gap-2">
                   <button
-                    onClick={() => navigate('/home')}
+                    onClick={() => {
+                      if (authPayload?.token && authPayload?.user) {
+                        login(authPayload.token, authPayload.user);
+                      }
+                      navigate('/home');
+                    }}
                     className="w-full py-2.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] text-xs cursor-pointer"
                   >
-                    <span>GO TO DASHBOARD</span>
+                    <span>CONTINUE TO DASHBOARD</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
+
+                  <Link
+                    to="/login"
+                    className="w-full py-2 border border-eink-border hover:bg-eink-bg text-eink-text font-bold rounded-sm text-center text-xs"
+                  >
+                    RETURN TO SIGN IN
+                  </Link>
                 </div>
               </div>
             )}

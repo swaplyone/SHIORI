@@ -373,13 +373,10 @@ authRouter.post('/forgot-password/send-otp', async (req: Request, res: Response)
     const otpHash = hashOTP(otp);
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes strict expiry
 
-    // Delete any existing reset OTP for this email first
-    await runQuery('DELETE FROM password_reset_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
-
-    // Insert new reset OTP
+    // Store in password_reset_otps (atomic replace)
     await runQuery(`
-      INSERT INTO password_reset_otps (email, otp_hash, otp_plain, attempts, expires_at)
-      VALUES (?, ?, ?, 0, ?)
+      INSERT OR REPLACE INTO password_reset_otps (email, otp_hash, otp_plain, attempts, expires_at, created_at)
+      VALUES (?, ?, ?, 0, ?, datetime('now'))
     `, [cleanEmail, otpHash, otp, expiresAt]);
 
     // Dispatch real email via SMTP / Resend / Brevo
@@ -423,10 +420,9 @@ authRouter.post('/forgot-password/resend-otp', async (req: Request, res: Respons
     const otpHash = hashOTP(otp);
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-    await runQuery('DELETE FROM password_reset_otps WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
     await runQuery(`
-      INSERT INTO password_reset_otps (email, otp_hash, otp_plain, attempts, expires_at)
-      VALUES (?, ?, ?, 0, ?)
+      INSERT OR REPLACE INTO password_reset_otps (email, otp_hash, otp_plain, attempts, expires_at, created_at)
+      VALUES (?, ?, ?, 0, ?, datetime('now'))
     `, [cleanEmail, otpHash, otp, expiresAt]);
 
     sendOtpEmail({

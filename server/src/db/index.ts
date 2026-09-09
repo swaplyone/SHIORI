@@ -519,7 +519,26 @@ async function initPgSchema(pool: pg.Pool) {
       `CREATE INDEX IF NOT EXISTS idx_tasks_is_deleted ON tasks(is_deleted);`,
       `CREATE INDEX IF NOT EXISTS idx_project_members_lookup ON project_members(project_id, user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);`,
-      `CREATE INDEX IF NOT EXISTS idx_global_activities_proj ON global_activities(project_id, created_at DESC);`
+      `CREATE INDEX IF NOT EXISTS idx_global_activities_proj ON global_activities(project_id, created_at DESC);`,
+      `CREATE TABLE IF NOT EXISTS password_reset_otps (
+        email TEXT PRIMARY KEY,
+        otp_hash TEXT NOT NULL,
+        otp_plain TEXT NOT NULL,
+        attempts INTEGER DEFAULT 0,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );`,
+      `CREATE TABLE IF NOT EXISTS registration_otps (
+        email TEXT PRIMARY KEY,
+        otp_hash TEXT NOT NULL,
+        otp_plain TEXT NOT NULL,
+        name TEXT,
+        username TEXT,
+        password_hash TEXT,
+        attempts INTEGER DEFAULT 0,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );`
     ];
 
     for (const migration of migrations) {
@@ -582,6 +601,16 @@ function translateSqlForPostgres(sql: string, params: any[]): { sql: string; par
         name = EXCLUDED.name,
         username = EXCLUDED.username,
         password_hash = EXCLUDED.password_hash,
+        attempts = EXCLUDED.attempts,
+        expires_at = EXCLUDED.expires_at,
+        created_at = NOW()`;
+    }
+  } else if (/INSERT OR REPLACE INTO password_reset_otps/i.test(sql)) {
+    translatedSql = translatedSql.replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
+    if (!translatedSql.toLowerCase().includes('on conflict')) {
+      translatedSql += ` ON CONFLICT (email) DO UPDATE SET 
+        otp_hash = EXCLUDED.otp_hash,
+        otp_plain = EXCLUDED.otp_plain,
         attempts = EXCLUDED.attempts,
         expires_at = EXCLUDED.expires_at,
         created_at = NOW()`;
