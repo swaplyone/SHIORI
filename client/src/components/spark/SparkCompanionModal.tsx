@@ -27,6 +27,45 @@ interface SparkCompanionModalProps {
 
 type SparkState = 'IDLE' | 'WAKE_LISTENING' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'CONFIRMATION' | 'ERROR';
 
+// Clean and normalize recognized transcript before sending to intent router
+export function cleanAndNormalizeTranscript(raw: string): { cleanText: string; isLowConfidence: boolean; ambiguityPrompt?: string } {
+  if (!raw || !raw.trim()) {
+    return { cleanText: '', isLowConfidence: true };
+  }
+
+  let text = raw.trim();
+
+  // 1. Strip leading wake-word variations
+  text = text.replace(/^(?:hey|hi|hello|ok|okay|yo)?\s*spark[,.]?\s*/i, '');
+  text = text.replace(/^(?:hey|hi|hello|ok|okay|yo)?\s*sparc[,.]?\s*/i, '');
+  text = text.replace(/^(?:hey|hi|hello|ok|okay|yo)?\s*sparky[,.]?\s*/i, '');
+  text = text.replace(/^(?:hey|hi|hello|ok|okay|yo)?\s*spock[,.]?\s*/i, '');
+
+  // 2. Normalization of common speech recognition variations
+  text = text.replace(/\b(shory|sheory|shioree|shiori\s+app)\b/gi, 'SHIORI');
+  text = text.replace(/\b(git\s+hub)\b/gi, 'GitHub');
+  text = text.replace(/\b(to\s+do|to-do)\b/gi, 'todo');
+
+  // 3. Clean punctuation & whitespace
+  text = text.replace(/\s+/g, ' ').trim();
+
+  // 4. Low confidence checks
+  if (text.length < 2) {
+    return { cleanText: text, isLowConfidence: true, ambiguityPrompt: "I didn't catch that. Could you repeat?" };
+  }
+
+  // 5. Catch ambiguous incomplete phrases
+  const lower = text.toLowerCase();
+  if (lower === 'show the project' || lower === 'show project' || lower === 'open the project') {
+    return { cleanText: text, isLowConfidence: false, ambiguityPrompt: 'Which project would you like to see?' };
+  }
+  if (lower === 'open the repo' || lower === 'open repo' || lower === 'show repo') {
+    return { cleanText: text, isLowConfidence: false, ambiguityPrompt: 'Which repository would you like to open?' };
+  }
+
+  return { cleanText: text, isLowConfidence: false };
+}
+
 export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   context = {}
 }) => {
@@ -54,7 +93,8 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     isWakeListening,
     wakeListeningPaused,
     availableVoices,
-    speakSpark
+    speakSpark,
+    micPermissionStatus
   } = useSpark();
 
   const {
@@ -71,11 +111,13 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
   const [state, setState] = useState<SparkState>('LISTENING');
   const [inputText, setInputText] = useState<string>('');
+  const [rawTranscript, setRawTranscript] = useState<string>('');
   const [interimTranscript, setInterimTranscript] = useState<string>('');
   const [responseMessage, setResponseMessage] = useState<string>('');
   const [confirmationPayload, setConfirmationPayload] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isTypingMode, setIsTypingMode] = useState<boolean>(false);
+  const [lastIntent, setLastIntent] = useState<string>('NONE');
 
   const stateRef = useRef<SparkState>('LISTENING');
   stateRef.current = state;
@@ -99,8 +141,25 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     localStorage.getItem('shiori_spark_debug') === 'true'
   );
 
-  // Robust Speech Output using speakSpark with seamless iOS handoff
+  // Stop Speech Recognition safely
+  const stopListening = useCallback(() => {
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {}
+      recognitionRef.current = null;
+    }
+    setInterimTranscript('');
+  }, []);
+
+  // Robust Speech Output with seamless multi-turn listening resumption
   const speakText = useCallback((text: string, onDone?: () => void) => {
+    // 1. Immediately pause/abort speech recognition while speaking to prevent self-hearing feedback
+    stopListening();
+    setState('SPEAKING');
+
     speakSpark(
       text,
       () => {
@@ -110,15 +169,16 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         if (onDone) {
           onDone();
         } else if (isConversationActiveRef.current) {
-          // Continuous conversation loop: Return to LISTENING with 450ms safety delay for iOS hardware
+          // Continuous multi-turn conversation loop: Return to LISTENING with 250ms buffer
           setState('LISTENING');
           setInputText('');
           setInterimTranscript('');
+          setRawTranscript('');
           setTimeout(() => {
             if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
               startListening();
             }
-          }, 450);
+          }, 250);
         } else {
           setState('IDLE');
         }
@@ -132,13 +192,13 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
             if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
               startListening();
             }
-          }, 450);
+          }, 250);
         } else {
           setState('IDLE');
         }
       }
     );
-  }, [speakSpark]);
+  }, [speakSpark, stopListening]);
 
   // Start Speech Recognition (Single Active Instance with iOS Lifecycle)
   const startListening = useCallback(() => {
@@ -152,7 +212,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     try {
       unlockIOSAudio();
 
-      // Pause ongoing speech synthesis to prevent feedback loop
+      // Pause ongoing speech synthesis
       if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
         window.speechSynthesis.cancel();
       }
@@ -189,20 +249,23 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           }
         }
 
-        const cleanedInterim = interim.replace(/^(?:hey|hi|hello|ok|okay)?\s*spark[,.]?\s*/i, '').trim();
-        const cleanedFinal = final.replace(/^(?:hey|hi|hello|ok|okay)?\s*spark[,.]?\s*/i, '').trim();
+        const rawTotal = final || interim;
+        setRawTranscript(rawTotal);
+
+        const { cleanText: cleanedInterim } = cleanAndNormalizeTranscript(interim);
+        const { cleanText: cleanedFinal } = cleanAndNormalizeTranscript(final);
 
         if (cleanedInterim) {
           setInterimTranscript(cleanedInterim);
 
-          // 2.0s silence debounce execution for hands-free natural speaking
+          // Fast 800ms silence detection debounce for natural speaking flow
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
           silenceTimerRef.current = setTimeout(() => {
             if (cleanedInterim.length > 2 && !isExecutingRef.current) {
               setInputText(cleanedInterim);
               handleExecuteCommand(cleanedInterim);
             }
-          }, 2000);
+          }, 850);
         }
 
         if (cleanedFinal) {
@@ -222,28 +285,28 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           );
           setState('IDLE');
         } else if (event.error === 'no-speech') {
-          // Restart gracefully on iOS silent timeout
+          // Restart gracefully on silent timeout while in listening state
           if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
             if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
             autoRestartTimerRef.current = setTimeout(() => {
               if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
                 startListening();
               }
-            }, 300);
+            }, 250);
           }
         }
       };
 
       recognition.onend = () => {
         setInterimTranscript('');
-        // Keep listening while conversation session is active
+        // Keep listening while conversation session is active and not executing/speaking
         if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
           if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
           autoRestartTimerRef.current = setTimeout(() => {
             if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
               startListening();
             }
-          }, 300);
+          }, 250);
         }
       };
 
@@ -253,19 +316,6 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       console.warn('Recognition start failed:', e);
     }
   }, [recognitionLanguage, unlockIOSAudio, isIOS]);
-
-  const stopListening = useCallback(() => {
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {}
-      recognitionRef.current = null;
-    }
-    setInterimTranscript('');
-    setState('IDLE');
-  }, []);
 
   // Check for natural exit phrases
   const isExitPhrase = (cmd: string) => {
@@ -280,14 +330,31 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
   // Execute Command via Secure Backend Router
   const handleExecuteCommand = async (commandToRun?: string, isConfirmed = false) => {
-    const text = (commandToRun || inputText).trim();
-    if (!text || !token) return;
+    const rawInput = (commandToRun || inputText).trim();
+    if (!rawInput || !token) return;
 
-    if (text === lastExecutedTextRef.current && isExecutingRef.current) return;
-    lastExecutedTextRef.current = text;
+    // Clean and normalize transcript
+    const { cleanText, isLowConfidence, ambiguityPrompt } = cleanAndNormalizeTranscript(rawInput);
+
+    if (!cleanText || isLowConfidence) {
+      if (ambiguityPrompt) {
+        setResponseMessage(ambiguityPrompt);
+        if (voiceResponsesEnabled) speakText(ambiguityPrompt);
+      }
+      return;
+    }
+
+    if (ambiguityPrompt) {
+      setResponseMessage(ambiguityPrompt);
+      if (voiceResponsesEnabled) speakText(ambiguityPrompt);
+      return;
+    }
+
+    if (cleanText === lastExecutedTextRef.current && isExecutingRef.current) return;
+    lastExecutedTextRef.current = cleanText;
 
     // 1. Check for natural exit commands
-    if (isExitPhrase(text)) {
+    if (isExitPhrase(cleanText)) {
       isConversationActiveRef.current = false;
       stopListening();
       setState('SPEAKING');
@@ -299,10 +366,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     }
 
     // Stop speech recognition immediately while processing/speaking to prevent echo
-    if (recognitionRef.current) {
-      try { recognitionRef.current.abort(); } catch {}
-      recognitionRef.current = null;
-    }
+    stopListening();
 
     isExecutingRef.current = true;
     setState('PROCESSING');
@@ -318,7 +382,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          command: text,
+          command: cleanText,
           context: {
             ...context,
             ...conversationContextRef.current,
@@ -334,6 +398,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
       if (res.ok && data.success) {
         setResponseMessage(data.displayText || 'Done.');
+        if (data.intent) setLastIntent(data.intent);
 
         // Update short-lived context
         if (data.task?.id) conversationContextRef.current.taskId = data.task.id;
@@ -368,7 +433,6 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
             } else if (win.Capacitor?.Plugins?.App?.exitApp) {
               win.Capacitor.Plugins.App.exitApp();
             } else {
-              // Browser / PWA platform explanation
               const notice = "I cannot force-close Safari or browser tabs directly. You can close SHIORI from your app switcher.";
               setResponseMessage(notice);
               if (data.speakText && voiceResponsesEnabled) {
@@ -446,14 +510,13 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           if (data.speakText && voiceResponsesEnabled) {
             speakText(data.speakText);
           }
-          // Dismiss the Spark modal so the user immediately lands on their requested page
           setTimeout(() => {
             closeSpark();
           }, 350);
           return;
         }
 
-        // Voice handoff: Speak text, then automatically return to LISTENING
+        // Voice handoff: Speak text, then automatically return to LISTENING for next command
         if (data.speakText && voiceResponsesEnabled) {
           speakText(data.speakText);
         } else {
@@ -462,6 +525,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
               setState('LISTENING');
               setInputText('');
               setInterimTranscript('');
+              setRawTranscript('');
               startListening();
             } else {
               setState('IDLE');
