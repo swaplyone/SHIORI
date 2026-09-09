@@ -242,6 +242,8 @@ html[data-ui-mode="color_matte"] .accent-text {
 html {
   max-width: 100vw;
   overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   touch-action: pan-y;
   -webkit-tap-highlight-color: transparent;
 }
