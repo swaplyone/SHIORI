@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id TEXT PRIMARY KEY,
   eink_refresh_effect INTEGER DEFAULT 1,
+  eink_refresh_interval INTEGER DEFAULT 10,
   sound_effects INTEGER DEFAULT 0,
   web_push_enabled INTEGER DEFAULT 0,
   privacy_github TEXT DEFAULT 'connections',
@@ -212,6 +213,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   assignee_id TEXT,
   created_by TEXT NOT NULL,
   due_date TEXT,
+  deadline TEXT,
+  sequence_order INTEGER DEFAULT 0,
   
   -- GitHub Linking
   github_repo TEXT,

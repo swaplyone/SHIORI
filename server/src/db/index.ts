@@ -490,6 +490,16 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_deleted INTEGER DEFAULT 0;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignment_status TEXT DEFAULT 'NONE';`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sequence_order INTEGER DEFAULT 0;`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS eink_refresh_interval INTEGER DEFAULT 10;`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS privacy_tasks TEXT DEFAULT 'friends';`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS privacy_github TEXT DEFAULT 'workspace';`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS privacy_stats TEXT DEFAULT 'private';`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notify_build_failed INTEGER DEFAULT 1;`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notify_build_passed INTEGER DEFAULT 1;`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notify_pr_review INTEGER DEFAULT 1;`,
+      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notify_task_assigned INTEGER DEFAULT 1;`,
       `CREATE TABLE IF NOT EXISTS daily_notes (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -589,6 +599,7 @@ function translateSqlForPostgres(sql: string, params: any[]): { sql: string; par
 
   translatedSql = translatedSql
     .replace(/datetime\('now'\)/gi, 'NOW()')
+    .replace(/date\('now'\)/gi, 'CURRENT_DATE')
     .replace(/datetime\('now',\s*'\+7 days'\)/gi, "(NOW() + INTERVAL '7 days')");
 
   // Handle specific INSERT OR REPLACE / IGNORE queries for PostgreSQL
