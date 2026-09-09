@@ -392,50 +392,64 @@ export const SettingsPage: React.FC = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
               {/* SOFT */}
               <div
                 onClick={() => setMatteLevel('soft')}
-                className={`p-3.5 border rounded-sm cursor-pointer space-y-2.5 transition-all flex flex-col justify-between ${
+                className={`p-4 border rounded-sm cursor-pointer space-y-3 transition-all flex flex-col justify-between matte-preview-card-soft ${
                   matteLevel === 'soft'
-                    ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
-                    : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                    ? 'border-2 border-eink-text shadow-eink-sm'
+                    : 'border-eink-border hover:border-eink-borderDark text-eink-text'
                 }`}
               >
-                <div className="space-y-1.5">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs">SOFT</span>
-                    {matteLevel === 'soft' && (
+                    <span className="font-bold text-xs tracking-wide">SOFT</span>
+                    {matteLevel === 'soft' ? (
                       <span className="text-[10px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded flex items-center gap-1">
                         <Check className="w-3 h-3 stroke-[3]" />
                         <span>ACTIVE</span>
                       </span>
+                    ) : (
+                      <span className="text-[9px] font-mono text-eink-textMuted uppercase border border-eink-border/60 px-1 py-0.2 rounded">
+                        MINIMAL GRAIN
+                      </span>
                     )}
                   </div>
+
+                  {/* Microscopic Surface Zoom Window */}
+                  <div className="w-full h-14 rounded-xs border border-eink-border matte-swatch-box-soft flex flex-col justify-end p-1.5 relative shadow-inner">
+                    <span className="text-[8px] font-mono uppercase bg-eink-surface/90 border border-eink-border px-1 py-0.2 rounded text-eink-textSecondary self-start">
+                      FINE STATIONERY
+                    </span>
+                  </div>
+
                   <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
-                    Almost invisible grain. Very subtle surface variation. Clean, glare-free premium matte stationery.
+                    Ultra-fine, almost imperceptible grain. Clean glare-free premium stationery surface with minimal microscopic variation.
                   </p>
                 </div>
                 <div className="pt-2 border-t border-eink-border/50 text-[10px] font-mono text-eink-textMuted flex items-center justify-between">
-                  <span>Fine Matte</span>
-                  <span className="font-bold">{matteLevel === 'soft' ? 'SELECTED' : 'APPLY'}</span>
+                  <span>Smooth Matte</span>
+                  <span className="font-bold">{matteLevel === 'soft' ? 'SELECTED' : 'SELECT'}</span>
                 </div>
               </div>
 
               {/* NATURAL */}
               <div
                 onClick={() => setMatteLevel('natural')}
-                className={`p-3.5 border rounded-sm cursor-pointer space-y-2.5 transition-all flex flex-col justify-between ${
+                className={`p-4 border rounded-sm cursor-pointer space-y-3 transition-all flex flex-col justify-between matte-preview-card-natural ${
                   matteLevel === 'natural'
-                    ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
-                    : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                    ? 'border-2 border-eink-text shadow-eink-sm'
+                    : 'border-eink-border hover:border-eink-borderDark text-eink-text'
                 }`}
               >
-                <div className="space-y-1.5">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-xs">NATURAL</span>
-                      <span className="text-[9px] bg-eink-text text-eink-bg px-1.5 py-0.2 rounded font-mono">RECOMMENDED</span>
+                      <span className="font-bold text-xs tracking-wide">NATURAL</span>
+                      <span className="text-[9px] bg-eink-text text-eink-bg px-1.5 py-0.2 rounded font-mono font-bold">
+                        RECOMMENDED
+                      </span>
                     </div>
                     {matteLevel === 'natural' && (
                       <span className="text-[10px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded flex items-center gap-1">
@@ -444,42 +458,62 @@ export const SettingsPage: React.FC = () => {
                       </span>
                     )}
                   </div>
+
+                  {/* Microscopic Surface Zoom Window */}
+                  <div className="w-full h-14 rounded-xs border border-eink-border matte-swatch-box-natural flex flex-col justify-end p-1.5 relative shadow-inner">
+                    <span className="text-[8px] font-mono uppercase bg-eink-surface/90 border border-eink-border px-1 py-0.2 rounded text-eink-textSecondary self-start">
+                      JAPANESE WASHI FIBERS
+                    </span>
+                  </div>
+
                   <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
-                    Perceptible microscopic grain. Natural washi fiber texture with diffuse physical paper surface.
+                    Perceptible fine-grain surface with subtle irregular paper pulp fibers. Authentic handmade Japanese washi paper texture.
                   </p>
                 </div>
                 <div className="pt-2 border-t border-eink-border/50 text-[10px] font-mono text-eink-textMuted flex items-center justify-between">
-                  <span>Japanese Washi</span>
-                  <span className="font-bold">{matteLevel === 'natural' ? 'SELECTED' : 'APPLY'}</span>
+                  <span>Washi Micro-Fibers</span>
+                  <span className="font-bold">{matteLevel === 'natural' ? 'SELECTED' : 'SELECT'}</span>
                 </div>
               </div>
 
               {/* DEEP */}
               <div
                 onClick={() => setMatteLevel('deep')}
-                className={`p-3.5 border rounded-sm cursor-pointer space-y-2.5 transition-all flex flex-col justify-between ${
+                className={`p-4 border rounded-sm cursor-pointer space-y-3 transition-all flex flex-col justify-between matte-preview-card-deep ${
                   matteLevel === 'deep'
-                    ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
-                    : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                    ? 'border-2 border-eink-text shadow-eink-sm'
+                    : 'border-eink-border hover:border-eink-borderDark text-eink-text'
                 }`}
               >
-                <div className="space-y-1.5">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs">DEEP</span>
-                    {matteLevel === 'deep' && (
+                    <span className="font-bold text-xs tracking-wide">DEEP</span>
+                    {matteLevel === 'deep' ? (
                       <span className="text-[10px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded flex items-center gap-1">
                         <Check className="w-3 h-3 stroke-[3]" />
                         <span>ACTIVE</span>
                       </span>
+                    ) : (
+                      <span className="text-[9px] font-mono text-eink-textMuted uppercase border border-eink-border/60 px-1 py-0.2 rounded">
+                        STRONG GRAIN
+                      </span>
                     )}
                   </div>
+
+                  {/* Microscopic Surface Zoom Window */}
+                  <div className="w-full h-14 rounded-xs border border-eink-border matte-swatch-box-deep flex flex-col justify-end p-1.5 relative shadow-inner">
+                    <span className="text-[8px] font-mono uppercase bg-eink-surface/90 border border-eink-border px-1 py-0.2 rounded text-eink-textSecondary self-start">
+                      HEAVY UNCOATED TOOTH
+                    </span>
+                  </div>
+
                   <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
-                    Strong physical washi texture. Tangible tactile grain and micro-variation while keeping ink 100% crisp.
+                    Clearly stronger micro-grain with prominent paper tooth and fiber matrix. Physical tactile paper surface without digital noise.
                   </p>
                 </div>
                 <div className="pt-2 border-t border-eink-border/50 text-[10px] font-mono text-eink-textMuted flex items-center justify-between">
-                  <span>Heavy Physical Matte</span>
-                  <span className="font-bold">{matteLevel === 'deep' ? 'SELECTED' : 'APPLY'}</span>
+                  <span>Heavy Tactile Paper</span>
+                  <span className="font-bold">{matteLevel === 'deep' ? 'SELECTED' : 'SELECT'}</span>
                 </div>
               </div>
             </div>

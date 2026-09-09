@@ -73,10 +73,20 @@
   --eink-accent-contrast: #EBE9E1;
   --font-app: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
-  /* Static Microscopic Japanese Washi Paper Grain Pattern (Vector SVG data URI) */
-  --washi-noise-pattern: url("data:image/svg+xml,%3Csvg viewBox='0 0 300 300' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paperGrain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.1 0 0 0 0 0.09 0 0 0 0 0.08 0 0 0 0.95 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paperGrain)'/%3E%3C/svg%3E");
-  --eink-matte-grain-opacity: 0.065;
-  --eink-card-grain-opacity: 0.035;
+  /* 1. SOFT: Ultra-fine, subtle, clean stationery matte grain */
+  --washi-noise-soft: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='softGrain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.92' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.12 0 0 0 0 0.11 0 0 0 0 0.10 0 0 0 0.45 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23softGrain)'/%3E%3C/svg%3E");
+
+  /* 2. NATURAL (Default): Real Japanese washi micro-fibers & organic pulp strands */
+  --washi-noise-natural: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='naturalGrain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65 0.85' numOctaves='4' stitchTiles='stitch' result='noise'/%3E%3CfeTurbulence type='turbulence' baseFrequency='0.15 0.05' numOctaves='2' stitchTiles='stitch' result='fibers'/%3E%3CfeColorMatrix in='fibers' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.35 0' result='fiberAlpha'/%3E%3CfeComposite in='noise' in2='fiberAlpha' operator='arithmetic' k1='0' k2='1' k3='0.45' k4='0' result='combo'/%3E%3CfeColorMatrix in='combo' type='matrix' values='0 0 0 0 0.12 0 0 0 0 0.11 0 0 0 0 0.10 0 0 0 0.72 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23naturalGrain)'/%3E%3C/svg%3E");
+
+  /* 3. DEEP: Pronounced tactile uncoated paper tooth & visible rich fiber matrix */
+  --washi-noise-deep: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='deepGrain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.52 0.72' numOctaves='5' stitchTiles='stitch' result='noise'/%3E%3CfeTurbulence type='turbulence' baseFrequency='0.12 0.04' numOctaves='3' stitchTiles='stitch' result='fibers'/%3E%3CfeColorMatrix in='fibers' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.55 0' result='fiberAlpha'/%3E%3CfeComposite in='noise' in2='fiberAlpha' operator='arithmetic' k1='0' k2='1' k3='0.65' k4='0' result='combo'/%3E%3CfeColorMatrix in='combo' type='matrix' values='0 0 0 0 0.12 0 0 0 0 0.11 0 0 0 0 0.10 0 0 0 0.98 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23deepGrain)'/%3E%3C/svg%3E");
+
+  /* Active Pattern (Defaults to Natural) */
+  --washi-active-pattern: var(--washi-noise-natural);
+  --eink-matte-grain-opacity: 0.38;
+  --eink-card-grain-opacity: 0.22;
+  --washi-grain-size: 200px 200px;
 }
 
 .dark, [data-theme="dark"] {
@@ -113,40 +123,51 @@
   --eink-accent-contrast: #FFFFFF;
 }
 
-/* MATTE LEVEL DESIGN TOKENS (MATERIAL GRAIN ONLY, NEVER SHIFTING BASE TONE TO BISCUIT) */
+/* MATTE LEVEL DESIGN TOKENS (MATERIAL MICRO-GRAIN ONLY, BASE TONE NEVER CHANGES) */
 html[data-matte-level="soft"] {
-  --eink-matte-grain-opacity: 0.028;
-  --eink-card-grain-opacity: 0.015;
+  --washi-active-pattern: var(--washi-noise-soft);
+  --eink-matte-grain-opacity: 0.18;
+  --eink-card-grain-opacity: 0.10;
+  --washi-grain-size: 160px 160px;
 }
 
 html[data-matte-level="natural"],
 html:not([data-matte-level]) {
-  --eink-matte-grain-opacity: 0.065;
-  --eink-card-grain-opacity: 0.035;
+  --washi-active-pattern: var(--washi-noise-natural);
+  --eink-matte-grain-opacity: 0.38;
+  --eink-card-grain-opacity: 0.22;
+  --washi-grain-size: 200px 200px;
 }
 
 html[data-matte-level="deep"] {
-  --eink-matte-grain-opacity: 0.12;
-  --eink-card-grain-opacity: 0.065;
+  --washi-active-pattern: var(--washi-noise-deep);
+  --eink-matte-grain-opacity: 0.65;
+  --eink-card-grain-opacity: 0.38;
+  --washi-grain-size: 220px 220px;
 }
 
 /* Dark mode matte levels */
 html[data-theme="dark"][data-matte-level="soft"],
 .dark[data-matte-level="soft"] {
-  --eink-matte-grain-opacity: 0.025;
-  --eink-card-grain-opacity: 0.015;
+  --washi-active-pattern: var(--washi-noise-soft);
+  --eink-matte-grain-opacity: 0.14;
+  --eink-card-grain-opacity: 0.08;
 }
 
 html[data-theme="dark"][data-matte-level="natural"],
-.dark[data-matte-level="natural"] {
-  --eink-matte-grain-opacity: 0.055;
-  --eink-card-grain-opacity: 0.035;
+.dark[data-matte-level="natural"],
+html[data-theme="dark"]:not([data-matte-level]),
+.dark:not([data-matte-level]) {
+  --washi-active-pattern: var(--washi-noise-natural);
+  --eink-matte-grain-opacity: 0.30;
+  --eink-card-grain-opacity: 0.18;
 }
 
 html[data-theme="dark"][data-matte-level="deep"],
 .dark[data-matte-level="deep"] {
-  --eink-matte-grain-opacity: 0.095;
-  --eink-card-grain-opacity: 0.06;
+  --washi-active-pattern: var(--washi-noise-deep);
+  --eink-matte-grain-opacity: 0.52;
+  --eink-card-grain-opacity: 0.30;
 }
 
 /* Dynamic Font Configurations */
@@ -295,13 +316,14 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
-  background-image: var(--washi-noise-pattern);
+  background-image: var(--washi-active-pattern);
   background-repeat: repeat;
-  background-size: 220px 220px;
-  opacity: var(--eink-matte-grain-opacity, 0.07);
+  background-size: var(--washi-grain-size, 200px 200px);
+  opacity: var(--eink-matte-grain-opacity, 0.38);
   pointer-events: none;
   z-index: -1;
   mix-blend-mode: multiply;
+  transition: opacity 0.25s ease;
 }
 
 .dark .eink-paper::before,
@@ -315,29 +337,109 @@ body {
   z-index: 1;
 }
 
-/* Microscopic Grain Swatch Preview Utilities */
-.matte-swatch-soft {
+/* Tactile Microscopic Paper Swatch & Live Card Preview Utilities */
+.matte-preview-card-soft {
   background-color: var(--eink-surface);
-  background-image: var(--washi-noise-pattern);
-  background-size: 140px 140px;
-  background-blend-mode: multiply;
-  opacity: 0.85;
+  position: relative;
+}
+.matte-preview-card-soft::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--washi-noise-soft);
+  background-repeat: repeat;
+  background-size: 150px 150px;
+  opacity: 0.22;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  border-radius: inherit;
+}
+.dark .matte-preview-card-soft::before,
+[data-theme="dark"] .matte-preview-card-soft::before {
+  mix-blend-mode: screen;
+  opacity: 0.16;
 }
 
-.matte-swatch-natural {
+.matte-preview-card-natural {
   background-color: var(--eink-surface);
-  background-image: var(--washi-noise-pattern);
-  background-size: 140px 140px;
-  background-blend-mode: multiply;
-  opacity: 0.95;
+  position: relative;
+}
+.matte-preview-card-natural::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--washi-noise-natural);
+  background-repeat: repeat;
+  background-size: 180px 180px;
+  opacity: 0.48;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  border-radius: inherit;
+}
+.dark .matte-preview-card-natural::before,
+[data-theme="dark"] .matte-preview-card-natural::before {
+  mix-blend-mode: screen;
+  opacity: 0.38;
 }
 
-.matte-swatch-deep {
+.matte-preview-card-deep {
   background-color: var(--eink-surface);
-  background-image: var(--washi-noise-pattern);
-  background-size: 140px 140px;
+  position: relative;
+}
+.matte-preview-card-deep::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--washi-noise-deep);
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  opacity: 0.82;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  border-radius: inherit;
+}
+.dark .matte-preview-card-deep::before,
+[data-theme="dark"] .matte-preview-card-deep::before {
+  mix-blend-mode: screen;
+  opacity: 0.65;
+}
+
+/* High-Definition Tactile Grain Swatch Windows for Visual Inspection */
+.matte-swatch-box-soft {
+  background-color: var(--eink-bg);
+  background-image: var(--washi-noise-soft);
+  background-repeat: repeat;
+  background-size: 130px 130px;
   background-blend-mode: multiply;
-  opacity: 1;
+}
+
+.matte-swatch-box-natural {
+  background-color: var(--eink-bg);
+  background-image: var(--washi-noise-natural);
+  background-repeat: repeat;
+  background-size: 150px 150px;
+  background-blend-mode: multiply;
+}
+
+.matte-swatch-box-deep {
+  background-color: var(--eink-bg);
+  background-image: var(--washi-noise-deep);
+  background-repeat: repeat;
+  background-size: 160px 160px;
+  background-blend-mode: multiply;
+}
+
+.dark .matte-swatch-box-soft,
+[data-theme="dark"] .matte-swatch-box-soft {
+  background-blend-mode: screen;
+}
+.dark .matte-swatch-box-natural,
+[data-theme="dark"] .matte-swatch-box-natural {
+  background-blend-mode: screen;
+}
+.dark .matte-swatch-box-deep,
+[data-theme="dark"] .matte-swatch-box-deep {
+  background-blend-mode: screen;
 }
 
 /* Crisp technical typography */
