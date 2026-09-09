@@ -270,28 +270,10 @@ export const NavigationExpandedView: React.FC<{ onClose: () => void }> = ({ onCl
           </button>
         </div>
 
-        {/* Spark Companion Button */}
-        <button
-          onClick={() => {
-            onClose();
-            window.dispatchEvent(new CustomEvent('shiori:open-spark'));
-          }}
-          className="px-3 py-2 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border rounded-sm flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
-          title="Open Spark Voice Companion (Ctrl+J)"
-        >
-          <div className="flex items-center gap-1.5 text-eink-text text-xs font-bold">
-            <span className="text-eink-text">✦</span>
-            <span>SPARK</span>
-          </div>
-          <kbd className="text-[9px] bg-eink-bg border border-eink-border px-1.5 py-0.2 rounded font-mono text-eink-textMuted">
-            ^J
-          </kbd>
-        </button>
-
         {/* Global Quick Search Button */}
         <button
           onClick={openSearch}
-          className="px-3 py-2 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border rounded-sm flex items-center justify-between gap-3 text-left transition-colors sm:w-44 cursor-pointer"
+          className="px-3 py-2 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border rounded-sm flex items-center justify-between gap-3 text-left transition-colors sm:w-48 cursor-pointer"
         >
           <div className="flex items-center gap-1.5 text-eink-textMuted text-xs">
             <Search className="w-3.5 h-3.5" />
