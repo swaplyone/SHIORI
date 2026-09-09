@@ -828,10 +828,67 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
             </span>
           </div>
 
-          {/* Subtitle / Caption */}
-          <p className="text-sm sm:text-base font-sans text-white/80 italic max-w-lg px-4 transition-all leading-relaxed whitespace-pre-line">
-            {getSubStatusText()}
-          </p>
+          {/* Subtitle / Caption / Structured Intelligence Display */}
+          {state === 'PROCESSING' ? (
+            <p className="text-sm sm:text-base font-sans text-white/80 italic max-w-lg px-4 transition-all leading-relaxed">
+              One second...
+            </p>
+          ) : responseMessage ? (
+            (() => {
+              const isMultiLine = responseMessage.includes('\n') || responseMessage.includes('•') || responseMessage.length > 90;
+              if (!isMultiLine) {
+                return (
+                  <p className="text-sm sm:text-base font-sans text-white/90 max-w-xl px-4 transition-all leading-relaxed">
+                    {responseMessage}
+                  </p>
+                );
+              }
+              const paragraphs = responseMessage.split('\n\n');
+              return (
+                <div className="w-full max-w-xl max-h-[30vh] overflow-y-auto px-5 py-3.5 bg-black/40 border border-white/15 rounded-2xl backdrop-blur-xl shadow-2xl text-left font-sans text-xs sm:text-sm text-white/90 space-y-2.5 transition-all">
+                  {paragraphs.map((para, pIdx) => {
+                    const lines = para.split('\n');
+                    return (
+                      <div key={pIdx} className="space-y-1">
+                        {lines.map((line, lIdx) => {
+                          const isBullet = line.trim().startsWith('•') || line.trim().startsWith('✓') || line.trim().startsWith('⚠️');
+                          const isHeader = line.startsWith('###') || (line.startsWith('**') && line.endsWith('**'));
+                          const formatTokens = (text: string) => {
+                            const parts = text.split(/(\*\*.*?\*\*|`.*?`|\*.*?\*)/g);
+                            return parts.map((part, idx) => {
+                              if (part.startsWith('**') && part.endsWith('**')) {
+                                return <strong key={idx} className="font-bold text-white font-mono">{part.slice(2, -2)}</strong>;
+                              }
+                              if (part.startsWith('`') && part.endsWith('`')) {
+                                return <code key={idx} className="px-1.5 py-0.5 rounded bg-white/10 text-amber-200 font-mono text-[11px] border border-white/10">{part.slice(1, -1)}</code>;
+                              }
+                              if (part.startsWith('*') && part.endsWith('*')) {
+                                return <em key={idx} className="text-white/70">{part.slice(1, -1)}</em>;
+                              }
+                              return part;
+                            });
+                          };
+
+                          return (
+                            <p
+                              key={lIdx}
+                              className={`${isBullet ? 'pl-2 border-l-2 border-white/20 text-white/85' : isHeader ? 'font-bold text-white text-xs uppercase tracking-wider font-mono pt-1' : 'text-white/80'} leading-relaxed`}
+                            >
+                              {formatTokens(line)}
+                            </p>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
+          ) : (
+            <p className="text-sm sm:text-base font-sans text-white/80 italic max-w-lg px-4 transition-all leading-relaxed">
+              {state === 'LISTENING' ? 'Go ahead.' : 'Ready when you are.'}
+            </p>
+          )}
         </div>
 
         {/* ========================================================================= */}

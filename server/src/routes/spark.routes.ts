@@ -6,6 +6,22 @@ import { getSparkWitResponse, SafeWorkspaceContext } from '../services/spark/spa
 
 export const sparkRouter = Router();
 
+// Helper to strip markdown symbols for clean, natural speech synthesis
+function stripMarkdownForSpeech(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1') // remove bold
+    .replace(/\*(.*?)\*/g, '$1')     // remove italic
+    .replace(/`([^`]+)`/g, '$1')     // remove inline code
+    .replace(/^#+\s+/gm, '')         // remove markdown headers
+    .replace(/^[•\-*]\s+/gm, '')     // remove bullet points
+    .replace(/TASK-(\d+)/gi, 'Task $1') // pronounce TASK-01 as Task 01
+    .replace(/\[(.*?)\]/g, '($1)')   // replace brackets
+    .replace(/\n+/g, '. ')           // line breaks to natural sentence pauses
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Helper to resequence tasks when deleting
 async function resequenceProjectTasks(projectId: string): Promise<void> {
   const activeTasks = await queryAll(
@@ -81,6 +97,118 @@ async function getSafeWorkspaceContext(userId: string): Promise<SafeWorkspaceCon
   } catch (err) {
     return {};
   }
+}
+
+// Helper to resolve project by name, repository name, or conversational pronoun
+async function resolveTargetProject(rawText: string, userId: string, context: any = {}): Promise<any> {
+  const lower = rawText.toLowerCase();
+
+  // 1. Check for pronoun / follow-up references
+  const isContextualRef =
+    lower.includes('in it') || lower.includes('in that') || lower.includes('in there') || 
+    lower.includes('there') || lower.includes('this project') || lower.includes('that project') ||
+    lower.includes('this repo') || lower.includes('that repo') || lower.includes('this repository') || lower.includes('that repository');
+
+  if (isContextualRef && context.projectId) {
+    const proj = await queryOne(
+      `SELECT id, name, github_repo_name, github_repo_url, default_branch, description 
+       FROM projects WHERE id = ?`,
+      [context.projectId]
+    );
+    if (proj) return proj;
+  }
+
+  // 2. Fetch all user projects and check for explicit project or repo mentions in text
+  const userProjects = await queryAll(
+    `SELECT id, name, github_repo_name, github_repo_url, default_branch, description 
+     FROM projects 
+     WHERE created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?)
+     ORDER BY updated_at DESC`,
+    [userId, userId]
+  );
+
+  for (const proj of (userProjects || [])) {
+    const projName = proj.name.toLowerCase();
+    const repoName = (proj.github_repo_name || '').toLowerCase();
+    const repoBase = repoName.split('/').pop() || repoName;
+
+    if (
+      lower.includes(projName) ||
+      (repoName && lower.includes(repoName)) ||
+      (repoBase && lower.includes(repoBase))
+    ) {
+      return proj;
+    }
+  }
+
+  // 3. Fallback to context projectId if available
+  if (context.projectId) {
+    return await queryOne(
+      `SELECT id, name, github_repo_name, github_repo_url, default_branch, description 
+       FROM projects WHERE id = ?`,
+      [context.projectId]
+    );
+  }
+
+  return null;
+}
+
+// Helper to resolve task by code, ID, title, or contextual reference ("it", "that task")
+async function resolveTask(identifier: string, context: any = {}): Promise<any> {
+  const lower = (identifier || '').toLowerCase().trim();
+
+  // 1. Check for TASK-XX
+  const codeMatch = lower.match(/task-?(\d+)/i);
+  if (codeMatch) {
+    const num = parseInt(codeMatch[1], 10);
+    const code = `TASK-${String(num).padStart(2, '0')}`;
+    const task = await queryOne(
+      `SELECT t.*, p.name as project_name FROM tasks t 
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE (t.task_code = ? OR t.task_number = ?) AND (t.is_deleted = 0 OR t.is_deleted IS NULL)`,
+      [code, num]
+    );
+    if (task) return task;
+  }
+
+  // 2. Contextual "it", "that task", "the task"
+  if (['it', 'that', 'that task', 'the task', 'this', 'this task'].includes(lower)) {
+    if (context.taskId) {
+      const task = await queryOne(
+        `SELECT t.*, p.name as project_name FROM tasks t 
+         LEFT JOIN projects p ON t.project_id = p.id
+         WHERE t.id = ? AND (t.is_deleted = 0 OR t.is_deleted IS NULL)`,
+        [context.taskId]
+      );
+      if (task) return task;
+    }
+  }
+
+  // 3. Search by title substring
+  if (identifier && identifier.length > 2) {
+    const clean = identifier.replace(/^[\s:"']+|[\s:"']+$/g, '');
+    const task = await queryOne(
+      `SELECT t.*, p.name as project_name FROM tasks t 
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE (LOWER(t.title) LIKE LOWER(?) OR LOWER(t.task_code) LIKE LOWER(?)) 
+       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY t.updated_at DESC LIMIT 1`,
+      [`%${clean}%`, `%${clean}%`]
+    );
+    if (task) return task;
+  }
+
+  // 4. Default to context taskId
+  if (context.taskId) {
+    return await queryOne(
+      `SELECT t.*, p.name as project_name FROM tasks t 
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE t.id = ? AND (t.is_deleted = 0 OR t.is_deleted IS NULL)`,
+      [context.taskId]
+    );
+  }
+
+  return null;
 }
 
 // GET /api/spark/briefing — Fast Proactive Session Greeting & Task Overview
@@ -195,64 +323,6 @@ sparkRouter.get('/briefing', authMiddleware, async (req: AuthRequest, res: Respo
   });
 });
 
-// Helper to resolve task by code, ID, title, or contextual reference ("it", "that task")
-async function resolveTask(identifier: string, context: any = {}): Promise<any> {
-  const lower = (identifier || '').toLowerCase().trim();
-
-  // 1. Check for TASK-XX
-  const codeMatch = lower.match(/task-?(\d+)/i);
-  if (codeMatch) {
-    const num = parseInt(codeMatch[1], 10);
-    const code = `TASK-${String(num).padStart(2, '0')}`;
-    const task = await queryOne(
-      `SELECT t.*, p.name as project_name FROM tasks t 
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE (t.task_code = ? OR t.task_number = ?) AND (t.is_deleted = 0 OR t.is_deleted IS NULL)`,
-      [code, num]
-    );
-    if (task) return task;
-  }
-
-  // 2. Contextual "it", "that task", "the task"
-  if (['it', 'that', 'that task', 'the task', 'this', 'this task'].includes(lower)) {
-    if (context.taskId) {
-      const task = await queryOne(
-        `SELECT t.*, p.name as project_name FROM tasks t 
-         LEFT JOIN projects p ON t.project_id = p.id
-         WHERE t.id = ? AND (t.is_deleted = 0 OR t.is_deleted IS NULL)`,
-        [context.taskId]
-      );
-      if (task) return task;
-    }
-  }
-
-  // 3. Search by title substring
-  if (identifier && identifier.length > 2) {
-    const clean = identifier.replace(/^[\s:"']+|[\s:"']+$/g, '');
-    const task = await queryOne(
-      `SELECT t.*, p.name as project_name FROM tasks t 
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE (LOWER(t.title) LIKE LOWER(?) OR LOWER(t.task_code) LIKE LOWER(?)) 
-       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.updated_at DESC LIMIT 1`,
-      [`%${clean}%`, `%${clean}%`]
-    );
-    if (task) return task;
-  }
-
-  // 4. Default to context taskId or most recently active task
-  if (context.taskId) {
-    return await queryOne(
-      `SELECT t.*, p.name as project_name FROM tasks t 
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE t.id = ? AND (t.is_deleted = 0 OR t.is_deleted IS NULL)`,
-      [context.taskId]
-    );
-  }
-
-  return null;
-}
-
 // POST /api/spark/command — Natural Language Intent Router & Tool Execution
 sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.id;
@@ -281,6 +351,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   ];
 
   if (securityKeywords.some(kw => lower.includes(kw))) {
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SECURITY | INTENT: BLOCKED | RESULT: REJECTED`);
     res.json({
       success: true,
       intent: 'SECURITY_BLOCKED',
@@ -371,13 +442,11 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
 
         const ghData: any = await ghRes.json();
         if (ghRes.ok && ghData.html_url) {
-          // Register in user_repositories
           await runQuery(`
             INSERT INTO user_repositories (id, user_id, repo_name, full_name, is_private, default_branch, is_active, created_at)
             VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'))
           `, [uuidv4(), userId, ghData.name, ghData.full_name, ghData.private ? 1 : 0, ghData.default_branch || 'main']);
 
-          // Also create matching SHIORI project
           const projId = uuidv4();
           await runQuery(`
             INSERT INTO projects (id, name, description, github_repo_name, github_repo_url, default_branch, created_by, created_at, updated_at)
@@ -421,7 +490,6 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   // =========================================================================
   // 3. APP LIFECYCLE & APP CONTROL COMMANDS
   // =========================================================================
-  // Distinction: "close SHIORI" vs "close Spark"
   if (
     lower === 'close shiori' || lower === 'exit shiori' || lower === 'quit shiori' || 
     lower === 'close the app' || lower === 'exit the app' || lower === 'quit the app'
@@ -664,13 +732,11 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     const taskCode = `TASK-${String(nextSeq).padStart(2, '0')}`;
     const taskId = uuidv4();
 
-    // Check if priority is in text
     let priority = 'MEDIUM';
     if (lower.includes('urgent')) priority = 'URGENT';
     else if (lower.includes('high priority')) priority = 'HIGH';
     else if (lower.includes('low priority')) priority = 'LOW';
 
-    // Check if deadline mentioned
     let deadline: string | null = null;
     if (lower.includes('today')) {
       const now = new Date();
@@ -1009,8 +1075,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
           intent: 'SEARCH_RESULTS',
           speakText: `Found matching items for ${queryTerm}.`,
           displayText: `**Search Results for "${queryTerm}":**\n\n${results.join('\n')}`,
-          actionTaken: true,
-          navigate: '/todos'
+          actionTaken: true
         });
         return;
       } else {
@@ -1027,69 +1092,372 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 12.5 SHIORI EXPLICIT NAVIGATION ACTIONS ("OPEN SETTINGS", "OPEN REPOSITORIES", "OPEN MY TODO LIST")
+  // 12.5 EXPLICIT NAVIGATION ACTIONS ONLY ("OPEN SETTINGS", "OPEN REPOSITORIES", "GO TO TODOS")
+  // MUST NEVER TRIGGER ON INFORMATION QUERIES (e.g. "What repositories do we have?")
   // =========================================================================
-  const isNav = 
+  const isExplicitNav = 
     lower.startsWith('open ') || lower.startsWith('go to ') || 
     lower.startsWith('navigate to ') || lower.startsWith('take me to ') ||
     lower.startsWith('show page ') || lower.startsWith('switch page ') ||
-    ['settings page', 'setting page', 'tasks page', 'todos page', 'repositories page', 'projects page', 'github page', 'journal page', 'activity page'].includes(lower);
+    ['open settings', 'open home', 'open dashboard', 'open tasks', 'open todos', 'open repositories', 'open projects', 'open github', 'open journal', 'open activity', 'open connections'].includes(lower);
 
-  if (isNav) {
+  if (isExplicitNav) {
     if (lower.includes('setting') || lower.includes('appearance') || lower.includes('theme') || lower.includes('matte')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/settings) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/settings) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Settings.', displayText: 'Opening SHIORI Settings.', navigate: '/settings', actionTaken: true });
       return;
     }
     if (lower.includes('home') || lower.includes('dashboard')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/home) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/home) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Home.', displayText: 'Opening SHIORI Home.', navigate: '/home', actionTaken: true });
       return;
     }
     if (lower.includes('todo') || lower.includes('task')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/todos) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/todos) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Todos.', displayText: 'Opening My Todos.', navigate: '/todos', actionTaken: true });
       return;
     }
     if (lower.includes('repositories') || lower.includes('repo') || lower.includes('projects')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/repositories) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/repositories) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Repositories.', displayText: 'Opening Repositories.', navigate: '/repositories', actionTaken: true });
       return;
     }
     if (lower.includes('workspace')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/workspaces) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/workspaces) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Workspaces.', displayText: 'Opening Workspaces.', navigate: '/workspaces', actionTaken: true });
       return;
     }
     if (lower.includes('connection') || lower.includes('friend')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/connections) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/connections) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Connections.', displayText: 'Opening Connections.', navigate: '/connections', actionTaken: true });
       return;
     }
     if (lower.includes('github') || lower.includes('pipeline') || lower.includes('webhook')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/github) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/github) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening GitHub Hub.', displayText: 'Opening GitHub Hub.', navigate: '/github', actionTaken: true });
       return;
     }
     if (lower.includes('journal') || lower.includes('audit')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/journal) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/journal) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Journal.', displayText: 'Opening Daily Journal.', navigate: '/journal', actionTaken: true });
       return;
     }
     if (lower.includes('notification')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/notifications) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/notifications) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Notifications.', displayText: 'Opening Notifications.', navigate: '/notifications', actionTaken: true });
       return;
     }
     if (lower.includes('install')) {
-      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/install) | RESULT: SUCCESS`);
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: NAVIGATION | INTENT: NAVIGATE (/install) | RESULT: SUCCESS`);
       res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Installation Gateway.', displayText: 'Opening PWA Installation Gateway.', navigate: '/install', actionTaken: true });
       return;
     }
   }
 
   // =========================================================================
-  // 13. GITHUB REPOSITORIES QUERY ("WHAT GITHUB REPOS ARE WE WORKING ON?", "WHICH REPOS ARE CONNECTED?")
+  // 13. "WHAT ARE WE DOING NOW?" & PROJECT WORK SUMMARY INTENT
+  // Connects: Projects -> Connected Repositories -> Active Tasks -> Overdue Tasks -> Git Activity
+  // =========================================================================
+  const isWorkSummaryQuery =
+    lower.includes('what are we doing now') ||
+    lower.includes('what are we working on') ||
+    lower.includes('what are we currently working on') ||
+    lower.includes('what are we doing currently') ||
+    lower.includes('what are we building') ||
+    lower.includes('what is currently in progress') ||
+    lower.includes('what is in progress') ||
+    lower.includes("what's in progress") ||
+    lower.includes('what are the current tasks') ||
+    lower.includes('what are the tasks we are doing now') ||
+    lower.includes("what are the tasks we're doing now") ||
+    lower.includes('what are the tasks we are doing') ||
+    lower.includes('what tasks are we doing now') ||
+    lower.includes('what are we working on right now') ||
+    lower.includes('what are we doing right now') ||
+    lower === 'what are we doing' ||
+    lower === 'what are we working on' ||
+    lower === 'what are our tasks' ||
+    lower === 'what tasks are we doing';
+
+  if (isWorkSummaryQuery) {
+    const userProjects = await queryAll(
+      `SELECT p.id, p.name, p.github_repo_name, p.description 
+       FROM projects p 
+       WHERE p.created_by = ? OR p.id IN (SELECT project_id FROM project_members WHERE user_id = ?)
+       ORDER BY p.updated_at DESC`,
+      [userId, userId]
+    );
+
+    const allTasks = await queryAll(
+      `SELECT t.id, t.project_id, t.task_code, t.title, t.priority, t.status, t.deadline, t.updated_at, p.name as project_name
+       FROM tasks t
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY 
+         CASE WHEN t.status IN ('IN_PROGRESS', 'IN PROGRESS', 'DOING') THEN 1
+              WHEN t.deadline IS NOT NULL AND t.deadline < datetime('now') THEN 2
+              WHEN t.priority = 'URGENT' THEN 3
+              WHEN t.priority = 'HIGH' THEN 4
+              ELSE 5 END,
+         t.sequence_order ASC`,
+      []
+    );
+
+    const overdueTasks = (allTasks || []).filter(t => t.status !== 'DONE' && t.deadline && new Date(t.deadline).getTime() < Date.now());
+    const inProgressTasks = (allTasks || []).filter(t => ['IN_PROGRESS', 'IN PROGRESS', 'DOING'].includes(t.status));
+    const pendingTasks = (allTasks || []).filter(t => t.status !== 'DONE' && !['IN_PROGRESS', 'IN PROGRESS', 'DOING'].includes(t.status));
+    const completedTasks = (allTasks || []).filter(t => t.status === 'DONE');
+
+    const projectCount = (userProjects || []).length;
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: PROJECT_WORK_SUMMARY | PROJECTS: ${projectCount} | ACTIVE_TASKS: ${inProgressTasks.length} | OVERDUE: ${overdueTasks.length}`);
+
+    if (projectCount === 0 && (allTasks || []).length === 0) {
+      const resp = "You don't have any active projects or tasks created yet. Clean workspace! You can say 'Create task <title>' or 'Create project <name>' to start building.";
+      res.json({
+        success: true,
+        intent: 'PROJECT_WORK_SUMMARY_EMPTY',
+        speakText: "You don't have any active projects or tasks created yet. Clean workspace.",
+        displayText: resp,
+        actionTaken: true
+      });
+      return;
+    }
+
+    const sections: string[] = [];
+    const speechSentences: string[] = [];
+
+    if (projectCount > 0) {
+      sections.push(`Right now you're working on **${projectCount}** project${projectCount === 1 ? '' : 's'}:\n`);
+      speechSentences.push(`Right now you're working on ${projectCount} project${projectCount === 1 ? '' : 's'}.`);
+
+      for (const proj of (userProjects || [])) {
+        const projTasks = (allTasks || []).filter(t => t.project_id === proj.id);
+        const projInProgress = projTasks.filter(t => ['IN_PROGRESS', 'IN PROGRESS', 'DOING'].includes(t.status));
+        const projPending = projTasks.filter(t => t.status !== 'DONE' && !['IN_PROGRESS', 'IN PROGRESS', 'DOING'].includes(t.status));
+        const projCompleted = projTasks.filter(t => t.status === 'DONE');
+
+        let projBlock = `**${proj.name}**\n`;
+        if (proj.github_repo_name) {
+          projBlock += `• Repository: \`${proj.github_repo_name}\`\n`;
+        }
+
+        const speechProjDetails: string[] = [];
+
+        if (projInProgress.length > 0) {
+          projBlock += projInProgress.map(t => `• Active: **${t.task_code}** — ${t.title}`).join('\n') + '\n';
+          speechProjDetails.push(`${projInProgress.length} active task${projInProgress.length === 1 ? '' : 's'}: ${projInProgress.map(t => t.title).join(', ')}`);
+        }
+
+        if (projPending.length > 0) {
+          projBlock += projPending.slice(0, 2).map(t => `• Pending: ${t.task_code} — ${t.title}`).join('\n') + '\n';
+          if (projInProgress.length === 0) {
+            speechProjDetails.push(`${projPending.length} pending task${projPending.length === 1 ? '' : 's'}`);
+          }
+        }
+
+        if (projCompleted.length > 0) {
+          const topDone = projCompleted[0];
+          projBlock += `• Completed recently: ${topDone.title}\n`;
+        }
+
+        if (projTasks.length === 0) {
+          projBlock += `• No open tasks in this project\n`;
+          speechProjDetails.push('no open tasks');
+        }
+
+        sections.push(projBlock.trim());
+        speechSentences.push(`In ${proj.name}, you have ${speechProjDetails.join(', ') || 'no active tasks'}.`);
+      }
+    } else {
+      // Standalone tasks outside projects
+      sections.push(`**Active Workspace Tasks:**\n`);
+      if (inProgressTasks.length > 0) {
+        sections.push(inProgressTasks.map(t => `• Active: **${t.task_code}** — ${t.title}`).join('\n'));
+      }
+      if (pendingTasks.length > 0) {
+        sections.push(pendingTasks.slice(0, 3).map(t => `• Pending: ${t.task_code} — ${t.title}`).join('\n'));
+      }
+      speechSentences.push(`You have ${inProgressTasks.length} active and ${pendingTasks.length} pending tasks.`);
+    }
+
+    if (overdueTasks.length > 0) {
+      sections.push(`\n⚠️ **${overdueTasks.length} task${overdueTasks.length === 1 ? '' : 's'} overdue:**\n` + overdueTasks.slice(0, 2).map(t => `• ${t.task_code}: ${t.title} *(in ${t.project_name || 'Project'})*`).join('\n'));
+      speechSentences.push(`You also have ${overdueTasks.length} overdue task${overdueTasks.length === 1 ? '' : 's'} that need attention.`);
+    }
+
+    const displayText = sections.join('\n\n');
+    const speakText = speechSentences.join(' ');
+
+    res.json({
+      success: true,
+      intent: 'PROJECT_WORK_SUMMARY',
+      speakText,
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 14. PROJECT-SCOPED & REPOSITORY-SCOPED TASK & STATUS QUERIES
+  // Examples:
+  // "What tasks are inside the SHIORI project?"
+  // "What tasks are we doing in SHIORI?"
+  // "What have we completed in SHIORI?"
+  // "What are we doing in the shiori repository?"
+  // "Give me the full project status for SHIORI"
+  // =========================================================================
+  const isScopedProjectQuery =
+    (lower.includes('project') || lower.includes('repository') || lower.includes('repo') || lower.includes('in ') || lower.includes('for ') || lower.includes('there')) &&
+    (lower.includes('tasks inside') || lower.includes('tasks are inside') || lower.includes('tasks in') || lower.includes('doing in') || lower.includes('completed in') || lower.includes('finished in') || lower.includes('completed there') || lower.includes('finished there') || lower.includes('full project status') || lower.includes('project report') || lower.includes('state of the project') || lower.includes('where are we with'));
+
+  const targetProject = await resolveTargetProject(rawText, userId, context);
+
+  if (targetProject && isScopedProjectQuery) {
+    const projTasks = await queryAll(
+      `SELECT t.id, t.task_code, t.title, t.priority, t.status, t.deadline, t.updated_at 
+       FROM tasks t 
+       WHERE t.project_id = ? AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY 
+         CASE WHEN t.status IN ('IN_PROGRESS', 'IN PROGRESS', 'DOING') THEN 1
+              WHEN t.deadline IS NOT NULL AND t.deadline < datetime('now') THEN 2
+              WHEN t.priority = 'URGENT' THEN 3
+              WHEN t.priority = 'HIGH' THEN 4
+              ELSE 5 END,
+         t.sequence_order ASC`,
+      [targetProject.id]
+    );
+
+    const latestCommit = targetProject.github_repo_name ? await queryOne(
+      `SELECT commit_hash, message, author_name, branch_name, pushed_at 
+       FROM github_commits 
+       WHERE LOWER(repo_name) = LOWER(?) OR LOWER(repo_name) LIKE LOWER(?) 
+       ORDER BY pushed_at DESC LIMIT 1`,
+      [targetProject.github_repo_name, `%${targetProject.name}%`]
+    ) : null;
+
+    const projActive = (projTasks || []).filter(t => ['IN_PROGRESS', 'IN PROGRESS', 'DOING'].includes(t.status));
+    const projPending = (projTasks || []).filter(t => t.status !== 'DONE' && !['IN_PROGRESS', 'IN PROGRESS', 'DOING'].includes(t.status));
+    const projOverdue = (projTasks || []).filter(t => t.status !== 'DONE' && t.deadline && new Date(t.deadline).getTime() < Date.now());
+    const projCompleted = (projTasks || []).filter(t => t.status === 'DONE');
+
+    // Scenario A: User specifically asked for completed tasks in this project
+    if (lower.includes('completed') || lower.includes('finish') || lower.includes('done')) {
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: COMPLETED_PROJECT_TASKS | PROJECT: ${targetProject.name}`);
+
+      if (projCompleted.length === 0) {
+        res.json({
+          success: true,
+          intent: 'COMPLETED_PROJECT_TASKS_EMPTY',
+          projectId: targetProject.id,
+          speakText: `No completed tasks recorded in ${targetProject.name} yet.`,
+          displayText: `No completed tasks found in project **${targetProject.name}**. Ready when you finish your next task.`,
+          actionTaken: true
+        });
+        return;
+      }
+
+      const listLines = projCompleted.map(t => `• **${t.task_code}**: ${t.title}`).join('\n');
+      const speak = `You have completed ${projCompleted.length} task${projCompleted.length === 1 ? '' : 's'} in ${targetProject.name}: ${projCompleted.slice(0, 3).map(t => t.title).join(', ')}.`;
+
+      res.json({
+        success: true,
+        intent: 'COMPLETED_PROJECT_TASKS',
+        projectId: targetProject.id,
+        speakText: speak,
+        displayText: `**Completed Work in ${targetProject.name} (${projCompleted.length}):**\n\n${listLines}`,
+        actionTaken: true
+      });
+      return;
+    }
+
+    // Scenario B: Full Project Status / Project Report
+    if (lower.includes('full project status') || lower.includes('project report') || lower.includes('state of the project') || lower.includes('where are we with')) {
+      console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: PROJECT_STATUS_REPORT | PROJECT: ${targetProject.name}`);
+
+      const reportParts: string[] = [
+        `### PROJECT STATUS: ${targetProject.name.toUpperCase()}`,
+        `• **Repository:** ${targetProject.github_repo_name ? `\`${targetProject.github_repo_name}\`` : 'Local project (No GitHub repository attached)'}`
+      ];
+
+      if (projActive.length > 0) {
+        reportParts.push(`**CURRENT WORK (ACTIVE)**\n` + projActive.map(t => `• ${t.task_code}: ${t.title} [${t.priority}]`).join('\n'));
+      }
+      if (projPending.length > 0) {
+        reportParts.push(`**PENDING BACKLOG**\n` + projPending.slice(0, 3).map(t => `• ${t.task_code}: ${t.title} [${t.priority}]`).join('\n'));
+      }
+      if (projOverdue.length > 0) {
+        reportParts.push(`**OVERDUE ATTENTION**\n` + projOverdue.map(t => `• ⚠️ ${t.task_code}: ${t.title}`).join('\n'));
+      }
+      if (projCompleted.length > 0) {
+        reportParts.push(`**RECENTLY COMPLETED**\n` + projCompleted.slice(0, 3).map(t => `• ✓ ${t.task_code}: ${t.title}`).join('\n'));
+      }
+      if (latestCommit) {
+        reportParts.push(`**GIT ACTIVITY**\n• Latest commit: \`${latestCommit.commit_hash.substring(0, 7)}\` — "${latestCommit.message}" (*${latestCommit.author_name}*) on branch \`${latestCommit.branch_name || 'main'}\``);
+      }
+
+      const speak = `${targetProject.name} currently has ${projActive.length} active tasks, ${projPending.length} pending tasks, and ${projCompleted.length} completed tasks. ${projOverdue.length > 0 ? `There are ${projOverdue.length} overdue tasks.` : 'No overdue tasks.'}`;
+
+      res.json({
+        success: true,
+        intent: 'PROJECT_STATUS_REPORT',
+        projectId: targetProject.id,
+        speakText: speak,
+        displayText: reportParts.join('\n\n'),
+        actionTaken: true
+      });
+      return;
+    }
+
+    // Scenario C: Project Tasks Summary ("What tasks are inside SHIORI?", "What are we doing in SHIORI?")
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: PROJECT_TASK_SUMMARY | PROJECT: ${targetProject.name}`);
+
+    const parts: string[] = [`**${targetProject.name.toUpperCase()} CURRENT TASKS:**`];
+    const speakParts: string[] = [];
+
+    if (projActive.length > 0) {
+      parts.push(`**ACTIVE**\n` + projActive.map(t => `• **${t.task_code}**: ${t.title} [${t.priority}]`).join('\n'));
+      speakParts.push(`Active: ${projActive.map(t => t.title).join(', ')}.`);
+    }
+
+    if (projPending.length > 0) {
+      parts.push(`**PENDING**\n` + projPending.slice(0, 4).map(t => `• ${t.task_code}: ${t.title} [${t.priority}]`).join('\n'));
+      if (projActive.length === 0) {
+        speakParts.push(`Pending: ${projPending.map(t => t.title).join(', ')}.`);
+      }
+    }
+
+    if (projCompleted.length > 0) {
+      parts.push(`**COMPLETED**\n` + projCompleted.slice(0, 3).map(t => `• ✓ ${t.title}`).join('\n'));
+    }
+
+    if (projOverdue.length > 0) {
+      parts.push(`⚠️ **${projOverdue.length} task${projOverdue.length === 1 ? '' : 's'} overdue**`);
+      speakParts.push(`${projOverdue.length} task${projOverdue.length === 1 ? '' : 's'} overdue.`);
+    }
+
+    if (projTasks.length === 0) {
+      parts.push(`No tasks found in project **${targetProject.name}**. You can add one by saying "Create task <title> in ${targetProject.name}".`);
+      speakParts.push(`No tasks found in ${targetProject.name}.`);
+    }
+
+    const displayText = parts.join('\n\n');
+    const speakText = `${targetProject.name} currently has ${speakParts.join(' ')}`;
+
+    res.json({
+      success: true,
+      intent: 'PROJECT_TASK_SUMMARY',
+      projectId: targetProject.id,
+      speakText: stripMarkdownForSpeech(speakText),
+      displayText,
+      actionTaken: true
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 15. GITHUB REPOSITORIES QUERY ("WHAT GITHUB REPOS ARE WE WORKING ON?", "WHICH REPOS ARE CONNECTED?")
+  // STRICTLY INFORMATION — NO NAVIGATION REDIRECT
   // =========================================================================
   const isGithubRepoQuery =
     lower.includes('what github repositories') ||
@@ -1100,8 +1468,10 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     lower.includes('what repositories am i') ||
     lower.includes('which repositories are connected') ||
     lower.includes('what repositories do i have') ||
+    lower.includes('what repositories do we have') ||
     lower.includes('which repos are connected') ||
     lower.includes('what repos do i have') ||
+    lower.includes('what repos do we have') ||
     lower.includes('show my repositories') ||
     lower.includes('show repositories') ||
     lower.includes('list my repositories') ||
@@ -1138,7 +1508,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     );
 
     // Combine distinct repository names
-    const repoSet = new Map<string, { name: string; full_name?: string; isPrivate?: boolean; branch?: string }>();
+    const repoSet = new Map<string, { name: string; full_name?: string; isPrivate?: boolean; branch?: string; projectName?: string }>();
 
     for (const r of (userRepos || [])) {
       const key = (r.full_name || r.repo_name).toLowerCase();
@@ -1152,11 +1522,15 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
 
     for (const p of (projectRepos || [])) {
       const key = p.github_repo_name.toLowerCase();
-      if (!repoSet.has(key)) {
+      const existing = repoSet.get(key);
+      if (existing) {
+        existing.projectName = p.name;
+      } else {
         repoSet.set(key, {
           name: p.github_repo_name,
           full_name: p.github_repo_name,
-          branch: p.default_branch || 'main'
+          branch: p.default_branch || 'main',
+          projectName: p.name
         });
       }
     }
@@ -1164,7 +1538,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     const distinctRepos = Array.from(repoSet.values());
     const count = distinctRepos.length;
 
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: GITHUB_REPOSITORY_LIST | RESULT: SUCCESS (${count} repos)`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: GITHUB_REPOSITORY_LIST | RESULT: SUCCESS (${count} repos)`);
 
     if (count === 0) {
       const accountNote = ghAccount?.username ? ` connected as **@${ghAccount.username}**` : '';
@@ -1173,13 +1547,12 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'GITHUB_REPOSITORY_LIST_EMPTY',
         speakText: "I couldn't find any connected GitHub repositories.",
         displayText: `No connected GitHub repositories found${accountNote}. You can connect a repository from the GitHub Hub or Repositories page.`,
-        actionTaken: true,
-        navigate: '/github'
+        actionTaken: true
       });
       return;
     }
 
-    const repoListLines = distinctRepos.map(r => `• **${r.name}** ${r.isPrivate ? '*(Private)*' : '*(Public)*'}`).join('\n');
+    const repoListLines = distinctRepos.map(r => `• **${r.name}** ${r.isPrivate ? '*(Private)*' : '*(Public)*'}${r.projectName ? ` — linked to project *${r.projectName}*` : ''}`).join('\n');
     const repoNamesStr = distinctRepos.map(r => r.name).join(', ');
 
     const speak = count === 1
@@ -1195,14 +1568,13 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       displayText: display,
       count,
       repositories: distinctRepos,
-      actionTaken: true,
-      navigate: '/repositories'
+      actionTaken: true
     });
     return;
   }
 
   // =========================================================================
-  // 14. GIT COMMITS, STATUS, BRANCH & VERIFICATION QUERIES
+  // 16. GIT COMMITS, STATUS, BRANCH & VERIFICATION QUERIES (NO NAVIGATION)
   // =========================================================================
   const isGitBranchQuery = 
     lower.includes('which branch') || 
@@ -1216,7 +1588,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     );
     if (latestCommit?.branch_name) activeBranch = latestCommit.branch_name;
 
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: GIT_BRANCH | RESULT: SUCCESS (${activeBranch})`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: GIT_BRANCH | RESULT: SUCCESS (${activeBranch})`);
 
     res.json({
       success: true,
@@ -1249,7 +1621,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       `SELECT commit_hash, message, author_name FROM github_commits ORDER BY pushed_at DESC LIMIT 1`
     );
 
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: GIT_VERIFY | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: GIT_VERIFY | RESULT: SUCCESS`);
 
     if (latestRun) {
       const isSuccess = latestRun.conclusion === 'success' || latestRun.status === 'completed';
@@ -1259,8 +1631,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'GIT_VERIFY',
         speakText: isSuccess ? 'Your latest verification passed.' : 'Verification reported issues.',
         displayText: `Workflow **${latestRun.workflow_name}** on *${latestRun.branch_name || 'main'}*: **${(latestRun.conclusion || latestRun.status).toUpperCase()}**${testsMsg}.`,
-        actionTaken: true,
-        navigate: '/github'
+        actionTaken: true
       });
       return;
     }
@@ -1272,8 +1643,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'GIT_VERIFY',
         speakText: `Commit ${shortSha} is registered and verified in SHIORI.`,
         displayText: `Latest commit **${shortSha}** ("${latestCommit.message}") has been cryptographically recorded with no open CI failures.`,
-        actionTaken: true,
-        navigate: '/github'
+        actionTaken: true
       });
       return;
     }
@@ -1283,8 +1653,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       intent: 'GIT_VERIFY',
       speakText: 'No pending CI failures recorded.',
       displayText: 'Git verification active. No failed builds or CI discrepancies detected.',
-      actionTaken: true,
-      navigate: '/github'
+      actionTaken: true
     });
     return;
   }
@@ -1319,7 +1688,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
        LIMIT 3`
     );
 
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: GIT_COMMITS | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: GIT_COMMITS | RESULT: SUCCESS`);
 
     if (fallbackCommits && fallbackCommits.length > 0) {
       const top = fallbackCommits[0];
@@ -1331,8 +1700,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'GIT_STATUS',
         speakText: `Your latest commit is ${shortSha}: ${top.message}.`,
         displayText: `**Recent Git History:**\n\n${commitList}\n\n*Repository status: Clean & Synced.*`,
-        actionTaken: true,
-        navigate: '/github'
+        actionTaken: true
       });
       return;
     }
@@ -1343,48 +1711,44 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       intent: 'GIT_STATUS',
       speakText: 'Git hub integration is active.',
       displayText: `Connected as **@${userAccount?.username || 'Developer'}**. No commit activity recorded yet in this workspace.`,
-      actionTaken: true,
-      navigate: '/github'
+      actionTaken: true
     });
     return;
   }
 
   // =========================================================================
-  // 15. TASK & WORKSPACE QUERIES (OVERDUE, DUE TODAY, RUNNING, COMPLETED, SUMMARY, NEXT TASK)
+  // 17. TASK SPECIFIC INTENTS (COMPLETED, OVERDUE, DUE TODAY, RUNNING/ACTIVE, SUMMARY)
   // =========================================================================
-  if (lower.includes('what did i complete today') || lower.includes('completed tasks') || lower.includes('show completed tasks')) {
-    const completedToday = await queryAll(
-      `SELECT task_code, title, updated_at 
-       FROM tasks 
-       WHERE status = 'DONE' 
-       AND (date(updated_at) = date('now') OR date(created_at) = date('now'))
-       AND (is_deleted = 0 OR is_deleted IS NULL)
-       ORDER BY updated_at DESC LIMIT 5`
+  if (lower.includes('what have we completed') || lower.includes('what have i completed') || lower.includes('what did i complete today') || lower.includes('completed tasks') || lower.includes('show completed tasks') || lower.includes('what did we finish')) {
+    const completedTasks = await queryAll(
+      `SELECT t.task_code, t.title, t.updated_at, p.name as project_name 
+       FROM tasks t 
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE t.status = 'DONE' AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY t.updated_at DESC LIMIT 5`
     );
 
-    const count = (completedToday || []).length;
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_COMPLETED_TODAY | RESULT: SUCCESS (${count})`);
+    const count = (completedTasks || []).length;
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: COMPLETED_TASKS | RESULT: SUCCESS (${count})`);
 
     if (count === 0) {
       res.json({
         success: true,
-        intent: 'TASK_COMPLETED_TODAY_EMPTY',
-        speakText: 'No tasks marked completed today yet.',
-        displayText: 'No tasks completed yet today. Ready when you finish your next task.',
-        actionTaken: true,
-        navigate: '/todos'
+        intent: 'TASK_COMPLETED_EMPTY',
+        speakText: 'No completed tasks found in your workspace yet.',
+        displayText: 'No completed tasks recorded yet. Ready when you finish your next task.',
+        actionTaken: true
       });
       return;
     }
 
-    const lines = completedToday.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n');
+    const lines = completedTasks.map((t: any) => `• **${t.task_code}**: ${t.title}${t.project_name ? ` *(in ${t.project_name})*` : ''}`).join('\n');
     res.json({
       success: true,
-      intent: 'TASK_COMPLETED_TODAY',
-      speakText: `You have completed ${count} task${count === 1 ? '' : 's'} today.`,
-      displayText: `**${count} Task${count === 1 ? '' : 's'} Completed Today:**\n\n${lines}`,
-      actionTaken: true,
-      navigate: '/todos'
+      intent: 'COMPLETED_TASKS',
+      speakText: `You have completed ${count} task${count === 1 ? '' : 's'}: ${completedTasks.slice(0, 3).map((t: any) => t.title).join(', ')}.`,
+      displayText: `**${count} Completed Task${count === 1 ? '' : 's'}:**\n\n${lines}`,
+      actionTaken: true
     });
     return;
   }
@@ -1394,7 +1758,8 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     lower.includes('what is overdue') || 
     lower.includes('tasks are overdue') ||
     lower.includes('show overdue') ||
-    lower.includes('overdue tasks')
+    lower.includes('overdue tasks') ||
+    lower.includes('what tasks are late')
   ) {
     const overdueTasks = await queryAll(
       `SELECT t.task_code, t.title, t.priority, t.deadline, p.name as project_name 
@@ -1409,7 +1774,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     );
 
     const count = (overdueTasks || []).length;
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_OVERDUE | RESULT: SUCCESS (${count})`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: OVERDUE_TASKS | RESULT: SUCCESS (${count})`);
 
     if (count === 0) {
       res.json({
@@ -1417,8 +1782,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'TASK_OVERDUE_EMPTY',
         speakText: 'You have no overdue tasks.',
         displayText: 'Zero overdue tasks. All deadlines are in good standing. ✨',
-        actionTaken: true,
-        navigate: '/todos'
+        actionTaken: true
       });
       return;
     }
@@ -1426,11 +1790,10 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     const lines = overdueTasks.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}] in *${t.project_name || 'Project'}*`).join('\n');
     res.json({
       success: true,
-      intent: 'TASK_OVERDUE',
+      intent: 'OVERDUE_TASKS',
       speakText: `You have ${count} overdue task${count === 1 ? '' : 's'}.`,
       displayText: `**${count} Overdue Task${count === 1 ? '' : 's'}:**\n\n${lines}`,
-      actionTaken: true,
-      navigate: '/todos'
+      actionTaken: true
     });
     return;
   }
@@ -1440,7 +1803,8 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     lower.includes('what is due today') || 
     lower.includes('what is due') ||
     lower.includes('due today') ||
-    lower.includes("show today's tasks")
+    lower.includes("show today's tasks") ||
+    lower.includes('today tasks')
   ) {
     const dueTodayTasks = await queryAll(
       `SELECT t.task_code, t.title, t.priority, p.name as project_name 
@@ -1454,7 +1818,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     );
 
     const count = (dueTodayTasks || []).length;
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_DUE_TODAY | RESULT: SUCCESS (${count})`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: TODAY_TASKS | RESULT: SUCCESS (${count})`);
 
     if (count === 0) {
       res.json({
@@ -1462,8 +1826,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'TASK_DUE_TODAY_EMPTY',
         speakText: 'No tasks due today.',
         displayText: 'No tasks scheduled with deadlines for today.',
-        actionTaken: true,
-        navigate: '/todos'
+        actionTaken: true
       });
       return;
     }
@@ -1471,11 +1834,10 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     const lines = dueTodayTasks.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}]`).join('\n');
     res.json({
       success: true,
-      intent: 'TASK_DUE_TODAY',
+      intent: 'TODAY_TASKS',
       speakText: `You have ${count} task${count === 1 ? '' : 's'} due today.`,
       displayText: `**${count} Task${count === 1 ? '' : 's'} Due Today:**\n\n${lines}`,
-      actionTaken: true,
-      navigate: '/todos'
+      actionTaken: true
     });
     return;
   }
@@ -1483,8 +1845,10 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   if (
     lower.includes("what's running") || 
     lower.includes('what is running') || 
-    lower.includes('what am i working on') ||
-    lower.includes('what is in progress')
+    lower.includes('what tasks are active') ||
+    lower.includes('what tasks are currently active') ||
+    lower.includes('active tasks') ||
+    lower.includes('what am i actively working on')
   ) {
     const runningTasks = await queryAll(
       `SELECT t.task_code, t.title, p.name as project_name 
@@ -1496,10 +1860,9 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     );
 
     const count = (runningTasks || []).length;
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_RUNNING | RESULT: SUCCESS (${count})`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: ACTIVE_TASKS | RESULT: SUCCESS (${count})`);
 
     if (count === 0) {
-      // Find top pending task
       const topPending = await queryOne(
         `SELECT task_code, title FROM tasks WHERE status != 'DONE' AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY sequence_order ASC LIMIT 1`
       );
@@ -1507,22 +1870,20 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       if (topPending) {
         res.json({
           success: true,
-          intent: 'TASK_RUNNING_EMPTY',
+          intent: 'ACTIVE_TASKS_EMPTY',
           speakText: `No tasks in progress. Your next pending task is ${topPending.task_code}: ${topPending.title}.`,
           displayText: `No task is currently marked **In Progress**.\n\nNext queued task: **${topPending.task_code}** ("${topPending.title}").`,
-          actionTaken: true,
-          navigate: '/todos'
+          actionTaken: true
         });
         return;
       }
 
       res.json({
         success: true,
-        intent: 'TASK_RUNNING_EMPTY',
+        intent: 'ACTIVE_TASKS_EMPTY',
         speakText: 'No tasks currently running.',
         displayText: 'No tasks marked In Progress right now. Workspace is clean.',
-        actionTaken: true,
-        navigate: '/todos'
+        actionTaken: true
       });
       return;
     }
@@ -1530,11 +1891,10 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     const lines = runningTasks.map((t: any) => `• **${t.task_code}**: ${t.title} in *${t.project_name || 'SHIORI'}*`).join('\n');
     res.json({
       success: true,
-      intent: 'TASK_RUNNING',
-      speakText: `You have ${count} task${count === 1 ? '' : 's'} in progress.`,
+      intent: 'ACTIVE_TASKS',
+      speakText: `You have ${count} active task${count === 1 ? '' : 's'}: ${runningTasks.map((t: any) => t.title).join(', ')}.`,
       displayText: `**${count} Active Task${count === 1 ? '' : 's'} In Progress:**\n\n${lines}`,
-      actionTaken: true,
-      navigate: '/todos'
+      actionTaken: true
     });
     return;
   }
@@ -1586,7 +1946,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     );
 
     const count = totalCount?.count || 0;
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_SUMMARY | RESULT: SUCCESS (${count} tasks)`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: TASK_SUMMARY | RESULT: SUCCESS (${count} tasks)`);
 
     if (count === 0) {
       res.json({
@@ -1594,8 +1954,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'TASK_LIST_EMPTY',
         speakText: 'You have no pending tasks. Workspace is clean.',
         displayText: 'You have **0** pending tasks. Workspace is completely clean! ✨',
-        actionTaken: true,
-        navigate: '/todos'
+        actionTaken: true
       });
       return;
     }
@@ -1613,17 +1972,17 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       intent: 'TASK_SUMMARY',
       speakText: speak,
       displayText: `You have **${count}** pending task${count === 1 ? '' : 's'}:\n\n${lines}\n\n**Next recommended:** ${top?.task_code} ("${top?.title}")`,
-      actionTaken: true,
-      navigate: '/todos'
+      actionTaken: true
     });
     return;
   }
 
   // =========================================================================
-  // 16. PROJECT QUERIES (LIST, STATUS, MEMBERS, "WHAT HAVE I BEEN BUILDING?")
+  // 18. PROJECT QUERIES (LIST, MEMBERS)
   // =========================================================================
   const isProjectQuery =
     lower.includes('what projects do i have') ||
+    lower.includes('what projects do we have') ||
     lower.includes('show my projects') ||
     lower.includes('show projects') ||
     lower.includes('list my projects') ||
@@ -1631,14 +1990,9 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     lower.includes('how many projects do i have') ||
     lower.includes('how many projects') ||
     lower.includes('what project am i working on') ||
-    lower.includes('what have i been building') ||
-    lower.includes("how's the project doing") ||
-    lower.includes('how is the project doing') ||
-    lower.includes('project status') ||
     lower.includes('who is working on this project') ||
     lower.includes('who are the project members') ||
     lower.includes('project members') ||
-    lower.includes('which tasks belong to this project') ||
     lower === 'projects';
 
   if (isProjectQuery) {
@@ -1646,14 +2000,14 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       `SELECT p.id, p.name, p.description, p.github_repo_name, p.status,
               (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND (t.is_deleted = 0 OR t.is_deleted IS NULL) AND t.status != 'DONE') as active_tasks
        FROM projects p 
-       WHERE p.created_by = ? 
+       WHERE p.created_by = ? OR p.id IN (SELECT project_id FROM project_members WHERE user_id = ?)
        ORDER BY p.updated_at DESC 
        LIMIT 5`,
-      [userId]
+      [userId, userId]
     );
 
     const count = (projects || []).length;
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: PROJECT_LIST | RESULT: SUCCESS (${count} projects)`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: PROJECT_LIST | RESULT: SUCCESS (${count} projects)`);
 
     if (count === 0) {
       res.json({
@@ -1661,8 +2015,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'PROJECT_LIST_EMPTY',
         speakText: 'You have no projects created yet.',
         displayText: 'No projects found in your SHIORI account. You can create one via "Create project <name>" or from the Repositories page.',
-        actionTaken: true,
-        navigate: '/repositories'
+        actionTaken: true
       });
       return;
     }
@@ -1681,6 +2034,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       res.json({
         success: true,
         intent: 'PROJECT_MEMBERS',
+        projectId: targetProj.id,
         speakText: `Project ${targetProj.name} has ${(members || []).length || 1} contributor.`,
         displayText: `**Team on "${targetProj.name}":**\n\n${memList}`,
         actionTaken: true
@@ -1696,14 +2050,13 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       intent: 'PROJECT_LIST',
       speakText: `You have ${count} active project${count === 1 ? '' : 's'}: ${pNames}.`,
       displayText: `You have **${count}** project${count === 1 ? '' : 's'}:\n\n${lines}`,
-      actionTaken: true,
-      navigate: '/repositories'
+      actionTaken: true
     });
     return;
   }
 
   // =========================================================================
-  // 17. FOCUS SESSION QUERIES ("HOW MUCH FOCUS TIME IS LEFT?", "IS FOCUS RUNNING?")
+  // 19. FOCUS SESSION QUERIES ("HOW MUCH FOCUS TIME IS LEFT?", "IS FOCUS RUNNING?")
   // =========================================================================
   const isFocusQuery =
     lower.includes('how much focus time') ||
@@ -1717,7 +2070,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     lower.includes('timer status');
 
   if (isFocusQuery) {
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: FOCUS_STATUS | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: FOCUS_STATUS | RESULT: SUCCESS`);
     res.json({
       success: true,
       intent: 'FOCUS_STATUS',
@@ -1730,7 +2083,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 18. ACTIVITY & ACCOMPLISHMENTS QUERIES
+  // 20. ACTIVITY & ACCOMPLISHMENTS QUERIES
   // =========================================================================
   const isActivityQuery =
     lower.includes('what did i do today') ||
@@ -1759,7 +2112,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
        LIMIT 3`
     );
 
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: ACTIVITY_SUMMARY | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: ACTIVITY_SUMMARY | RESULT: SUCCESS`);
 
     if ((activities && activities.length > 0) || (completedTasks && completedTasks.length > 0)) {
       const lines = [];
@@ -1775,8 +2128,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'ACTIVITY_SUMMARY',
         speakText: "Here is your recent development activity.",
         displayText: `**Recent Development Activity:**\n\n${lines.join('\n')}`,
-        actionTaken: true,
-        navigate: '/activity'
+        actionTaken: true
       });
       return;
     }
@@ -1786,14 +2138,13 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       intent: 'ACTIVITY_SUMMARY_EMPTY',
       speakText: 'No recent activity recorded yet today.',
       displayText: 'No activity records found yet for today. Make a commit or complete a task to build your log.',
-      actionTaken: true,
-      navigate: '/activity'
+      actionTaken: true
     });
     return;
   }
 
   // =========================================================================
-  // 19. JOURNAL QUERIES
+  // 21. JOURNAL QUERIES
   // =========================================================================
   const isJournalQuery =
     lower.includes('what did i write today') ||
@@ -1817,7 +2168,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
 
     const content = todayJournal?.content || todayNote?.content;
 
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: JOURNAL_QUERY | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: JOURNAL_VIEW | RESULT: SUCCESS`);
 
     if (content && content.trim().length > 0) {
       res.json({
@@ -1825,8 +2176,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'JOURNAL_VIEW',
         speakText: "Here is your journal entry for today.",
         displayText: `**Today's Journal:**\n\n${content}`,
-        actionTaken: true,
-        navigate: '/journal'
+        actionTaken: true
       });
       return;
     }
@@ -1836,14 +2186,13 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       intent: 'JOURNAL_EMPTY',
       speakText: 'No journal entry written for today yet.',
       displayText: 'No journal entry recorded for today. You can say "Write in journal <your note>" to add one.',
-      actionTaken: true,
-      navigate: '/journal'
+      actionTaken: true
     });
     return;
   }
 
   // =========================================================================
-  // 20. CONNECTIONS & TEAM QUERIES
+  // 22. CONNECTIONS & TEAM QUERIES
   // =========================================================================
   const isConnectionQuery =
     lower.includes('who am i connected with') ||
@@ -1875,7 +2224,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     const connCount = (conns || []).length;
     const reqCount = (pendingReqs || []).length;
 
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: CONNECTION_LIST | RESULT: SUCCESS (${connCount} connections, ${reqCount} requests)`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: CONNECTION_LIST | RESULT: SUCCESS (${connCount} connections, ${reqCount} requests)`);
 
     if (lower.includes('pending') || lower.includes('request')) {
       if (reqCount === 0) {
@@ -1884,8 +2233,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
           intent: 'CONNECTION_REQUESTS_EMPTY',
           speakText: 'No pending connection requests.',
           displayText: 'You have **0** pending connection requests.',
-          actionTaken: true,
-          navigate: '/connections'
+          actionTaken: true
         });
         return;
       }
@@ -1896,8 +2244,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'CONNECTION_REQUESTS',
         speakText: `You have ${reqCount} pending connection request${reqCount === 1 ? '' : 's'}.`,
         displayText: `**${reqCount} Pending Connection Request${reqCount === 1 ? '' : 's'}:**\n\n${reqLines}`,
-        actionTaken: true,
-        navigate: '/connections'
+        actionTaken: true
       });
       return;
     }
@@ -1908,8 +2255,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
         intent: 'CONNECTION_LIST_EMPTY',
         speakText: 'You have no verified connections yet.',
         displayText: 'You currently have no connected collaborators. Share your SHIORI ID from the Connections page to connect.',
-        actionTaken: true,
-        navigate: '/connections'
+        actionTaken: true
       });
       return;
     }
@@ -1920,14 +2266,13 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
       intent: 'CONNECTION_LIST',
       speakText: `You have ${connCount} connected collaborator${connCount === 1 ? '' : 's'}.`,
       displayText: `**Your Verified Connections (${connCount}):**\n\n${lines}`,
-      actionTaken: true,
-      navigate: '/connections'
+      actionTaken: true
     });
     return;
   }
 
   // =========================================================================
-  // 21. SETTINGS & PREFERENCES QUERIES
+  // 23. SETTINGS & PREFERENCES QUERIES
   // =========================================================================
   const isSettingsQuery =
     lower.includes('what theme am i using') ||
@@ -1946,36 +2291,35 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     const currentMode = settings?.ui_mode || 'eink_matte';
     const currentAccent = settings?.accent_color || '#2E5A36';
 
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SETTINGS_GET | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: SETTINGS_GET | RESULT: SUCCESS`);
 
     res.json({
       success: true,
       intent: 'SETTINGS_GET',
       speakText: `You are using ${currentTheme} theme in ${currentMode.replace('_', ' ')} mode with accent ${currentAccent}.`,
       displayText: `**Current Appearance Configuration:**\n\n• **Theme:** ${currentTheme.toUpperCase()}\n• **UI Mode:** \`${currentMode}\`\n• **Accent Color:** \`${currentAccent}\`\n• **Font:** ${settings?.font_family || 'Geist'}`,
-      actionTaken: true,
-      navigate: '/settings'
+      actionTaken: true
     });
     return;
   }
 
   // =========================================================================
-  // 22. SHIORI ARCHITECTURE & DEVELOPMENT QUESTIONS (FACTUAL TECHNICAL ANSWERS)
+  // 24. SHIORI ARCHITECTURE & DEVELOPMENT QUESTIONS (FACTUAL TECHNICAL ANSWERS)
   // =========================================================================
-  if (lower.includes('what framework is shiori using') || lower.includes('what is shiori built with') || lower.includes('what tech stack')) {
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SHIORI_TECH_STACK | RESULT: SUCCESS`);
+  if (lower.includes('what framework is shiori using') || lower.includes('what is shiori built with') || lower.includes('what tech stack') || lower.includes('tech stack')) {
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: SHIORI_TECH_STACK | RESULT: SUCCESS`);
     res.json({
       success: true,
       intent: 'SHIORI_TECH_STACK',
       speakText: 'SHIORI is built with React, Vite, and Tailwind on frontend, with Node, Express, TypeScript, and SQLite or Supabase PostgreSQL on backend.',
-      displayText: '**SHIORI Architecture:**\n\n• **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons\n• **Backend:** Node.js, Express, TypeScript, Socket.IO\n• **Database:** SQLite (local persistence) & Supabase PostgreSQL (cloud IPv4 pooler)\n• **Intelligence Layer:** Spark Voice & Command Engine with dual-brain routing',
+      displayText: '**SHIORI Architecture:**\n\n• **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons\n• **Backend:** Node.js, Express, TypeScript, Socket.IO\n• **Database:** SQLite (local persistence) & Supabase PostgreSQL (cloud IPv4 pooler)\n• **Intelligence Layer:** Spark Project Intelligence & Command Layer',
       actionTaken: true
     });
     return;
   }
 
   if (lower.includes('what is our backend') || lower.includes("what's our backend") || lower.includes('what backend')) {
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SHIORI_BACKEND | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: SHIORI_BACKEND | RESULT: SUCCESS`);
     res.json({
       success: true,
       intent: 'SHIORI_BACKEND',
@@ -1987,7 +2331,7 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   if (lower.includes('what database are we using') || lower.includes("what's our database") || lower.includes('what database')) {
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SHIORI_DATABASE | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: SHIORI_DATABASE | RESULT: SUCCESS`);
     res.json({
       success: true,
       intent: 'SHIORI_DATABASE',
@@ -1999,20 +2343,19 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   if (lower.includes('how does our git verification work') || lower.includes('how does git verification work') || lower.includes('git verification')) {
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SHIORI_GIT_VERIFICATION | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_PROJECT_INTELLIGENCE | INTENT: SHIORI_GIT_VERIFICATION | RESULT: SUCCESS`);
     res.json({
       success: true,
       intent: 'SHIORI_GIT_VERIFICATION',
       speakText: 'Git verification cross-references commit SHAs, author identity, and CI test conclusions with connected GitHub webhooks.',
       displayText: '**Git Verification Engine:**\n\n1. Webhooks capture push events and workflow runs from GitHub.\n2. Commit hashes and signatures are matched with assigned task codes (`TASK-XX`).\n3. Dev evidence metrics (files changed, insertions, test passes) generate a cryptographic audit trail.',
-      actionTaken: true,
-      navigate: '/github'
+      actionTaken: true
     });
     return;
   }
 
   // =========================================================================
-  // 23. SHIORI GENERAL QUERY SAFEGUARD (NO WIT ENGINE FOR SHIORI CONTEXT)
+  // 25. SHIORI GENERAL QUERY SAFEGUARD (NO WIT ENGINE FOR SHIORI CONTEXT)
   // =========================================================================
   const isShioriContext =
     lower.includes('shiori') ||
@@ -2026,21 +2369,21 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
     lower.includes('branch');
 
   if (isShioriContext) {
-    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_FALLBACK | INTENT: SHIORI_GENERIC_ASSIST | RESULT: SUCCESS`);
+    console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: SHIORI_FALLBACK | INTENT: SHIORI_GENERIC_ASSIST | RESULT: SUCCESS`);
     res.json({
       success: true,
       intent: 'SHIORI_ASSIST',
       speakText: "I'm checking your SHIORI data. What would you like to see?",
-      displayText: 'I understand this is about SHIORI. You can ask for **tasks**, **repositories**, **recent commits**, **projects**, or **settings**.',
+      displayText: 'I understand this is about your project work. You can ask **"What are we working on?"**, **"What repositories do we have?"**, **"What tasks are overdue?"**, or **"What have we completed?"**.',
       actionTaken: false
     });
     return;
   }
 
   // =========================================================================
-  // 24. BRAIN 2: WIT ENGINE — TRUE FALLBACK ONLY FOR OFF-TOPIC / SILLY QUERIES
+  // 26. BRAIN 2: WIT ENGINE — TRUE FALLBACK ONLY FOR OFF-TOPIC / SILLY QUERIES
   // =========================================================================
-  console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: OFF_TOPIC | INTENT: WIT_ENGINE | HANDLER: WIT_ENGINE`);
+  console.log(`[SPARK ROUTING] USER: "${rawText}" | CLASSIFICATION: OFF_TOPIC | INTENT: WIT_ENGINE | HANDLER: WIT_ENGINE`);
   const safeContext = await getSafeWorkspaceContext(userId);
   const wit = getSparkWitResponse(rawText, safeContext);
 
