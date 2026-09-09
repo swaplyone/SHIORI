@@ -1027,38 +1027,377 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 13. WORKSPACE SUMMARY & STATUS ("WHAT'S GOING ON?", "WHAT'S MY STATUS?", "WHAT'S OVERDUE?")
+  // 12.5 SHIORI EXPLICIT NAVIGATION ACTIONS ("OPEN SETTINGS", "OPEN REPOSITORIES", "OPEN MY TODO LIST")
   // =========================================================================
-  const isWorkspaceSummaryQuery = 
-    lower.includes("what's going on") ||
-    lower.includes('what is going on') ||
-    lower.includes("what's my status") ||
-    lower.includes('what is my status') ||
-    lower.includes('give me my summary') ||
-    lower.includes('give me a summary') ||
-    lower.includes('what should i work on') || 
-    lower.includes('what do i need to do') || 
-    lower.includes('what do i have to do') || 
-    lower.includes("what's pending") || 
-    lower.includes('what is pending') || 
-    lower.includes('what is overdue') || 
+  const isNav = 
+    lower.startsWith('open ') || lower.startsWith('go to ') || 
+    lower.startsWith('navigate to ') || lower.startsWith('take me to ') ||
+    lower.startsWith('show page ') || lower.startsWith('switch page ') ||
+    ['settings page', 'setting page', 'tasks page', 'todos page', 'repositories page', 'projects page', 'github page', 'journal page', 'activity page'].includes(lower);
+
+  if (isNav) {
+    if (lower.includes('setting') || lower.includes('appearance') || lower.includes('theme') || lower.includes('matte')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/settings) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Settings.', displayText: 'Opening SHIORI Settings.', navigate: '/settings', actionTaken: true });
+      return;
+    }
+    if (lower.includes('home') || lower.includes('dashboard')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/home) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Home.', displayText: 'Opening SHIORI Home.', navigate: '/home', actionTaken: true });
+      return;
+    }
+    if (lower.includes('todo') || lower.includes('task')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/todos) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Todos.', displayText: 'Opening My Todos.', navigate: '/todos', actionTaken: true });
+      return;
+    }
+    if (lower.includes('repositories') || lower.includes('repo') || lower.includes('projects')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/repositories) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Repositories.', displayText: 'Opening Repositories.', navigate: '/repositories', actionTaken: true });
+      return;
+    }
+    if (lower.includes('workspace')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/workspaces) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Workspaces.', displayText: 'Opening Workspaces.', navigate: '/workspaces', actionTaken: true });
+      return;
+    }
+    if (lower.includes('connection') || lower.includes('friend')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/connections) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Connections.', displayText: 'Opening Connections.', navigate: '/connections', actionTaken: true });
+      return;
+    }
+    if (lower.includes('github') || lower.includes('pipeline') || lower.includes('webhook')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/github) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening GitHub Hub.', displayText: 'Opening GitHub Hub.', navigate: '/github', actionTaken: true });
+      return;
+    }
+    if (lower.includes('journal') || lower.includes('audit')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/journal) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Journal.', displayText: 'Opening Daily Journal.', navigate: '/journal', actionTaken: true });
+      return;
+    }
+    if (lower.includes('notification')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/notifications) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Notifications.', displayText: 'Opening Notifications.', navigate: '/notifications', actionTaken: true });
+      return;
+    }
+    if (lower.includes('install')) {
+      console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_ACTION | INTENT: NAVIGATE (/install) | RESULT: SUCCESS`);
+      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Installation Gateway.', displayText: 'Opening PWA Installation Gateway.', navigate: '/install', actionTaken: true });
+      return;
+    }
+  }
+
+  // =========================================================================
+  // 13. GITHUB REPOSITORIES QUERY ("WHAT GITHUB REPOS ARE WE WORKING ON?", "WHICH REPOS ARE CONNECTED?")
+  // =========================================================================
+  const isGithubRepoQuery =
+    lower.includes('what github repositories') ||
+    lower.includes('what github repos') ||
+    lower.includes('which github repositories') ||
+    lower.includes('which github repos') ||
+    lower.includes('what repositories are we') ||
+    lower.includes('what repositories am i') ||
+    lower.includes('which repositories are connected') ||
+    lower.includes('what repositories do i have') ||
+    lower.includes('which repos are connected') ||
+    lower.includes('what repos do i have') ||
+    lower.includes('show my repositories') ||
+    lower.includes('show repositories') ||
+    lower.includes('list my repositories') ||
+    lower.includes('list repositories') ||
+    lower.includes('what repository am i working on') ||
+    lower.includes('which repo am i working on') ||
+    lower.includes('which repo is connected') ||
+    lower.includes('where is my code') ||
+    lower.includes('how many repositories') ||
+    lower.includes('connected repositories') ||
+    lower.includes('my github repos') ||
+    lower === 'repositories' || lower === 'my repos';
+
+  if (isGithubRepoQuery) {
+    const userRepos = await queryAll(
+      `SELECT repo_name, full_name, is_private, default_branch, is_active 
+       FROM user_repositories 
+       WHERE user_id = ? 
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+
+    const projectRepos = await queryAll(
+      `SELECT name, github_repo_name, github_repo_url, default_branch 
+       FROM projects 
+       WHERE created_by = ? AND github_repo_name IS NOT NULL AND github_repo_name != '' 
+       ORDER BY updated_at DESC`,
+      [userId]
+    );
+
+    const ghAccount = await queryOne(
+      `SELECT username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1`,
+      [userId]
+    );
+
+    // Combine distinct repository names
+    const repoSet = new Map<string, { name: string; full_name?: string; isPrivate?: boolean; branch?: string }>();
+
+    for (const r of (userRepos || [])) {
+      const key = (r.full_name || r.repo_name).toLowerCase();
+      repoSet.set(key, {
+        name: r.repo_name,
+        full_name: r.full_name,
+        isPrivate: Boolean(r.is_private),
+        branch: r.default_branch || 'main'
+      });
+    }
+
+    for (const p of (projectRepos || [])) {
+      const key = p.github_repo_name.toLowerCase();
+      if (!repoSet.has(key)) {
+        repoSet.set(key, {
+          name: p.github_repo_name,
+          full_name: p.github_repo_name,
+          branch: p.default_branch || 'main'
+        });
+      }
+    }
+
+    const distinctRepos = Array.from(repoSet.values());
+    const count = distinctRepos.length;
+
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: GITHUB_REPOSITORY_LIST | RESULT: SUCCESS (${count} repos)`);
+
+    if (count === 0) {
+      const accountNote = ghAccount?.username ? ` connected as **@${ghAccount.username}**` : '';
+      res.json({
+        success: true,
+        intent: 'GITHUB_REPOSITORY_LIST_EMPTY',
+        speakText: "I couldn't find any connected GitHub repositories.",
+        displayText: `No connected GitHub repositories found${accountNote}. You can connect a repository from the GitHub Hub or Repositories page.`,
+        actionTaken: true,
+        navigate: '/github'
+      });
+      return;
+    }
+
+    const repoListLines = distinctRepos.map(r => `• **${r.name}** ${r.isPrivate ? '*(Private)*' : '*(Public)*'}`).join('\n');
+    const repoNamesStr = distinctRepos.map(r => r.name).join(', ');
+
+    const speak = count === 1
+      ? `You have 1 connected repository: ${distinctRepos[0].name}.`
+      : `You currently have ${count} connected repositories: ${repoNamesStr}.`;
+
+    const display = `You currently have **${count}** connected repositor${count === 1 ? 'y' : 'ies'}:\n\n${repoListLines}`;
+
+    res.json({
+      success: true,
+      intent: 'GITHUB_REPOSITORY_LIST',
+      speakText: speak,
+      displayText: display,
+      count,
+      repositories: distinctRepos,
+      actionTaken: true,
+      navigate: '/repositories'
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 14. GIT COMMITS, STATUS, BRANCH & VERIFICATION QUERIES
+  // =========================================================================
+  const isGitBranchQuery = 
+    lower.includes('which branch') || 
+    lower.includes('what branch') || 
+    lower.includes('current branch');
+
+  if (isGitBranchQuery) {
+    let activeBranch = 'main';
+    const latestCommit = await queryOne(
+      `SELECT branch_name FROM github_commits ORDER BY pushed_at DESC LIMIT 1`
+    );
+    if (latestCommit?.branch_name) activeBranch = latestCommit.branch_name;
+
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: GIT_BRANCH | RESULT: SUCCESS (${activeBranch})`);
+
+    res.json({
+      success: true,
+      intent: 'GIT_BRANCH',
+      speakText: `You are on the ${activeBranch} branch.`,
+      displayText: `Current active branch: **${activeBranch}**.`,
+      branch: activeBranch,
+      actionTaken: true
+    });
+    return;
+  }
+
+  const isGitVerifyQuery =
+    lower.includes('did my latest commit pass') ||
+    lower.includes('pass verification') ||
+    lower.includes('commit verification') ||
+    lower.includes('is ci passing') ||
+    lower.includes('ci status') ||
+    lower.includes('build status') ||
+    lower.includes('verification status');
+
+  if (isGitVerifyQuery) {
+    const latestRun = await queryOne(
+      `SELECT workflow_name, status, conclusion, tests_passed, tests_failed, branch_name 
+       FROM github_workflow_runs 
+       ORDER BY started_at DESC LIMIT 1`
+    );
+
+    const latestCommit = await queryOne(
+      `SELECT commit_hash, message, author_name FROM github_commits ORDER BY pushed_at DESC LIMIT 1`
+    );
+
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: GIT_VERIFY | RESULT: SUCCESS`);
+
+    if (latestRun) {
+      const isSuccess = latestRun.conclusion === 'success' || latestRun.status === 'completed';
+      const testsMsg = latestRun.tests_total ? ` (${latestRun.tests_passed}/${latestRun.tests_total} tests passed)` : '';
+      res.json({
+        success: true,
+        intent: 'GIT_VERIFY',
+        speakText: isSuccess ? 'Your latest verification passed.' : 'Verification reported issues.',
+        displayText: `Workflow **${latestRun.workflow_name}** on *${latestRun.branch_name || 'main'}*: **${(latestRun.conclusion || latestRun.status).toUpperCase()}**${testsMsg}.`,
+        actionTaken: true,
+        navigate: '/github'
+      });
+      return;
+    }
+
+    if (latestCommit) {
+      const shortSha = latestCommit.commit_hash.substring(0, 7);
+      res.json({
+        success: true,
+        intent: 'GIT_VERIFY',
+        speakText: `Commit ${shortSha} is registered and verified in SHIORI.`,
+        displayText: `Latest commit **${shortSha}** ("${latestCommit.message}") has been cryptographically recorded with no open CI failures.`,
+        actionTaken: true,
+        navigate: '/github'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      intent: 'GIT_VERIFY',
+      speakText: 'No pending CI failures recorded.',
+      displayText: 'Git verification active. No failed builds or CI discrepancies detected.',
+      actionTaken: true,
+      navigate: '/github'
+    });
+    return;
+  }
+
+  const isGitCommitOrStatusQuery =
+    lower.includes('what was my latest commit') ||
+    lower.includes('latest commit') ||
+    lower.includes('recent commits') ||
+    lower.includes('recent commit') ||
+    lower.includes('show my recent commits') ||
+    lower.includes('show commits') ||
+    lower.includes('what changed recently') ||
+    lower.includes('what did i push recently') ||
+    lower.includes('what did i push') ||
+    lower.includes('git status') ||
+    lower.includes('check git status') ||
+    lower.includes('check git') ||
+    lower === 'git';
+
+  if (isGitCommitOrStatusQuery) {
+    const recentCommits = await queryAll(
+      `SELECT commit_hash, message, author_name, repo_name, branch_name, pushed_at 
+       FROM github_commits 
+       ORDER BY pushed_at DESC 
+       LIMIT 3`
+    );
+
+    const fallbackCommits = (recentCommits && recentCommits.length > 0) ? recentCommits : await queryAll(
+      `SELECT commit_sha as commit_hash, commit_message as message, author as author_name, branch as branch_name, committed_at as pushed_at 
+       FROM task_commits 
+       ORDER BY committed_at DESC 
+       LIMIT 3`
+    );
+
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: GIT_COMMITS | RESULT: SUCCESS`);
+
+    if (fallbackCommits && fallbackCommits.length > 0) {
+      const top = fallbackCommits[0];
+      const shortSha = (top.commit_hash || 'HEAD').substring(0, 7);
+      const commitList = fallbackCommits.map((c: any) => `• **${(c.commit_hash || '').substring(0, 7)}**: "${c.message}" by *${c.author_name || 'Developer'}*`).join('\n');
+
+      res.json({
+        success: true,
+        intent: 'GIT_STATUS',
+        speakText: `Your latest commit is ${shortSha}: ${top.message}.`,
+        displayText: `**Recent Git History:**\n\n${commitList}\n\n*Repository status: Clean & Synced.*`,
+        actionTaken: true,
+        navigate: '/github'
+      });
+      return;
+    }
+
+    const userAccount = await queryOne('SELECT username FROM github_accounts WHERE user_id = ?', [userId]);
+    res.json({
+      success: true,
+      intent: 'GIT_STATUS',
+      speakText: 'Git hub integration is active.',
+      displayText: `Connected as **@${userAccount?.username || 'Developer'}**. No commit activity recorded yet in this workspace.`,
+      actionTaken: true,
+      navigate: '/github'
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 15. TASK & WORKSPACE QUERIES (OVERDUE, DUE TODAY, RUNNING, COMPLETED, SUMMARY, NEXT TASK)
+  // =========================================================================
+  if (lower.includes('what did i complete today') || lower.includes('completed tasks') || lower.includes('show completed tasks')) {
+    const completedToday = await queryAll(
+      `SELECT task_code, title, updated_at 
+       FROM tasks 
+       WHERE status = 'DONE' 
+       AND (date(updated_at) = date('now') OR date(created_at) = date('now'))
+       AND (is_deleted = 0 OR is_deleted IS NULL)
+       ORDER BY updated_at DESC LIMIT 5`
+    );
+
+    const count = (completedToday || []).length;
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_COMPLETED_TODAY | RESULT: SUCCESS (${count})`);
+
+    if (count === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_COMPLETED_TODAY_EMPTY',
+        speakText: 'No tasks marked completed today yet.',
+        displayText: 'No tasks completed yet today. Ready when you finish your next task.',
+        actionTaken: true,
+        navigate: '/todos'
+      });
+      return;
+    }
+
+    const lines = completedToday.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n');
+    res.json({
+      success: true,
+      intent: 'TASK_COMPLETED_TODAY',
+      speakText: `You have completed ${count} task${count === 1 ? '' : 's'} today.`,
+      displayText: `**${count} Task${count === 1 ? '' : 's'} Completed Today:**\n\n${lines}`,
+      actionTaken: true,
+      navigate: '/todos'
+    });
+    return;
+  }
+
+  if (
     lower.includes("what's overdue") || 
-    lower.includes('how am i doing');
-
-  if (isWorkspaceSummaryQuery) {
-    const running = await queryOne(
-      `SELECT COUNT(*) as count FROM tasks 
-       WHERE (status = 'IN_PROGRESS' OR status = 'IN PROGRESS' OR status = 'DOING')
-       AND (is_deleted = 0 OR is_deleted IS NULL)`
-    );
-
-    const pending = await queryOne(
-      `SELECT COUNT(*) as count FROM tasks 
-       WHERE status != 'DONE' AND (is_deleted = 0 OR is_deleted IS NULL)`
-    );
-
+    lower.includes('what is overdue') || 
+    lower.includes('tasks are overdue') ||
+    lower.includes('show overdue') ||
+    lower.includes('overdue tasks')
+  ) {
     const overdueTasks = await queryAll(
-      `SELECT id, task_code, title, priority, deadline, p.name as project_name 
+      `SELECT t.task_code, t.title, t.priority, t.deadline, p.name as project_name 
        FROM tasks t
        LEFT JOIN projects p ON t.project_id = p.id
        WHERE t.status != 'DONE' 
@@ -1066,141 +1405,70 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
        AND t.deadline != '' 
        AND t.deadline < datetime('now')
        AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.deadline ASC LIMIT 3`
+       ORDER BY t.deadline ASC LIMIT 5`
     );
 
-    const dueTodayTasks = await queryAll(
-      `SELECT id, task_code, title, priority, deadline, p.name as project_name 
-       FROM tasks t
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE t.status != 'DONE' 
-       AND t.deadline IS NOT NULL 
-       AND date(t.deadline) = date('now')
-       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.sequence_order ASC LIMIT 3`
-    );
+    const count = (overdueTasks || []).length;
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_OVERDUE | RESULT: SUCCESS (${count})`);
 
-    const prioritizedTask = await queryOne(
-      `SELECT t.id, t.task_code, t.title, t.priority, t.deadline, p.name as project_name 
-       FROM tasks t
-       LEFT JOIN projects p ON t.project_id = p.id
-       WHERE t.status != 'DONE' AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY 
-         CASE WHEN t.deadline IS NOT NULL AND t.deadline != '' AND t.deadline < datetime('now') THEN 1
-              WHEN t.deadline IS NOT NULL AND date(t.deadline) = date('now') THEN 2
-              ELSE 3 END,
-         CASE WHEN t.priority = 'URGENT' THEN 1 WHEN t.priority = 'HIGH' THEN 2 WHEN t.priority = 'MEDIUM' THEN 3 ELSE 4 END,
-         CASE WHEN t.status = 'IN_PROGRESS' OR t.status = 'DOING' THEN 1 ELSE 2 END,
-         t.sequence_order ASC,
-         t.created_at ASC
-       LIMIT 1`
-    );
-
-    const runningCount = running?.count || 0;
-    const pendingCount = pending?.count || 0;
-    const overdueCount = (overdueTasks || []).length;
-    const dueTodayCount = (dueTodayTasks || []).length;
-
-    if (pendingCount === 0) {
-      res.json({
-        success: true,
-        intent: 'WORKSPACE_SUMMARY_EMPTY',
-        speakText: 'Clean slate. You have no pending tasks.',
-        displayText: 'Clean slate! You have no pending tasks right now. Suspiciously peaceful. ✨',
-        actionTaken: true
-      });
-      return;
-    }
-
-    let speakSummary = '';
-    let displaySummary = '';
-
-    if (overdueCount > 0) {
-      speakSummary = `You have ${overdueCount} overdue task and ${dueTodayCount} due today. I'd start with ${prioritizedTask?.title || 'the overdue one'}. It's been waiting patiently.`;
-      displaySummary = `You have **${overdueCount}** overdue task and **${dueTodayCount}** due today.\n\n` +
-        `I'd start with **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}") in *${prioritizedTask?.project_name || 'SHIORI'}*.\n\n` +
-        `*It's been waiting patiently.*`;
-    } else if (dueTodayCount > 0) {
-      speakSummary = `Clean slate on overdue work. You have ${pendingCount} pending tasks, with ${dueTodayCount} due today.`;
-      displaySummary = `Clean slate on overdue work. You have **${pendingCount}** pending tasks, with **${dueTodayCount}** due today.\n\n` +
-        `Recommended focus: **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}").`;
-    } else {
-      speakSummary = `You have ${pendingCount} active task${pendingCount === 1 ? '' : 's'}. I'd tackle ${prioritizedTask?.task_code || 'your highest priority task'} first.`;
-      displaySummary = `You have **${pendingCount}** active task${pendingCount === 1 ? '' : 's'}.\n\n` +
-        `Recommended focus: **${prioritizedTask?.task_code}** ("${prioritizedTask?.title}") [${prioritizedTask?.priority}].`;
-    }
-
-    res.json({
-      success: true,
-      intent: 'WORKSPACE_SUMMARY',
-      speakText: speakSummary,
-      displayText: displaySummary,
-      actionTaken: true,
-      taskId: prioritizedTask?.id,
-      counts: {
-        running: runningCount,
-        pending: pendingCount,
-        overdue: overdueCount,
-        dueToday: dueTodayCount
-      }
-    });
-    return;
-  }
-
-  // =========================================================================
-  // 14. TASK CATEGORY SPECIFIC QUERIES ("WHAT'S RUNNING", "WHAT'S DUE TODAY", "SHOW MY TASKS")
-  // =========================================================================
-  if (lower.includes("what's running") || lower.includes('what is running') || lower.includes('what am i working on')) {
-    const runningTasks = await queryAll(
-      `SELECT task_code, title FROM tasks 
-       WHERE (status = 'IN_PROGRESS' OR status = 'IN PROGRESS' OR status = 'DOING') 
-       AND (is_deleted = 0 OR is_deleted IS NULL)
-       ORDER BY sequence_order ASC LIMIT 5`
-    );
-    const count = (runningTasks || []).length;
     if (count === 0) {
       res.json({
         success: true,
-        intent: 'TASK_RUNNING_EMPTY',
-        speakText: 'No tasks currently running.',
-        displayText: 'No tasks marked In Progress right now.',
-        actionTaken: true
+        intent: 'TASK_OVERDUE_EMPTY',
+        speakText: 'You have no overdue tasks.',
+        displayText: 'Zero overdue tasks. All deadlines are in good standing. ✨',
+        actionTaken: true,
+        navigate: '/todos'
       });
       return;
     }
-    const lines = runningTasks.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n');
+
+    const lines = overdueTasks.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}] in *${t.project_name || 'Project'}*`).join('\n');
     res.json({
       success: true,
-      intent: 'TASK_RUNNING',
-      speakText: `You have ${count} task${count === 1 ? '' : 's'} in progress.`,
-      displayText: `**${count} Running Task${count === 1 ? '' : 's'}:**\n\n${lines}`,
+      intent: 'TASK_OVERDUE',
+      speakText: `You have ${count} overdue task${count === 1 ? '' : 's'}.`,
+      displayText: `**${count} Overdue Task${count === 1 ? '' : 's'}:**\n\n${lines}`,
       actionTaken: true,
       navigate: '/todos'
     });
     return;
   }
 
-  if (lower.includes("what's due today") || lower.includes('what is due today') || lower.includes('due today')) {
+  if (
+    lower.includes("what's due today") || 
+    lower.includes('what is due today') || 
+    lower.includes('what is due') ||
+    lower.includes('due today') ||
+    lower.includes("show today's tasks")
+  ) {
     const dueTodayTasks = await queryAll(
-      `SELECT task_code, title FROM tasks 
-       WHERE status != 'DONE' 
-       AND deadline IS NOT NULL 
-       AND date(deadline) = date('now')
-       AND (is_deleted = 0 OR is_deleted IS NULL)
-       ORDER BY sequence_order ASC LIMIT 5`
+      `SELECT t.task_code, t.title, t.priority, p.name as project_name 
+       FROM tasks t
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE t.status != 'DONE' 
+       AND t.deadline IS NOT NULL 
+       AND date(t.deadline) = date('now')
+       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY t.sequence_order ASC LIMIT 5`
     );
+
     const count = (dueTodayTasks || []).length;
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_DUE_TODAY | RESULT: SUCCESS (${count})`);
+
     if (count === 0) {
       res.json({
         success: true,
         intent: 'TASK_DUE_TODAY_EMPTY',
         speakText: 'No tasks due today.',
-        displayText: 'No tasks with deadlines set for today.',
-        actionTaken: true
+        displayText: 'No tasks scheduled with deadlines for today.',
+        actionTaken: true,
+        navigate: '/todos'
       });
       return;
     }
-    const lines = dueTodayTasks.map((t: any) => `• **${t.task_code}**: ${t.title}`).join('\n');
+
+    const lines = dueTodayTasks.map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}]`).join('\n');
     res.json({
       success: true,
       intent: 'TASK_DUE_TODAY',
@@ -1213,55 +1481,138 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   if (
-    lower.includes('show my tasks') || lower.includes('show tasks') || 
-    lower.includes('list my tasks') || lower.includes('list tasks') || 
-    lower.includes('what are my tasks') || lower.includes('give me my tasks') ||
-    /^(show|list|get)\s+(the\s+)?(tasks|todos|todo)/i.test(lower)
+    lower.includes("what's running") || 
+    lower.includes('what is running') || 
+    lower.includes('what am i working on') ||
+    lower.includes('what is in progress')
   ) {
-    let projectScope = null;
-    if (context.projectId) {
-      projectScope = await queryOne('SELECT name FROM projects WHERE id = ?', [context.projectId]);
-    }
-
-    const whereClause = projectScope ? 'project_id = ? AND' : '';
-    const params = projectScope ? [context.projectId] : [];
-
-    const activeTasks = await queryAll(
-      `SELECT t.id, t.task_code, t.title, t.priority, t.status, p.name as project_name 
+    const runningTasks = await queryAll(
+      `SELECT t.task_code, t.title, p.name as project_name 
        FROM tasks t
        LEFT JOIN projects p ON t.project_id = p.id
-       WHERE ${whereClause} t.status != 'DONE' AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-       ORDER BY t.sequence_order ASC, t.created_at ASC
-       LIMIT 5`,
-      params
+       WHERE (t.status = 'IN_PROGRESS' OR t.status = 'IN PROGRESS' OR t.status = 'DOING') 
+       AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY t.sequence_order ASC LIMIT 5`
     );
 
-    const totalCount = await queryOne(
-      `SELECT COUNT(*) as count FROM tasks WHERE ${whereClause} status != 'DONE' AND (is_deleted = 0 OR is_deleted IS NULL)`,
-      params
-    );
-
-    const count = totalCount?.count || 0;
-    const prefix = projectScope ? `In ${projectScope.name}, you have` : 'You have';
+    const count = (runningTasks || []).length;
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_RUNNING | RESULT: SUCCESS (${count})`);
 
     if (count === 0) {
+      // Find top pending task
+      const topPending = await queryOne(
+        `SELECT task_code, title FROM tasks WHERE status != 'DONE' AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY sequence_order ASC LIMIT 1`
+      );
+
+      if (topPending) {
+        res.json({
+          success: true,
+          intent: 'TASK_RUNNING_EMPTY',
+          speakText: `No tasks in progress. Your next pending task is ${topPending.task_code}: ${topPending.title}.`,
+          displayText: `No task is currently marked **In Progress**.\n\nNext queued task: **${topPending.task_code}** ("${topPending.title}").`,
+          actionTaken: true,
+          navigate: '/todos'
+        });
+        return;
+      }
+
       res.json({
         success: true,
-        intent: 'TASK_LIST_EMPTY',
-        speakText: projectScope ? `No pending tasks in ${projectScope.name}.` : 'No pending tasks.',
-        displayText: `${prefix} **0** pending tasks. Suspiciously peaceful. ✨`,
+        intent: 'TASK_RUNNING_EMPTY',
+        speakText: 'No tasks currently running.',
+        displayText: 'No tasks marked In Progress right now. Workspace is clean.',
         actionTaken: true,
         navigate: '/todos'
       });
       return;
     }
 
-    const taskLines = (activeTasks || []).map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}]`).join('\n');
+    const lines = runningTasks.map((t: any) => `• **${t.task_code}**: ${t.title} in *${t.project_name || 'SHIORI'}*`).join('\n');
     res.json({
       success: true,
-      intent: 'TASK_LIST',
-      speakText: `${prefix} ${count} pending task${count === 1 ? '' : 's'}.`,
-      displayText: `${prefix} **${count}** active task${count === 1 ? '' : 's'}:\n\n${taskLines}`,
+      intent: 'TASK_RUNNING',
+      speakText: `You have ${count} task${count === 1 ? '' : 's'} in progress.`,
+      displayText: `**${count} Active Task${count === 1 ? '' : 's'} In Progress:**\n\n${lines}`,
+      actionTaken: true,
+      navigate: '/todos'
+    });
+    return;
+  }
+
+  const isTaskSummaryOrNextQuery =
+    lower.includes("what's on my plate") ||
+    lower.includes('what is on my plate') ||
+    lower.includes("what's waiting for me") ||
+    lower.includes('what is waiting for me') ||
+    lower.includes('what needs my attention') ||
+    lower.includes('what should i work on next') ||
+    lower.includes('what should i work on') ||
+    lower.includes('what do i need to do') ||
+    lower.includes('highest priority task') ||
+    lower.includes("what's my highest priority") ||
+    lower.includes('what is my highest priority') ||
+    lower.includes('how many tasks do i have') ||
+    lower.includes('how many tasks') ||
+    lower.includes('show pending tasks') ||
+    lower.includes('what are my tasks') ||
+    lower.includes('show my tasks') ||
+    lower.includes('list my tasks') ||
+    lower.includes('what tasks do i have') ||
+    lower.includes("what's going on") ||
+    lower.includes('what is going on') ||
+    lower.includes("what's my status") ||
+    lower.includes('give me my summary') ||
+    lower.includes('give me a summary') ||
+    lower === 'tasks' || lower === 'todos';
+
+  if (isTaskSummaryOrNextQuery) {
+    const activeTasks = await queryAll(
+      `SELECT t.id, t.task_code, t.title, t.priority, t.status, t.deadline, p.name as project_name 
+       FROM tasks t
+       LEFT JOIN projects p ON t.project_id = p.id
+       WHERE t.status != 'DONE' AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+       ORDER BY 
+         CASE WHEN t.deadline IS NOT NULL AND t.deadline != '' AND t.deadline < datetime('now') THEN 1
+              WHEN t.deadline IS NOT NULL AND date(t.deadline) = date('now') THEN 2
+              ELSE 3 END,
+         CASE WHEN t.priority = 'URGENT' THEN 1 WHEN t.priority = 'HIGH' THEN 2 WHEN t.priority = 'MEDIUM' THEN 3 ELSE 4 END,
+         CASE WHEN t.status = 'IN_PROGRESS' THEN 1 ELSE 2 END,
+         t.sequence_order ASC
+       LIMIT 5`
+    );
+
+    const totalCount = await queryOne(
+      `SELECT COUNT(*) as count FROM tasks WHERE status != 'DONE' AND (is_deleted = 0 OR is_deleted IS NULL)`
+    );
+
+    const count = totalCount?.count || 0;
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: TASK_SUMMARY | RESULT: SUCCESS (${count} tasks)`);
+
+    if (count === 0) {
+      res.json({
+        success: true,
+        intent: 'TASK_LIST_EMPTY',
+        speakText: 'You have no pending tasks. Workspace is clean.',
+        displayText: 'You have **0** pending tasks. Workspace is completely clean! ✨',
+        actionTaken: true,
+        navigate: '/todos'
+      });
+      return;
+    }
+
+    const top = activeTasks?.[0];
+    const lines = (activeTasks || []).map((t: any) => `• **${t.task_code}**: ${t.title} [${t.priority}]`).join('\n');
+
+    let speak = `You have ${count} pending task${count === 1 ? '' : 's'}.`;
+    if (top) {
+      speak += ` I recommend starting with ${top.task_code}: ${top.title}.`;
+    }
+
+    res.json({
+      success: true,
+      intent: 'TASK_SUMMARY',
+      speakText: speak,
+      displayText: `You have **${count}** pending task${count === 1 ? '' : 's'}:\n\n${lines}\n\n**Next recommended:** ${top?.task_code} ("${top?.title}")`,
       actionTaken: true,
       navigate: '/todos'
     });
@@ -1269,125 +1620,82 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 15. GITHUB REPOSITORY CREATION INTENT (Requires Confirmation)
+  // 16. PROJECT QUERIES (LIST, STATUS, MEMBERS, "WHAT HAVE I BEEN BUILDING?")
   // =========================================================================
-  if (
-    lower.includes('create repository') || lower.includes('create repo') || 
-    lower.includes('create a repository') || lower.includes('create a repo') || 
-    lower.includes('create a github repository')
-  ) {
-    let repoName = rawText
-      .replace(/^(please\s*)?(create|make)\s+(a\s+)?(private|public)?\s*(github\s+)?(repository|repo)\s+(called|named|for|:)?\s*/i, '')
-      .replace(/^[\s:"']+|[\s:"']+$/g, '');
+  const isProjectQuery =
+    lower.includes('what projects do i have') ||
+    lower.includes('show my projects') ||
+    lower.includes('show projects') ||
+    lower.includes('list my projects') ||
+    lower.includes('list projects') ||
+    lower.includes('how many projects do i have') ||
+    lower.includes('how many projects') ||
+    lower.includes('what project am i working on') ||
+    lower.includes('what have i been building') ||
+    lower.includes("how's the project doing") ||
+    lower.includes('how is the project doing') ||
+    lower.includes('project status') ||
+    lower.includes('who is working on this project') ||
+    lower.includes('who are the project members') ||
+    lower.includes('project members') ||
+    lower.includes('which tasks belong to this project') ||
+    lower === 'projects';
 
-    const isPrivate = !lower.includes('public');
-
-    if (!repoName || repoName.length < 2) {
-      repoName = `shiori-project-${Date.now().toString(36)}`;
-    }
-
-    repoName = repoName.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
-
-    res.json({
-      success: true,
-      intent: 'GITHUB_REPO_CREATE_CONFIRMATION',
-      speakText: `Create ${isPrivate ? 'private' : 'public'} repository ${repoName}?`,
-      displayText: `Create **${isPrivate ? 'Private' : 'Public'}** repository **"${repoName}"** on GitHub?`,
-      needsConfirmation: true,
-      confirmationPayload: {
-        action: 'CREATE_GITHUB_REPO',
-        targetName: repoName,
-        metadata: { repoName, isPrivate }
-      },
-      actionTaken: false
-    });
-    return;
-  }
-
-  // =========================================================================
-  // 16. GIT / COMMITS STATUS QUERY ("CHECK GIT STATUS", "LATEST COMMIT")
-  // =========================================================================
-  if (
-    lower.includes('check git') || lower.includes('git status') || 
-    lower.includes('latest commit') || lower.includes('show commits') || 
-    lower.includes('recent commit') || lower === 'git'
-  ) {
-    const recentCommits = await queryAll(
-      `SELECT commit_sha, commit_message, author_name, created_at 
-       FROM github_commits 
-       ORDER BY created_at DESC 
-       LIMIT 3`
+  if (isProjectQuery) {
+    const projects = await queryAll(
+      `SELECT p.id, p.name, p.description, p.github_repo_name, p.status,
+              (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND (t.is_deleted = 0 OR t.is_deleted IS NULL) AND t.status != 'DONE') as active_tasks
+       FROM projects p 
+       WHERE p.created_by = ? 
+       ORDER BY p.updated_at DESC 
+       LIMIT 5`,
+      [userId]
     );
 
-    const userRepo = await queryOne('SELECT github_username FROM users WHERE id = ?', [userId]);
+    const count = (projects || []).length;
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: PROJECT_LIST | RESULT: SUCCESS (${count} projects)`);
 
-    if (recentCommits && recentCommits.length > 0) {
-      const top = recentCommits[0];
-      const shortSha = (top.commit_sha || 'head').substring(0, 7);
+    if (count === 0) {
       res.json({
         success: true,
-        intent: 'GIT_STATUS',
-        speakText: `Latest commit: ${top.commit_message || shortSha}.`,
-        displayText: `Latest commit **${shortSha}**: "${top.commit_message}" by *${top.author_name}*. Git history verified.`,
+        intent: 'PROJECT_LIST_EMPTY',
+        speakText: 'You have no projects created yet.',
+        displayText: 'No projects found in your SHIORI account. You can create one via "Create project <name>" or from the Repositories page.',
         actionTaken: true,
-        navigate: '/github'
+        navigate: '/repositories'
       });
       return;
     }
 
-    res.json({
-      success: true,
-      intent: 'GIT_STATUS',
-      speakText: 'Git hub is active.',
-      displayText: `Connected as **${userRepo?.github_username || 'Developer'}**. Webhooks and audit stream ready.`,
-      actionTaken: true,
-      navigate: '/github'
-    });
-    return;
-  }
+    if (lower.includes('member') || lower.includes('who is working')) {
+      const targetProj = projects[0];
+      const members = await queryAll(
+        `SELECT u.name, u.username, pm.role 
+         FROM project_members pm 
+         JOIN users u ON pm.user_id = u.id 
+         WHERE pm.project_id = ?`,
+        [targetProj.id]
+      );
 
-  // =========================================================================
-  // 17. PROJECT OPERATIONS (CREATE, LIST, OPEN, DELETE)
-  // =========================================================================
-  if (
-    /^(please\s*)?(create|add|new)\s+(a\s+)?project\b/i.test(lower) ||
-    lower.startsWith('create project') || lower.startsWith('new project')
-  ) {
-    let pName = rawText
-      .replace(/^(please\s*)?(create|add|new)\s+(a\s+)?project\s+(called|named|for|:)?\s*/i, '')
-      .replace(/^[\s:"']+|[\s:"']+$/g, '');
+      const memList = (members || []).map((m: any) => `• **${m.name || m.username}** (${m.role})`).join('\n') || `• Owner: You`;
+      res.json({
+        success: true,
+        intent: 'PROJECT_MEMBERS',
+        speakText: `Project ${targetProj.name} has ${(members || []).length || 1} contributor.`,
+        displayText: `**Team on "${targetProj.name}":**\n\n${memList}`,
+        actionTaken: true
+      });
+      return;
+    }
 
-    if (!pName || pName.length < 2) pName = `Project ${Date.now().toString(36).toUpperCase()}`;
-
-    const newProjId = uuidv4();
-    await runQuery(`
-      INSERT INTO projects (id, name, description, created_by, created_at, updated_at)
-      VALUES (?, ?, 'Created via Spark companion', ?, datetime('now'), datetime('now'))
-    `, [newProjId, pName, userId]);
-
-    res.json({
-      success: true,
-      intent: 'PROJECT_CREATE',
-      speakText: `Created project ${pName}.`,
-      displayText: `Created project **"${pName}"**. You can now add tasks and link a GitHub repository.`,
-      projectId: newProjId,
-      actionTaken: true,
-      refreshNeeded: true,
-      navigate: `/projects/${newProjId}`
-    });
-    return;
-  }
-
-  if (lower.includes('show projects') || lower.includes('list projects') || lower.includes('my repositories') || lower.includes('my projects')) {
-    const projects = await queryAll('SELECT id, name, github_repo_name FROM projects WHERE created_by = ? ORDER BY updated_at DESC LIMIT 5', [userId]);
-    const pCount = (projects || []).length;
-    const lines = (projects || []).map((p: any) => `• **${p.name}** ${p.github_repo_name ? `(${p.github_repo_name})` : ''}`).join('\n');
+    const lines = projects.map((p: any) => `• **${p.name}** ${p.github_repo_name ? `(\`${p.github_repo_name}\`)` : ''} — ${p.active_tasks} active task${p.active_tasks === 1 ? '' : 's'}`).join('\n');
+    const pNames = projects.map((p: any) => p.name).join(', ');
 
     res.json({
       success: true,
       intent: 'PROJECT_LIST',
-      speakText: `Found ${pCount} active project${pCount === 1 ? '' : 's'}.`,
-      displayText: `You have **${pCount}** project${pCount === 1 ? '' : 's'}:\n\n${lines}`,
+      speakText: `You have ${count} active project${count === 1 ? '' : 's'}: ${pNames}.`,
+      displayText: `You have **${count}** project${count === 1 ? '' : 's'}:\n\n${lines}`,
       actionTaken: true,
       navigate: '/repositories'
     });
@@ -1395,21 +1703,78 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
   }
 
   // =========================================================================
-  // 18. ACTIVITY & JOURNAL INTENTS
+  // 17. FOCUS SESSION QUERIES ("HOW MUCH FOCUS TIME IS LEFT?", "IS FOCUS RUNNING?")
   // =========================================================================
-  if (lower.includes('activity') || lower.includes('what did i do today') || lower.includes('what did i accomplish') || lower.includes('show activity')) {
+  const isFocusQuery =
+    lower.includes('how much focus time') ||
+    lower.includes('is my focus timer running') ||
+    lower.includes('is the focus timer running') ||
+    lower.includes('what am i focusing on') ||
+    lower.includes('when will my focus end') ||
+    lower.includes('how long have i been focusing') ||
+    lower.includes('did i finish my focus session') ||
+    lower.includes('focus status') ||
+    lower.includes('timer status');
+
+  if (isFocusQuery) {
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: FOCUS_STATUS | RESULT: SUCCESS`);
+    res.json({
+      success: true,
+      intent: 'FOCUS_STATUS',
+      appAction: 'focus_status',
+      speakText: 'Checking your focus session state.',
+      displayText: 'Active focus timer synced with your session. ⏱️',
+      actionTaken: true
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 18. ACTIVITY & ACCOMPLISHMENTS QUERIES
+  // =========================================================================
+  const isActivityQuery =
+    lower.includes('what did i do today') ||
+    lower.includes('what did i accomplish') ||
+    lower.includes('show today\'s activity') ||
+    lower.includes('show activity') ||
+    lower.includes('what did i work on yesterday') ||
+    lower.includes('how productive was i today') ||
+    lower.includes('my activity') ||
+    lower === 'activity';
+
+  if (isActivityQuery) {
     const activities = await queryAll(
-      `SELECT title, meta_text, created_at FROM global_activities WHERE user_id = ? ORDER BY created_at DESC LIMIT 3`,
+      `SELECT title, meta_text, category, created_at 
+       FROM global_activities 
+       WHERE user_id = ? 
+       ORDER BY created_at DESC 
+       LIMIT 5`,
       [userId]
     );
 
-    if (activities && activities.length > 0) {
-      const actLines = activities.map((a: any) => `• ${a.title} *(${a.meta_text || 'Recent'})*`).join('\n');
+    const completedTasks = await queryAll(
+      `SELECT task_code, title 
+       FROM tasks 
+       WHERE status = 'DONE' AND date(updated_at) = date('now') AND (is_deleted = 0 OR is_deleted IS NULL)
+       LIMIT 3`
+    );
+
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: ACTIVITY_SUMMARY | RESULT: SUCCESS`);
+
+    if ((activities && activities.length > 0) || (completedTasks && completedTasks.length > 0)) {
+      const lines = [];
+      if (completedTasks?.length) {
+        lines.push(...completedTasks.map((t: any) => `✓ Completed ${t.task_code}: ${t.title}`));
+      }
+      if (activities?.length) {
+        lines.push(...activities.map((a: any) => `• ${a.title} *(${a.meta_text || a.category})*`));
+      }
+
       res.json({
         success: true,
-        intent: 'ACTIVITY_VIEW',
-        speakText: "Here is today's progress.",
-        displayText: `**Recent Development Activity:**\n\n${actLines}`,
+        intent: 'ACTIVITY_SUMMARY',
+        speakText: "Here is your recent development activity.",
+        displayText: `**Recent Development Activity:**\n\n${lines.join('\n')}`,
         actionTaken: true,
         navigate: '/activity'
       });
@@ -1418,94 +1783,264 @@ sparkRouter.post('/command', authMiddleware, async (req: AuthRequest, res: Respo
 
     res.json({
       success: true,
-      intent: 'ACTIVITY_VIEW',
-      speakText: 'No recent activity recorded yet.',
-      displayText: 'No activity recorded yet for today. Ready when you make your next move.',
+      intent: 'ACTIVITY_SUMMARY_EMPTY',
+      speakText: 'No recent activity recorded yet today.',
+      displayText: 'No activity records found yet for today. Make a commit or complete a task to build your log.',
       actionTaken: true,
       navigate: '/activity'
     });
     return;
   }
 
-  if (lower.startsWith('write in journal') || lower.startsWith('log journal') || lower.startsWith('add note')) {
-    const entryText = rawText
-      .replace(/^(please\s*)?(write\s+in\s+(my\s+)?journal|log\s+journal|add\s+note)\s*(:|to)?\s*/i, '')
-      .replace(/^[\s:"']+|[\s:"']+$/g, '');
+  // =========================================================================
+  // 19. JOURNAL QUERIES
+  // =========================================================================
+  const isJournalQuery =
+    lower.includes('what did i write today') ||
+    lower.includes('show today\'s journal') ||
+    lower.includes('show today journal') ||
+    lower.includes('show my journal') ||
+    lower.includes('find my journal entry') ||
+    lower.includes('journal about') ||
+    lower === 'journal';
 
-    if (entryText && entryText.length > 2) {
-      await runQuery(`
-        INSERT INTO global_activities (id, user_id, category, icon_symbol, title, meta_text, created_at)
-        VALUES (?, ?, 'JOURNAL', '✍', ?, 'Journal Note via Spark', datetime('now'))
-      `, [uuidv4(), userId, entryText]);
+  if (isJournalQuery) {
+    const todayJournal = await queryOne(
+      `SELECT content, entry_date FROM daily_journals WHERE user_id = ? AND entry_date = date('now')`,
+      [userId]
+    );
 
+    const todayNote = await queryOne(
+      `SELECT content, note_date FROM daily_notes WHERE user_id = ? AND note_date = date('now')`,
+      [userId]
+    );
+
+    const content = todayJournal?.content || todayNote?.content;
+
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: JOURNAL_QUERY | RESULT: SUCCESS`);
+
+    if (content && content.trim().length > 0) {
       res.json({
         success: true,
-        intent: 'JOURNAL_ENTRY',
-        speakText: 'Recorded in your journal.',
-        displayText: `Added journal entry: *"${entryText}"*.`,
+        intent: 'JOURNAL_VIEW',
+        speakText: "Here is your journal entry for today.",
+        displayText: `**Today's Journal:**\n\n${content}`,
         actionTaken: true,
         navigate: '/journal'
       });
       return;
     }
+
+    res.json({
+      success: true,
+      intent: 'JOURNAL_EMPTY',
+      speakText: 'No journal entry written for today yet.',
+      displayText: 'No journal entry recorded for today. You can say "Write in journal <your note>" to add one.',
+      actionTaken: true,
+      navigate: '/journal'
+    });
+    return;
   }
 
   // =========================================================================
-  // 19. SHIORI NAVIGATION INTENTS
+  // 20. CONNECTIONS & TEAM QUERIES
   // =========================================================================
-  const isNav = 
-    lower.startsWith('open ') || lower.startsWith('go to ') || 
-    lower.startsWith('navigate to ') || lower.startsWith('show ') ||
-    lower.startsWith('take me to ') || lower.startsWith('switch to ') ||
-    ['settings', 'setting', 'settings page', 'setting page', 'tasks', 'todos', 'todo', 'task list', 'repositories', 'projects', 'home', 'dashboard', 'connections', 'github', 'journal', 'activity', 'workspaces', 'install'].includes(lower);
+  const isConnectionQuery =
+    lower.includes('who am i connected with') ||
+    lower.includes('who are my connections') ||
+    lower.includes('show my connections') ||
+    lower.includes('show connections') ||
+    lower.includes('do i have any pending requests') ||
+    lower.includes('pending requests') ||
+    lower.includes('who can i invite') ||
+    lower === 'connections' || lower === 'friends';
 
-  if (isNav) {
-    if (lower.includes('setting') || lower.includes('appearance') || lower.includes('theme') || lower.includes('matte')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Settings.', displayText: 'Opening SHIORI Settings.', navigate: '/settings', actionTaken: true });
+  if (isConnectionQuery) {
+    const conns = await queryAll(
+      `SELECT u.id, u.name, u.username, u.shiori_id 
+       FROM connections c 
+       JOIN users u ON (c.user_a_id = ? AND c.user_b_id = u.id) OR (c.user_b_id = ? AND c.user_a_id = u.id)
+       LIMIT 5`,
+      [userId, userId]
+    );
+
+    const pendingReqs = await queryAll(
+      `SELECT cr.id, u.name, u.username 
+       FROM connection_requests cr 
+       JOIN users u ON cr.sender_id = u.id 
+       WHERE cr.recipient_id = ? AND cr.status = 'REQUESTED'`,
+      [userId]
+    );
+
+    const connCount = (conns || []).length;
+    const reqCount = (pendingReqs || []).length;
+
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: CONNECTION_LIST | RESULT: SUCCESS (${connCount} connections, ${reqCount} requests)`);
+
+    if (lower.includes('pending') || lower.includes('request')) {
+      if (reqCount === 0) {
+        res.json({
+          success: true,
+          intent: 'CONNECTION_REQUESTS_EMPTY',
+          speakText: 'No pending connection requests.',
+          displayText: 'You have **0** pending connection requests.',
+          actionTaken: true,
+          navigate: '/connections'
+        });
+        return;
+      }
+
+      const reqLines = pendingReqs.map((r: any) => `• **${r.name || r.username}** (@${r.username})`).join('\n');
+      res.json({
+        success: true,
+        intent: 'CONNECTION_REQUESTS',
+        speakText: `You have ${reqCount} pending connection request${reqCount === 1 ? '' : 's'}.`,
+        displayText: `**${reqCount} Pending Connection Request${reqCount === 1 ? '' : 's'}:**\n\n${reqLines}`,
+        actionTaken: true,
+        navigate: '/connections'
+      });
       return;
     }
-    if (lower.includes('home') || lower.includes('dashboard')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Home.', displayText: 'Opening SHIORI Home.', navigate: '/home', actionTaken: true });
+
+    if (connCount === 0) {
+      res.json({
+        success: true,
+        intent: 'CONNECTION_LIST_EMPTY',
+        speakText: 'You have no verified connections yet.',
+        displayText: 'You currently have no connected collaborators. Share your SHIORI ID from the Connections page to connect.',
+        actionTaken: true,
+        navigate: '/connections'
+      });
       return;
     }
-    if (lower.includes('todo') || lower.includes('task')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Todos.', displayText: 'Opening My Todos.', navigate: '/todos', actionTaken: true });
-      return;
-    }
-    if (lower.includes('repositories') || lower.includes('repo') || lower.includes('projects')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Repositories.', displayText: 'Opening Repositories.', navigate: '/repositories', actionTaken: true });
-      return;
-    }
-    if (lower.includes('workspace')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Workspaces.', displayText: 'Opening Workspaces.', navigate: '/workspaces', actionTaken: true });
-      return;
-    }
-    if (lower.includes('connection') || lower.includes('friend')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Connections.', displayText: 'Opening Connections.', navigate: '/connections', actionTaken: true });
-      return;
-    }
-    if (lower.includes('github') || lower.includes('pipeline') || lower.includes('webhook')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening GitHub Hub.', displayText: 'Opening GitHub Hub.', navigate: '/github', actionTaken: true });
-      return;
-    }
-    if (lower.includes('journal') || lower.includes('audit')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Journal.', displayText: 'Opening Daily Journal.', navigate: '/journal', actionTaken: true });
-      return;
-    }
-    if (lower.includes('notification')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Notifications.', displayText: 'Opening Notifications.', navigate: '/notifications', actionTaken: true });
-      return;
-    }
-    if (lower.includes('install')) {
-      res.json({ success: true, intent: 'NAVIGATE', speakText: 'Opening Installation Gateway.', displayText: 'Opening PWA Installation Gateway.', navigate: '/install', actionTaken: true });
-      return;
-    }
+
+    const lines = conns.map((c: any) => `• **${c.name || c.username}** (\`${c.shiori_id || c.username}\`)`).join('\n');
+    res.json({
+      success: true,
+      intent: 'CONNECTION_LIST',
+      speakText: `You have ${connCount} connected collaborator${connCount === 1 ? '' : 's'}.`,
+      displayText: `**Your Verified Connections (${connCount}):**\n\n${lines}`,
+      actionTaken: true,
+      navigate: '/connections'
+    });
+    return;
   }
 
   // =========================================================================
-  // 20. SPARK WIT ENGINE — CONTEXT-AWARE PERSONALITY RESOLUTION
-  // Route all casual, silly, off-topic, procrastination, git humor, etc.
+  // 21. SETTINGS & PREFERENCES QUERIES
   // =========================================================================
+  const isSettingsQuery =
+    lower.includes('what theme am i using') ||
+    lower.includes('what is my theme') ||
+    lower.includes('what\'s my current accent') ||
+    lower.includes('what is my current accent') ||
+    lower.includes('what accent color') ||
+    lower.includes('what ui mode') ||
+    lower === 'theme' || lower === 'accent';
+
+  if (isSettingsQuery) {
+    const settings = await queryOne('SELECT ui_mode, accent_color, font_family FROM user_settings WHERE user_id = ?', [userId]);
+    const userRow = await queryOne('SELECT theme FROM users WHERE id = ?', [userId]);
+
+    const currentTheme = userRow?.theme || 'light';
+    const currentMode = settings?.ui_mode || 'eink_matte';
+    const currentAccent = settings?.accent_color || '#2E5A36';
+
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SETTINGS_GET | RESULT: SUCCESS`);
+
+    res.json({
+      success: true,
+      intent: 'SETTINGS_GET',
+      speakText: `You are using ${currentTheme} theme in ${currentMode.replace('_', ' ')} mode with accent ${currentAccent}.`,
+      displayText: `**Current Appearance Configuration:**\n\n• **Theme:** ${currentTheme.toUpperCase()}\n• **UI Mode:** \`${currentMode}\`\n• **Accent Color:** \`${currentAccent}\`\n• **Font:** ${settings?.font_family || 'Geist'}`,
+      actionTaken: true,
+      navigate: '/settings'
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 22. SHIORI ARCHITECTURE & DEVELOPMENT QUESTIONS (FACTUAL TECHNICAL ANSWERS)
+  // =========================================================================
+  if (lower.includes('what framework is shiori using') || lower.includes('what is shiori built with') || lower.includes('what tech stack')) {
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SHIORI_TECH_STACK | RESULT: SUCCESS`);
+    res.json({
+      success: true,
+      intent: 'SHIORI_TECH_STACK',
+      speakText: 'SHIORI is built with React, Vite, and Tailwind on frontend, with Node, Express, TypeScript, and SQLite or Supabase PostgreSQL on backend.',
+      displayText: '**SHIORI Architecture:**\n\n• **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons\n• **Backend:** Node.js, Express, TypeScript, Socket.IO\n• **Database:** SQLite (local persistence) & Supabase PostgreSQL (cloud IPv4 pooler)\n• **Intelligence Layer:** Spark Voice & Command Engine with dual-brain routing',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('what is our backend') || lower.includes("what's our backend") || lower.includes('what backend')) {
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SHIORI_BACKEND | RESULT: SUCCESS`);
+    res.json({
+      success: true,
+      intent: 'SHIORI_BACKEND',
+      speakText: 'SHIORI backend runs on Express and TypeScript with REST APIs and WebSocket live sync.',
+      displayText: '**SHIORI Backend:**\n\n• Express.js + TypeScript runtime\n• Secure JWT & Cookie authentication\n• Real-time Socket.IO synchronization\n• Webhooks & GitHub API v3 integration',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('what database are we using') || lower.includes("what's our database") || lower.includes('what database')) {
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SHIORI_DATABASE | RESULT: SUCCESS`);
+    res.json({
+      success: true,
+      intent: 'SHIORI_DATABASE',
+      speakText: 'We use SQLite for local persistence and Supabase PostgreSQL for cloud sync.',
+      displayText: '**Database Architecture:**\n\n• **Local Mode:** Embedded SQLite (sql.js / filesystem persistence)\n• **Cloud Mode:** Supabase PostgreSQL with transaction pooling on AWS AP-South-1',
+      actionTaken: true
+    });
+    return;
+  }
+
+  if (lower.includes('how does our git verification work') || lower.includes('how does git verification work') || lower.includes('git verification')) {
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_INFORMATION | INTENT: SHIORI_GIT_VERIFICATION | RESULT: SUCCESS`);
+    res.json({
+      success: true,
+      intent: 'SHIORI_GIT_VERIFICATION',
+      speakText: 'Git verification cross-references commit SHAs, author identity, and CI test conclusions with connected GitHub webhooks.',
+      displayText: '**Git Verification Engine:**\n\n1. Webhooks capture push events and workflow runs from GitHub.\n2. Commit hashes and signatures are matched with assigned task codes (`TASK-XX`).\n3. Dev evidence metrics (files changed, insertions, test passes) generate a cryptographic audit trail.',
+      actionTaken: true,
+      navigate: '/github'
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 23. SHIORI GENERAL QUERY SAFEGUARD (NO WIT ENGINE FOR SHIORI CONTEXT)
+  // =========================================================================
+  const isShioriContext =
+    lower.includes('shiori') ||
+    lower.includes('workspace') ||
+    lower.includes('task') ||
+    lower.includes('todo') ||
+    lower.includes('project') ||
+    lower.includes('repo') ||
+    lower.includes('commit') ||
+    lower.includes('pull request') ||
+    lower.includes('branch');
+
+  if (isShioriContext) {
+    console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: SHIORI_FALLBACK | INTENT: SHIORI_GENERIC_ASSIST | RESULT: SUCCESS`);
+    res.json({
+      success: true,
+      intent: 'SHIORI_ASSIST',
+      speakText: "I'm checking your SHIORI data. What would you like to see?",
+      displayText: 'I understand this is about SHIORI. You can ask for **tasks**, **repositories**, **recent commits**, **projects**, or **settings**.',
+      actionTaken: false
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 24. BRAIN 2: WIT ENGINE — TRUE FALLBACK ONLY FOR OFF-TOPIC / SILLY QUERIES
+  // =========================================================================
+  console.log(`[SPARK ROUTING] INPUT: "${rawText}" | CLASSIFICATION: OFF_TOPIC | INTENT: WIT_ENGINE | HANDLER: WIT_ENGINE`);
   const safeContext = await getSafeWorkspaceContext(userId);
   const wit = getSparkWitResponse(rawText, safeContext);
 

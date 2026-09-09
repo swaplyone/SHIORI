@@ -734,7 +734,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Spark Fullscreen Voice Assistant"
-      className="fixed inset-0 z-[99999] flex flex-col justify-between w-screen h-[100dvh] bg-white/[0.03] backdrop-blur-[40px] backdrop-saturate-[180%] bg-gradient-to-b from-white/[0.08] via-black/20 to-black/45 select-none font-sans text-white overflow-hidden pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] px-6 sm:px-12 transition-opacity duration-300"
+      className="fixed inset-0 z-[99999] flex flex-col justify-between w-full h-[100dvh] bg-white/[0.03] backdrop-blur-[40px] backdrop-saturate-[180%] bg-gradient-to-b from-white/[0.08] via-black/20 to-black/45 select-none font-sans text-white overflow-hidden pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] px-6 sm:px-12 transition-opacity duration-300"
     >
       {/* Frosted glass luminous diffuse gradient */}
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.07)_0%,rgba(0,0,0,0.35)_100%)] pointer-events-none z-0" />

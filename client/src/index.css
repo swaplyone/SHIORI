@@ -240,7 +240,8 @@ html[data-ui-mode="color_matte"] .accent-text {
 }
 
 html {
-  max-width: 100vw;
+  width: 100%;
+  max-width: 100%;
   overflow-x: hidden;
   overflow-y: scroll;
   scrollbar-gutter: stable;
@@ -249,7 +250,8 @@ html {
 }
 
 body {
-  max-width: 100vw;
+  width: 100%;
+  max-width: 100%;
   overflow-x: hidden;
   background-color: var(--eink-bg);
   color: var(--eink-text);
@@ -259,7 +261,8 @@ body {
 }
 
 #root {
-  max-width: 100vw;
+  width: 100%;
+  max-width: 100%;
   overflow-x: hidden;
   min-height: 100vh;
 }
@@ -290,8 +293,8 @@ body {
   content: "";
   position: fixed;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   background-image: var(--washi-noise-pattern);
   background-repeat: repeat;
   background-size: 220px 220px;
