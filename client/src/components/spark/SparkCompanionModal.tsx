@@ -76,13 +76,21 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     localStorage.getItem('shiori_spark_debug') === 'true'
   );
 
-  // Prevent background scrolling while Spark is open
+  // Prevent background scrolling while Spark is open without layout shifts
   useEffect(() => {
     if (isSparkOpen) {
       const originalOverflow = document.body.style.overflow;
+      const originalPaddingRight = document.body.style.paddingRight;
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      
+      if (scrollbarWidth > 0) {
+        document.body.style.paddingRight = `${scrollbarWidth}px`;
+      }
       document.body.style.overflow = 'hidden';
+      
       return () => {
         document.body.style.overflow = originalOverflow;
+        document.body.style.paddingRight = originalPaddingRight;
       };
     }
   }, [isSparkOpen]);
@@ -642,7 +650,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Spark Fullscreen Voice Assistant"
-      className="fixed inset-0 z-50 flex flex-col justify-between w-full h-[100dvh] bg-[#0c0d0e]/85 backdrop-blur-[40px] backdrop-saturate-[180%] select-none font-sans text-white overflow-hidden animate-fade-in pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] px-6 sm:px-12"
+      className="fixed inset-0 z-50 flex flex-col justify-between w-full h-[100dvh] bg-[#0c0d0e]/85 backdrop-blur-[40px] backdrop-saturate-[180%] select-none font-sans text-white overflow-hidden pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] px-6 sm:px-12 transition-opacity duration-300"
     >
       {/* Subtle radial vignette */}
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.35)_55%,rgba(0,0,0,0.85)_100%)] pointer-events-none z-0" />
@@ -707,7 +715,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center my-auto w-full max-w-2xl mx-auto text-center space-y-5 sm:space-y-6">
         {/* Spherical Lens containing the WebGL Strands Animation */}
         <div className="relative flex items-center justify-center">
-          <div className="w-[68vw] h-[68vw] max-w-[340px] max-h-[340px] sm:w-[380px] sm:h-[380px] md:w-[420px] md:h-[420px] rounded-full overflow-hidden relative shadow-[0_0_90px_rgba(0,0,0,0.9),inset_0_0_30px_rgba(255,255,255,0.08)] border border-white/15 backdrop-blur-md transition-transform duration-700 ease-out hover:scale-[1.02]">
+          <div className="w-[68vw] h-[68vw] max-w-[340px] max-h-[340px] sm:w-[380px] sm:h-[380px] md:w-[420px] md:h-[420px] rounded-full overflow-hidden relative shadow-[0_0_90px_rgba(0,0,0,0.9),inset_0_0_30px_rgba(255,255,255,0.08)] border border-white/15 backdrop-blur-md">
             <Strands {...strandsProps} className="w-full h-full" />
             {/* Glass refraction reflection overlay */}
             <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/10 via-transparent to-black/40 pointer-events-none" />

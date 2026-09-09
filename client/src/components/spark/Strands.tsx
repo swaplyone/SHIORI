@@ -346,10 +346,21 @@ export default function Strands({
 
     ctn.appendChild(gl.canvas);
 
+    let lastW = 0;
+    let lastH = 0;
+
     function resize() {
       if (!ctn || !renderer) return;
       const width = Math.max(ctn.offsetWidth || ctn.clientWidth || 300, 100);
       const height = Math.max(ctn.offsetHeight || ctn.clientHeight || 300, 100);
+
+      // Prevent micro sub-pixel layout oscillation
+      if (Math.abs(width - lastW) < 2 && Math.abs(height - lastH) < 2) {
+        return;
+      }
+      lastW = width;
+      lastH = height;
+
       renderer.setSize(width, height);
       program.uniforms.uResolution.value = [width, height];
       renderTarget.setSize(width, height);
@@ -361,7 +372,9 @@ export default function Strands({
 
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver(() => resize());
+      resizeObserver = new ResizeObserver(() => {
+        requestAnimationFrame(resize);
+      });
       resizeObserver.observe(ctn);
     }
 
