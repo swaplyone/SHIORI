@@ -22,9 +22,12 @@ import {
   Tag,
   Sliders,
   Eye,
-  Layers
+  Layers,
+  Mic,
+  Radio
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useSpark } from '../context/SparkContext';
 import { EInkTheme, UIMode, MatteLevel, FontOption, JAPANESE_MATTE_PRESETS, JapaneseMattePreset } from '../types';
 import { fetchJson } from '../utils/api';
 
@@ -115,8 +118,10 @@ export const SettingsPage: React.FC = () => {
     logout
   } = useAuth();
 
+  const { heySparkEnabled, setHeySparkEnabled, openSpark } = useSpark();
+
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'appearance' | 'privacy' | 'notifications' | 'account' | 'pwa'>('appearance');
+  const [activeTab, setActiveTab] = useState<'appearance' | 'spark' | 'privacy' | 'notifications' | 'account' | 'pwa'>('appearance');
 
   const [name, setName] = useState(user?.name || 'Lijith');
   const [bio, setBio] = useState(user?.bio || 'Systems engineer & SwaplyOne architect');
@@ -225,6 +230,7 @@ export const SettingsPage: React.FC = () => {
       <div className="flex flex-wrap gap-2 font-technical text-xs border-b border-eink-border pb-2">
         {[
           { key: 'appearance', label: 'APPEARANCE & PERSONALIZATION' },
+          { key: 'spark', label: '✦ SPARK COMPANION' },
           { key: 'privacy', label: 'PRIVACY' },
           { key: 'notifications', label: 'NOTIFICATIONS' },
           { key: 'account', label: 'ACCOUNT' },
@@ -796,6 +802,86 @@ export const SettingsPage: React.FC = () => {
               <span className="text-[11px] text-eink-textSecondary font-mono">
                 Mode: <strong>{uiMode === 'color_matte' ? 'Color Matte' : 'E-ink Matte'}</strong> · Matte: <strong className="uppercase">{matteLevel}</strong> · Font: <strong>{fontFamily}</strong>
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SPARK COMPANION TAB */}
+      {activeTab === 'spark' && (
+        <div className="space-y-4 font-technical text-xs">
+          <div className="p-6 bg-eink-surface border border-eink-border rounded-sm space-y-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-eink-text font-abask">✦ SPARK COMPANION</span>
+                <span className="text-[10px] bg-eink-bg px-2 py-0.5 border border-eink-border rounded font-mono font-bold">
+                  v2.0
+                </span>
+              </div>
+              <p className="text-eink-textSecondary mt-1">
+                Configure voice wake-word, daily task briefings, and natural language command behavior.
+              </p>
+            </div>
+
+            <div className="space-y-4 pt-2 divide-y divide-eink-border/50">
+              {/* Wake Word Toggle */}
+              <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-eink-text text-sm">"Hey Spark" Wake Word</span>
+                    {heySparkEnabled && (
+                      <span className="flex items-center gap-1 text-[10px] text-eink-text font-mono font-bold bg-eink-bg px-2 py-0.5 border border-eink-border rounded">
+                        <Radio className="w-3 h-3 animate-pulse text-eink-text" />
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-eink-textMuted block mt-0.5">
+                    Listen for "Hey Spark" while SHIORI is actively open. Runs 100% on-device without continuous audio uploads.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setHeySparkEnabled(!heySparkEnabled)}
+                  className={`px-4 py-2 rounded-sm font-mono text-xs font-bold transition-all cursor-pointer ${
+                    heySparkEnabled
+                      ? 'bg-eink-text text-eink-bg border-2 border-eink-text shadow-eink-sm'
+                      : 'bg-eink-bg border border-eink-border text-eink-textSecondary hover:text-eink-text'
+                  }`}
+                >
+                  {heySparkEnabled ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+                </button>
+              </div>
+
+              {/* Manual Voice & Shortcut */}
+              <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="font-bold text-eink-text block">Manual Voice & Keyboard Shortcut</span>
+                  <span className="text-[11px] text-eink-textMuted">
+                    Tap the floating Spark button anytime or press <kbd className="px-1.5 py-0.5 border border-eink-border rounded bg-eink-bg font-mono">Ctrl+J</kbd> / <kbd className="px-1.5 py-0.5 border border-eink-border rounded bg-eink-bg font-mono">Alt+S</kbd>.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={openSpark}
+                  className="px-3.5 py-1.5 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded-sm font-bold text-eink-text flex items-center gap-1.5 shrink-0 transition-colors"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>OPEN SPARK</span>
+                </button>
+              </div>
+
+              {/* Privacy Architecture Notice */}
+              <div className="pt-3">
+                <div className="p-3 bg-eink-bg border border-eink-border rounded-sm space-y-1">
+                  <span className="font-bold text-eink-text block text-[11px]">🔒 Privacy-First Architecture</span>
+                  <p className="text-[10px] text-eink-textSecondary leading-relaxed">
+                    Spark operates strictly within a whitelist of SHIORI tools (tasks, projects, focus timer, Git status). It will never execute arbitrary shell commands or expose secrets, environment variables, or other users' data.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

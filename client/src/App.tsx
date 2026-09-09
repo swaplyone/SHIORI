@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { MorphBarProvider } from './context/MorphBarContext';
+import { SparkProvider } from './context/SparkContext';
 
 import { MorphBar } from './components/morphbar/MorphBar';
 import { AppLayout } from './components/layout/AppLayout';
@@ -89,14 +90,15 @@ export const App: React.FC = () => {
       <SocketProvider>
         <NotificationProvider>
           <MorphBarProvider>
-            <BrowserRouter>
-              {/* Universal Floating Dynamic Island Navigation across entire website */}
-              <MorphBar />
+            <SparkProvider>
+              <BrowserRouter>
+                {/* Universal Floating Dynamic Island Navigation across entire website */}
+                <MorphBar />
 
-              <Routes>
-                {/* Landing & Welcome Routes */}
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/welcome" element={<LandingPage />} />
+                <Routes>
+                  {/* Landing & Welcome Routes */}
+                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/welcome" element={<LandingPage />} />
                 
                 {/* Dedicated Installation Gateway */}
                 <Route path="/install" element={<InstallPage />} />
@@ -182,6 +184,7 @@ export const App: React.FC = () => {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
+            </SparkProvider>
           </MorphBarProvider>
         </NotificationProvider>
       </SocketProvider>

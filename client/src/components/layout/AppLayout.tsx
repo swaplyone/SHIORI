@@ -7,21 +7,23 @@ import { NotificationPermissionPrompt } from '../common/NotificationPermissionPr
 import { SimulatorDrawer } from '../simulator/SimulatorDrawer';
 import { TaskDetailModal } from '../tasks/TaskDetailModal';
 import { SparkCompanionModal } from '../spark/SparkCompanionModal';
+import { SparkGreetingBanner } from '../spark/SparkGreetingBanner';
 import { useNotifications } from '../../context/NotificationContext';
-import { Mic } from 'lucide-react';
+import { useSpark } from '../../context/SparkContext';
+import { Mic, Radio } from 'lucide-react';
 
 export const AppLayout: React.FC = () => {
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
-  const [isSparkOpen, setIsSparkOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const { isRefreshing } = useNotifications();
+  const { openSpark, toggleSpark, heySparkEnabled, isWakeListening } = useSpark();
 
   // Listen for global custom events from Dynamic Island & shortcuts
   useEffect(() => {
     const handleOpenSimulator = () => setIsSimulatorOpen(true);
     const handleOpenPalette = () => setIsPaletteOpen(true);
-    const handleOpenSpark = () => setIsSparkOpen(true);
+    const handleOpenSpark = () => openSpark();
     const handleOpenTask = (e: any) => {
       if (e.detail?.taskId) {
         setSelectedTaskId(e.detail.taskId);
@@ -41,7 +43,7 @@ export const AppLayout: React.FC = () => {
         ((e.key === 's' || e.key === 'S') && e.altKey)
       ) {
         e.preventDefault();
-        setIsSparkOpen((prev) => !prev);
+        toggleSpark();
       }
     };
 
@@ -58,7 +60,7 @@ export const AppLayout: React.FC = () => {
       window.removeEventListener('shiori:open-task', handleOpenTask);
       window.removeEventListener('keydown', handleGlobalKeydown);
     };
-  }, []);
+  }, [openSpark, toggleSpark]);
 
   return (
     <div
@@ -72,6 +74,9 @@ export const AppLayout: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 w-full min-h-screen pt-20 sm:pt-24 pb-16 overflow-x-hidden">
         {/* Real-time E-Ink Development Notice Banner */}
         <EInkNoticeBanner onViewTask={(taskId) => setSelectedTaskId(taskId)} />
+
+        {/* Proactive Spark Greeting & Daily Task Briefing Banner */}
+        <SparkGreetingBanner />
 
         <main className="flex-1 p-3 sm:p-6 md:p-8 max-w-7xl w-full mx-auto font-sans animate-fade-in">
           <Outlet context={{ openTaskModal: (id: string) => setSelectedTaskId(id) }} />
@@ -114,7 +119,6 @@ export const AppLayout: React.FC = () => {
         isOpen={isSimulatorOpen}
         onClose={() => setIsSimulatorOpen(false)}
         onRefreshData={() => {
-          // Triggers window custom event for pages to refresh
           window.dispatchEvent(new Event('shiori-refresh'));
         }}
       />
@@ -130,20 +134,23 @@ export const AppLayout: React.FC = () => {
       )}
 
       {/* Global Spark Companion Modal */}
-      <SparkCompanionModal
-        isOpen={isSparkOpen}
-        onClose={() => setIsSparkOpen(false)}
-      />
+      <SparkCompanionModal />
 
       {/* Floating Spark Quick-Talk Launcher (Always accessible, mobile safe-area aware) */}
       <button
-        onClick={() => setIsSparkOpen(true)}
-        className="fixed bottom-5 right-5 z-40 px-3 py-2 bg-eink-surface hover:bg-eink-surfaceHover text-eink-text border border-eink-border shadow-eink-sm hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 rounded-full font-technical text-xs font-bold"
-        title="Open Spark Companion (Ctrl+J / Alt+S)"
+        onClick={openSpark}
+        className={`fixed bottom-5 right-5 z-40 px-3 py-2 bg-eink-surface hover:bg-eink-surfaceHover text-eink-text border border-eink-border shadow-eink-sm hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 rounded-full font-technical text-xs font-bold ${
+          heySparkEnabled ? 'ring-1 ring-eink-text' : ''
+        }`}
+        title={heySparkEnabled ? 'Spark is listening for "Hey Spark" (Ctrl+J)' : 'Open Spark Companion (Ctrl+J / Alt+S)'}
       >
         <span className="text-eink-text font-bold">✦</span>
         <span className="tracking-wider">SPARK</span>
-        <Mic className="w-3.5 h-3.5 text-eink-textSecondary ml-0.5" />
+        {heySparkEnabled ? (
+          <Radio className="w-3.5 h-3.5 text-eink-text animate-pulse ml-0.5" />
+        ) : (
+          <Mic className="w-3.5 h-3.5 text-eink-textSecondary ml-0.5" />
+        )}
       </button>
 
       {/* Install PWA Prompt */}
