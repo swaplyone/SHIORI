@@ -516,12 +516,12 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
 
         recognition.onend = () => {
-          setIsWakeListening(false);
           wakeRecognitionRef.current = null;
 
           // Safe restart throttling to prevent runaway loops, paused if document hidden
           if (isListeningLoopRef.current && heySparkEnabled && voiceAssistantEnabled && !isSparkOpen) {
             if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+              setIsWakeListening(false);
               setWakeListeningPaused(true);
               return;
             }
@@ -532,6 +532,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 startInstance();
               }
             }, delay);
+          } else {
+            setIsWakeListening(false);
           }
         };
 

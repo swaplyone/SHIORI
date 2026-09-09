@@ -79,7 +79,7 @@ export const AppLayout: React.FC = () => {
         {/* Proactive Spark Greeting & Daily Task Briefing Banner */}
         <SparkGreetingBanner />
 
-        <main className="flex-1 p-3 sm:p-6 md:p-8 max-w-7xl w-full mx-auto font-sans animate-fade-in">
+        <main className="flex-1 p-3 sm:p-6 md:p-8 max-w-7xl w-full mx-auto font-sans">
           <Outlet context={{ openTaskModal: (id: string) => setSelectedTaskId(id) }} />
         </main>
 
