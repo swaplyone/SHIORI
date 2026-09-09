@@ -9,7 +9,8 @@ import {
   VolumeX,
   AlertTriangle,
   CornerDownLeft,
-  ShieldCheck
+  ShieldCheck,
+  Info
 } from 'lucide-react';
 import Strands from './Strands';
 import { useAuth } from '../../context/AuthContext';
@@ -37,7 +38,14 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     setVoiceResponsesEnabled,
     initialCommand,
     clearInitialCommand,
-    recognitionLanguage
+    recognitionLanguage,
+    unlockIOSAudio,
+    isIOS,
+    isAudioUnlocked,
+    isWakeListening,
+    wakeListeningPaused,
+    availableVoices,
+    speakSpark
   } = useSpark();
 
   const { startFocusTimer, pauseFocusTimer, resumeFocusTimer, stopFocusTimer } = useMorphBar();
@@ -62,6 +70,12 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   const silenceTimerRef = useRef<any>(null);
   const autoRestartTimerRef = useRef<any>(null);
 
+  // Check for debug query
+  const isDebugMode = typeof window !== 'undefined' && (
+    window.location.search.includes('debug=spark') || 
+    localStorage.getItem('shiori_spark_debug') === 'true'
+  );
+
   // Prevent background scrolling while Spark is open
   useEffect(() => {
     if (isSparkOpen) {
@@ -73,39 +87,18 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     }
   }, [isSparkOpen]);
 
-  // Speech output using Web SpeechSynthesis API with seamless handoff to listening
+  // Robust Speech Output using speakSpark with seamless iOS handoff
   const speakText = useCallback((text: string, onDone?: () => void) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      if (onDone) onDone();
-      return;
-    }
-
-    try {
-      window.speechSynthesis.cancel();
-      const clean = text
-        .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '')
-        .replace(/[*_~`#\[\]\(\)]/g, '')
-        .trim();
-
-      if (!clean || !voiceResponsesEnabled) {
-        if (onDone) onDone();
-        return;
-      }
-
-      const utterance = new SpeechSynthesisUtterance(clean);
-      utterance.lang = recognitionLanguage || 'en-IN';
-      utterance.rate = 1.02;
-      utterance.pitch = 1.0;
-
-      utterance.onstart = () => {
+    speakSpark(
+      text,
+      () => {
         setState('SPEAKING');
-      };
-
-      utterance.onend = () => {
+      },
+      () => {
         if (onDone) {
           onDone();
         } else if (isConversationActiveRef.current) {
-          // Continuous conversation loop: Return to LISTENING automatically!
+          // Continuous conversation loop: Return to LISTENING with 450ms safety delay for iOS hardware
           setState('LISTENING');
           setInputText('');
           setInterimTranscript('');
@@ -113,13 +106,12 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
             if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
               startListening();
             }
-          }, 250);
+          }, 450);
         } else {
           setState('IDLE');
         }
-      };
-
-      utterance.onerror = () => {
+      },
+      () => {
         if (onDone) {
           onDone();
         } else if (isConversationActiveRef.current) {
@@ -128,20 +120,15 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
             if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
               startListening();
             }
-          }, 250);
+          }, 450);
         } else {
           setState('IDLE');
         }
-      };
+      }
+    );
+  }, [speakSpark]);
 
-      window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      console.warn('Speech synthesis error:', e);
-      if (onDone) onDone();
-    }
-  }, [voiceResponsesEnabled, recognitionLanguage]);
-
-  // Start Speech Recognition
+  // Start Speech Recognition (Single Active Instance with iOS Lifecycle)
   const startListening = useCallback(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -151,7 +138,9 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     }
 
     try {
-      // Pause any ongoing speech synthesis to prevent feedback loop
+      unlockIOSAudio();
+
+      // Pause ongoing speech synthesis to prevent feedback loop
       if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
         window.speechSynthesis.cancel();
       }
@@ -213,33 +202,36 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('[SPARK SPEECH ERROR]', event.error);
         if (event.error === 'not-allowed') {
-          setErrorMessage('Microphone access denied. Check your browser permissions.');
+          setErrorMessage(
+            isIOS
+              ? 'Spark needs microphone access. Check iPhone Settings → Safari → Microphone → Allow.'
+              : 'Microphone access denied. Check your browser permissions.'
+          );
           setState('IDLE');
         } else if (event.error === 'no-speech') {
-          // Keep listening in conversation mode
-          if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
+          // Restart gracefully on iOS silent timeout
+          if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
             if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
             autoRestartTimerRef.current = setTimeout(() => {
-              if (isConversationActiveRef.current && stateRef.current === 'LISTENING') {
+              if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
                 startListening();
               }
-            }, 250);
+            }, 300);
           }
         }
       };
 
       recognition.onend = () => {
         setInterimTranscript('');
-        // Automatically keep listening while conversation session is active
+        // Keep listening while conversation session is active
         if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
           if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
           autoRestartTimerRef.current = setTimeout(() => {
             if (isConversationActiveRef.current && stateRef.current === 'LISTENING' && !isExecutingRef.current) {
               startListening();
             }
-          }, 250);
+          }, 300);
         }
       };
 
@@ -248,7 +240,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
     } catch (e) {
       console.warn('Recognition start failed:', e);
     }
-  }, [recognitionLanguage]);
+  }, [recognitionLanguage, unlockIOSAudio, isIOS]);
 
   const stopListening = useCallback(() => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -358,14 +350,13 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           if (data.speakText && voiceResponsesEnabled) {
             speakText(data.speakText, () => {
               navigate(data.navigate);
-              // Stay in conversation mode or close after navigation
               setState('LISTENING');
-              setTimeout(() => startListening(), 400);
+              setTimeout(() => startListening(), 450);
             });
           } else {
             navigate(data.navigate);
             setState('LISTENING');
-            setTimeout(() => startListening(), 400);
+            setTimeout(() => startListening(), 450);
           }
           return;
         }
@@ -374,7 +365,6 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         if (data.speakText && voiceResponsesEnabled) {
           speakText(data.speakText);
         } else {
-          // If muted or text-only, briefly show result then return to LISTENING
           setTimeout(() => {
             if (isConversationActiveRef.current) {
               setState('LISTENING');
@@ -415,6 +405,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   };
 
   const handleRetry = () => {
+    unlockIOSAudio();
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -427,6 +418,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
   // Barge-in interruption handler: tapping mic or typing cancels current speech and listens
   const handleMicToggle = () => {
+    unlockIOSAudio();
     if (state === 'SPEAKING' || state === 'PROCESSING') {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -444,6 +436,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   // On open: initialize conversation session and start listening smoothly
   useEffect(() => {
     if (isSparkOpen) {
+      unlockIOSAudio();
       isConversationActiveRef.current = true;
       isExecutingRef.current = false;
       lastExecutedTextRef.current = '';
@@ -484,7 +477,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         window.speechSynthesis.cancel();
       }
     }
-  }, [isSparkOpen, initialCommand, startListening]);
+  }, [isSparkOpen, initialCommand, startListening, unlockIOSAudio]);
 
   // Handle ESC and keyboard controls
   useEffect(() => {
@@ -684,7 +677,10 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
           </div>
 
           <button
-            onClick={() => setVoiceResponsesEnabled(!voiceResponsesEnabled)}
+            onClick={() => {
+              unlockIOSAudio();
+              setVoiceResponsesEnabled(!voiceResponsesEnabled);
+            }}
             title={voiceResponsesEnabled ? 'Mute Voice Output' : 'Enable Voice Output'}
             className="p-2 text-white/70 hover:text-white rounded-full bg-white/5 hover:bg-white/15 transition-colors border border-white/10 cursor-pointer"
           >
@@ -752,6 +748,7 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         <div className="w-full max-w-xl px-2">
           <div
             onClick={() => {
+              unlockIOSAudio();
               setIsTypingMode(true);
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
@@ -807,11 +804,37 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
             )}
           </div>
 
-          {/* Error Message */}
+          {/* Error Message & iOS Permission Guidance */}
           {errorMessage && (
-            <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 border border-red-400/30 text-red-200 text-xs font-mono">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>{errorMessage}</span>
+            <div className="mt-2.5 p-3 rounded-xl bg-red-500/15 border border-red-400/30 text-red-200 text-xs font-mono space-y-1 text-left animate-fade-in">
+              <div className="flex items-center gap-2 font-bold">
+                <ShieldCheck className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                <span>Microphone Notice</span>
+              </div>
+              <p className="text-[11px] text-white/80 font-sans">{errorMessage}</p>
+            </div>
+          )}
+
+          {/* iOS Wake Listening Fallback Banner if Paused */}
+          {isIOS && wakeListeningPaused && !errorMessage && (
+            <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-200 text-[11px] font-mono">
+              <Info className="w-3 h-3 text-amber-300 shrink-0" />
+              <span>iPhone paused wake listening. Tap microphone to speak.</span>
+            </div>
+          )}
+
+          {/* Optional Development Diagnostic Section (?debug=spark) */}
+          {isDebugMode && (
+            <div className="mt-3 p-2.5 rounded-xl bg-black/60 border border-white/10 text-[10px] font-mono text-white/70 text-left space-y-1">
+              <div className="text-amber-300 font-bold uppercase tracking-wider">iOS Diagnostics</div>
+              <div className="grid grid-cols-2 gap-1 text-[9px]">
+                <div>iOS: <span className="text-white">{isIOS ? 'YES' : 'NO'}</span></div>
+                <div>Audio Unlocked: <span className="text-white">{isAudioUnlocked ? 'YES' : 'NO'}</span></div>
+                <div>Wake Status: <span className="text-white">{isWakeListening ? 'ACTIVE' : wakeListeningPaused ? 'PAUSED' : 'IDLE'}</span></div>
+                <div>Voices Count: <span className="text-white">{availableVoices.length}</span></div>
+                <div>Current State: <span className="text-emerald-400">{state}</span></div>
+                <div>Language: <span className="text-white">{recognitionLanguage}</span></div>
+              </div>
             </div>
           )}
 
