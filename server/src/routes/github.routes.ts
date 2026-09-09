@@ -672,62 +672,63 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
 
           for (const task of matchingTasks) {
             const taskCodeLower = (task.task_code || '').trim().toLowerCase();
-            const taskTitleLower = (task.title || '').trim().toLowerCase();
-            const msgLower = (c.message || '').trim().toLowerCase();
             const taskNumStr = String(task.task_number || '');
+            const msgLower = (c.message || '').trim().toLowerCase();
 
-            // Check code patterns (e.g. SHR-0040, TASK-040, TASK-01, #40)
-            const patterns = [
-              taskCodeLower,
-              `shr-${taskNumStr.padStart(4, '0')}`,
-              `shr-${taskNumStr.padStart(2, '0')}`,
-              `task-${taskNumStr.padStart(4, '0')}`,
-              `task-${taskNumStr.padStart(2, '0')}`,
-              `task-${taskNumStr}`,
-              `#${taskNumStr}`
-            ].filter(Boolean);
+            // 1. Commit timestamp validation: Past historical commits from before task existed must NEVER complete a new task
+            const commitTime = new Date(c.pushedAt || c.date || Date.now()).getTime();
+            const taskCreatedTime = new Date(task.created_at || 0).getTime();
+            const isFreshCommit = commitTime >= (taskCreatedTime - 120000); // within 2 minutes of task creation or newer
 
-            const hasCodeMatch = patterns.some((p) => p.length >= 2 && msgLower.includes(p));
-            const hasFullTitleMatch = taskTitleLower.length >= 5 && msgLower.includes(taskTitleLower);
+            // 2. Strict Explicit Task Code Matching (e.g. TASK-01, SHR-01, #01)
+            const explicitCodeRegex = new RegExp(`\\b(${taskCodeLower}|shr-0*${taskNumStr}|task-0*${taskNumStr}|#${taskNumStr})\\b`, 'i');
+            const hasExplicitCodeMatch = explicitCodeRegex.test(msgLower);
 
-            // Topic / Stem matching
-            const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'this', 'that', 'from', 'into', 'page', 'todo', 'task']);
-            const taskWords = taskTitleLower
-              .replace(/[^a-z0-9]/g, ' ')
-              .split(/\s+/)
-              .filter((w: string) => w.length >= 4 && !STOP_WORDS.has(w));
-            const msgWords = msgLower
-              .replace(/[^a-z0-9]/g, ' ')
-              .split(/\s+/)
-              .filter((w: string) => w.length >= 4 && !STOP_WORDS.has(w));
+            // 3. Completion Intent Detection
+            const hasCompletionIntent = /\b(fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved|finish|finished|complete|completed|done)\b/i.test(msgLower);
 
-            const taskStems = taskWords.map((w: string) => w.replace(/(ing|ed|es|s|tion|ly)$/, ''));
-            const msgStems = msgWords.map((w: string) => w.replace(/(ing|ed|es|s|tion|ly)$/, ''));
-
-            const hasStemMatch = taskStems.some((s: string) => s.length >= 4 && msgStems.some((ms: string) => ms.includes(s) || s.includes(ms)));
-
-            if (hasCodeMatch || hasFullTitleMatch || hasStemMatch) {
+            if (hasExplicitCodeMatch) {
+              // Always link the commit to the task
               await runQuery('UPDATE github_commits SET task_id = ? WHERE commit_hash = ?', [task.id, c.fullHash]);
 
-              await runQuery(`
-                UPDATE tasks SET
-                  github_last_commit_hash = ?,
-                  github_last_commit_msg = ?,
-                  github_last_commit_author = ?,
-                  github_last_commit_time = ?,
-                  dev_evidence_commits_count = GREATEST(COALESCE(dev_evidence_commits_count, 0) + 1, 1),
-                  dev_evidence_files_changed = GREATEST(COALESCE(dev_evidence_files_changed, 0), 2),
-                  dev_evidence_checks_passed = GREATEST(COALESCE(dev_evidence_checks_passed, 0), 3),
-                  github_ci_status = COALESCE(NULLIF(github_ci_status, 'UNKNOWN'), 'PASSED'),
-                  auto_completed = 1,
-                  auto_completed_reason = ?,
-                  status = 'DONE',
-                  user_status = 'COMPLETED',
-                  completed_at = COALESCE(completed_at, datetime('now')),
-                  dev_confidence_score = 100,
-                  updated_at = datetime('now')
-                WHERE id = ?
-              `, [c.hash, c.message, c.author, c.date, `Verified commit: ${c.message}`, task.id]);
+              const shouldAutoComplete = isFreshCommit && hasCompletionIntent;
+
+              if (shouldAutoComplete) {
+                // Auto-complete ONLY when fresh commit explicitly resolves the task
+                await runQuery(`
+                  UPDATE tasks SET
+                    github_last_commit_hash = ?,
+                    github_last_commit_msg = ?,
+                    github_last_commit_author = ?,
+                    github_last_commit_time = ?,
+                    dev_evidence_commits_count = GREATEST(COALESCE(dev_evidence_commits_count, 0) + 1, 1),
+                    dev_evidence_files_changed = GREATEST(COALESCE(dev_evidence_files_changed, 0), 2),
+                    dev_evidence_checks_passed = GREATEST(COALESCE(dev_evidence_checks_passed, 0), 3),
+                    github_ci_status = COALESCE(NULLIF(github_ci_status, 'UNKNOWN'), 'PASSED'),
+                    auto_completed = 1,
+                    auto_completed_reason = ?,
+                    status = 'DONE',
+                    user_status = 'COMPLETED',
+                    completed_at = COALESCE(completed_at, datetime('now')),
+                    dev_confidence_score = 100,
+                    updated_at = datetime('now')
+                  WHERE id = ?
+                `, [c.hash, c.message, c.author, c.date, `Verified resolving commit: ${c.message}`, task.id]);
+              } else {
+                // Update development evidence & commit metadata WITHOUT changing task status to DONE
+                await runQuery(`
+                  UPDATE tasks SET
+                    github_last_commit_hash = ?,
+                    github_last_commit_msg = ?,
+                    github_last_commit_author = ?,
+                    github_last_commit_time = ?,
+                    dev_evidence_commits_count = GREATEST(COALESCE(dev_evidence_commits_count, 0) + 1, 1),
+                    dev_evidence_files_changed = GREATEST(COALESCE(dev_evidence_files_changed, 0), 2),
+                    dev_confidence_score = GREATEST(COALESCE(dev_confidence_score, 0), 65),
+                    updated_at = datetime('now')
+                  WHERE id = ?
+                `, [c.hash, c.message, c.author, c.date, task.id]);
+              }
             }
           }
         }

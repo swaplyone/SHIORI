@@ -1000,12 +1000,14 @@ tasksRouter.post('/:id/accept', authMiddleware, async (req: AuthRequest, res: Re
     return;
   }
 
-  // Update status: ASSIGNED -> ACCEPTED, user_status -> IN_PROGRESS
+  // Update status: ASSIGNED -> ACCEPTED, user_status -> IN_PROGRESS, status -> IN_PROGRESS
   await runQuery(`
     UPDATE tasks
     SET assignment_status = 'ACCEPTED',
         user_status = 'IN_PROGRESS',
-        status = CASE WHEN status = 'TODO' THEN 'IN_PROGRESS' ELSE status END,
+        status = 'IN_PROGRESS',
+        completed_at = NULL,
+        auto_completed = 0,
         updated_at = datetime('now')
     WHERE id = ?
   `, [id]);
@@ -1014,11 +1016,11 @@ tasksRouter.post('/:id/accept', authMiddleware, async (req: AuthRequest, res: Re
   await runQuery(`
     INSERT INTO task_activity (id, task_id, user_id, action_type, summary, created_at)
     VALUES (?, ?, ?, 'TASK_ACCEPTED', ?, datetime('now'))
-  `, [uuidv4(), id, userId, `Task accepted by ${req.user!.name}`]);
+  `, [uuidv4(), id, userId, `Task accepted by ${req.user!.name} — status set to In Progress`]);
 
   await runQuery(`
     INSERT INTO global_activities (id, user_id, workspace_id, project_id, task_id, category, icon_symbol, title, meta_text, created_at)
-    VALUES (?, ?, ?, ?, ?, 'TASK', '✓', ?, ?, datetime('now'))
+    VALUES (?, ?, ?, ?, ?, 'TASK', '⚡', ?, ?, datetime('now'))
   `, [uuidv4(), userId, task.workspace_id, task.project_id, id, `Task accepted: ${task.title}`, task.task_code]);
 
   const updatedTask = await queryOne(`

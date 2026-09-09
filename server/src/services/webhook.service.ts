@@ -90,21 +90,30 @@ export async function processPushEvent(payload: any) {
     let confidence = 0;
     let matchReason = '';
 
-    // Check A: Explicit task code in commit message (e.g. TASK-039 or #39) -> HIGH CONFIDENCE (0.95)
-    const taskCodeRegex = new RegExp(`(${task.task_code}|#${task.task_number})`, 'i');
+    // Check A: Explicit task code in commit message (e.g. TASK-039 or #39)
+    const taskCodeRegex = new RegExp(`\\b(${task.task_code}|#${task.task_number})\\b`, 'i');
     if (taskCodeRegex.test(commitMessage)) {
-      confidence = 0.95;
-      matchReason = `Commit explicitly references ${task.task_code}`;
+      const isCompletionVerb = /\b(fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved|finish|finished|complete|completed|done)\b/i.test(commitMessage);
+      if (isCompletionVerb) {
+        confidence = 0.95;
+        matchReason = `Commit explicitly resolves ${task.task_code}: "${commitMessage}"`;
+      } else {
+        confidence = 0.70;
+        matchReason = `Commit references ${task.task_code}`;
+      }
     }
 
-    // Check B: Repository and specific branch match with implementation verbs -> HIGH CONFIDENCE (0.90)
+    // Check B: Repository and specific branch match with implementation verbs
     if (confidence === 0 && task.github_repo && repoName.toLowerCase().includes(task.github_repo.toLowerCase())) {
       const isFeatureBranch = task.github_branch && task.github_branch.toLowerCase() === branchName.toLowerCase() && branchName.toLowerCase() !== 'main';
-      const actionVerbRegex = /\b(fix|fixed|implement|implemented|resolve|resolved|close|closed|finish|completed|add|added)\b/i;
+      const actionVerbRegex = /\b(fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved|finish|finished|complete|completed|done)\b/i;
       
       if (isFeatureBranch && actionVerbRegex.test(commitMessage)) {
         confidence = 0.90;
-        matchReason = `Direct work on feature branch ${branchName} with implementation commit`;
+        matchReason = `Resolving commit on feature branch ${branchName}: "${commitMessage}"`;
+      } else if (isFeatureBranch) {
+        confidence = 0.65;
+        matchReason = `Work in progress on feature branch ${branchName}`;
       } else {
         // Check C: Title keyword overlap without explicit task reference -> MEDIUM CONFIDENCE (0.65)
         const keywords = getTaskKeywords(task.title);
