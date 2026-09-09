@@ -97,12 +97,16 @@ export interface User {
   github_username?: string;
 }
 
+export * from './spark-voices';
+import { SparkVoice } from './spark-voices';
+
 export interface UserSettings {
   user_id: string;
   ui_mode?: UIMode;
   matte_level?: MatteLevel;
   accent_color?: string;
   font_family?: FontOption;
+  spark_voice?: SparkVoice;
   eink_refresh_effect?: number;
   sound_effects?: number;
   web_push_enabled?: number;

@@ -24,11 +24,17 @@ import {
   Eye,
   Layers,
   Mic,
-  Radio
+  Radio,
+  Play,
+  Square,
+  Volume2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSpark } from '../context/SparkContext';
 import { EInkTheme, UIMode, MatteLevel, FontOption, JAPANESE_MATTE_PRESETS, JapaneseMattePreset } from '../types';
+import { SPARK_VOICES, SparkVoice, STANDARD_VOICE_SAMPLE_TEXT } from '../types/spark-voices';
+import { sparkTTSManager } from '../services/spark/SparkTTSProvider';
+import { sparkAudioManager } from '../services/spark/SparkAudioManager';
 import { fetchJson } from '../utils/api';
 
 
@@ -125,13 +131,46 @@ export const SettingsPage: React.FC = () => {
     setHeySparkEnabled,
     voiceResponsesEnabled,
     setVoiceResponsesEnabled,
+    sparkVoice,
+    setSparkVoice,
     micPermissionStatus,
     requestMicrophoneAccess,
+    unlockIOSAudio,
     openSpark
   } = useSpark();
 
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'appearance' | 'spark' | 'privacy' | 'notifications' | 'account' | 'pwa'>('appearance');
+
+  const [testingVoice, setTestingVoice] = useState<SparkVoice | null>(null);
+
+  const handleTestVoice = (voiceId: SparkVoice) => {
+    unlockIOSAudio();
+    if (testingVoice === voiceId) {
+      sparkTTSManager.stop();
+      sparkAudioManager.stop();
+      setTestingVoice(null);
+      return;
+    }
+
+    sparkTTSManager.stop();
+    sparkAudioManager.stop();
+    setTestingVoice(voiceId);
+
+    sparkTTSManager.speak(
+      STANDARD_VOICE_SAMPLE_TEXT,
+      voiceId,
+      () => {
+        setTestingVoice(voiceId);
+      },
+      () => {
+        setTestingVoice(null);
+      },
+      () => {
+        setTestingVoice(null);
+      }
+    );
+  };
 
   const [name, setName] = useState(user?.name || 'Lijith');
   const [bio, setBio] = useState(user?.bio || 'Systems engineer & SwaplyOne architect');
@@ -820,6 +859,114 @@ export const SettingsPage: React.FC = () => {
       {/* SPARK COMPANION TAB */}
       {activeTab === 'spark' && (
         <div className="space-y-4 font-technical text-xs">
+          {/* SPARK VOICE PACKS */}
+          <div className="p-5 sm:p-6 bg-eink-surface border border-eink-border rounded-sm space-y-4 shadow-eink-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-eink-border pb-2.5 gap-2">
+              <div>
+                <h3 className="font-bold text-sm text-eink-text uppercase flex items-center gap-2">
+                  <Volume2 className="w-4 h-4 text-eink-text" />
+                  <span>SPARK VOICE · 音声設定</span>
+                </h3>
+                <p className="text-[11px] text-eink-textSecondary font-sans mt-0.5">
+                  Choose how Spark sounds. Selectable neural human voice packs with natural warmth and clarity.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] font-mono px-2 py-0.5 bg-eink-bg border border-eink-border rounded font-bold uppercase">
+                  ACTIVE: {SPARK_VOICES.find(v => v.id === sparkVoice)?.name || 'BELLA'}
+                </span>
+              </div>
+            </div>
+
+            {/* Voice Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+              {SPARK_VOICES.map((voice) => {
+                const isSelected = sparkVoice === voice.id;
+                const isTesting = testingVoice === voice.id;
+
+                return (
+                  <div
+                    key={voice.id}
+                    onClick={() => setSparkVoice(voice.id)}
+                    className={`p-3.5 border rounded-sm cursor-pointer space-y-2.5 transition-all flex flex-col justify-between ${
+                      isSelected
+                        ? 'border-2 border-eink-text bg-eink-bg shadow-eink-sm'
+                        : 'border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text'
+                    }`}
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-xs">♫ {voice.name}</span>
+                          {voice.id === 'af_bella' && (
+                            <span className="text-[9px] bg-eink-text text-eink-bg px-1.5 py-0.2 rounded font-mono">
+                              DEFAULT
+                            </span>
+                          )}
+                        </div>
+                        {isSelected && (
+                          <span className="text-[10px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded flex items-center gap-1">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                            <span>ACTIVE</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] font-bold text-eink-text">
+                        {voice.description}
+                      </div>
+                      <p className="text-[11px] text-eink-textSecondary font-sans leading-relaxed">
+                        {voice.character}
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-eink-border/50 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTestVoice(voice.id);
+                        }}
+                        className={`px-2.5 py-1 rounded-sm text-[10px] font-mono font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                          isTesting
+                            ? 'bg-amber-600 text-white animate-pulse'
+                            : 'border border-eink-border bg-eink-bg hover:bg-eink-surface text-eink-text'
+                        }`}
+                        title={isTesting ? 'Stop Audio Sample' : 'Test Voice Sample'}
+                      >
+                        {isTesting ? (
+                          <>
+                            <Square className="w-3 h-3 fill-current" />
+                            <span>STOP</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>TEST</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSparkVoice(voice.id);
+                        }}
+                        className={`px-2.5 py-1 rounded-sm text-[10px] font-mono font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-eink-text text-eink-bg'
+                            : 'border border-eink-border hover:bg-eink-surface text-eink-text'
+                        }`}
+                      >
+                        {isSelected ? 'SELECTED' : 'SELECT'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="p-6 bg-eink-surface border border-eink-border rounded-sm space-y-5">
             <div>
               <div className="flex items-center gap-2">

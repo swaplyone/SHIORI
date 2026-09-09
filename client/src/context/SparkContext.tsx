@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext';
+import { SparkVoice, DEFAULT_SPARK_VOICE } from '../types/spark-voices';
+import { sparkTTSManager } from '../services/spark/SparkTTSProvider';
+import { sparkAudioManager } from '../services/spark/SparkAudioManager';
 
 interface BriefingData {
   greeting: string;
@@ -34,6 +37,8 @@ interface SparkContextType {
   setHeySparkEnabled: (enabled: boolean) => void;
   voiceResponsesEnabled: boolean;
   setVoiceResponsesEnabled: (enabled: boolean) => void;
+  sparkVoice: SparkVoice;
+  setSparkVoice: (voice: SparkVoice) => void;
   
   // Microphone & Permissions
   micPermissionStatus: MicPermissionState;
@@ -115,7 +120,7 @@ export function extractWakeCommand(transcript: string): { isWake: boolean; comma
 }
 
 export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, settings, updateSettings } = useAuth();
   const [isSparkOpen, setIsSparkOpen] = useState(false);
   const [initialCommand, setInitialCommand] = useState('');
   
@@ -131,6 +136,25 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [voiceResponsesEnabled, setVoiceResponsesEnabledState] = useState<boolean>(() => {
     return localStorage.getItem('shiori_spark_voice_responses') !== 'false';
   });
+
+  const [sparkVoice, setSparkVoiceState] = useState<SparkVoice>(() => {
+    return (localStorage.getItem('shiori_spark_voice') as SparkVoice) || DEFAULT_SPARK_VOICE;
+  });
+
+  useEffect(() => {
+    if (settings?.spark_voice && settings.spark_voice !== sparkVoice) {
+      setSparkVoiceState(settings.spark_voice as SparkVoice);
+      localStorage.setItem('shiori_spark_voice', settings.spark_voice);
+    }
+  }, [settings?.spark_voice]);
+
+  const setSparkVoice = useCallback((voice: SparkVoice) => {
+    setSparkVoiceState(voice);
+    localStorage.setItem('shiori_spark_voice', voice);
+    if (updateSettings) {
+      updateSettings({ spark_voice: voice });
+    }
+  }, [updateSettings]);
 
   const [isWakeListening, setIsWakeListening] = useState(false);
   const [wakeListeningPaused, setWakeListeningPaused] = useState(false);
@@ -177,6 +201,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const unlockIOSAudio = useCallback(() => {
     if (typeof window === 'undefined') return;
     try {
+      sparkAudioManager.unlockAudio();
+
       // Unlock Web Audio Context
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
@@ -219,70 +245,30 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [unlockIOSAudio]);
 
-  // 3. Reusable speakSpark function with robust iOS voice selection
+  // 3. Reusable speakSpark function with Kokoro Neural TTS & Browser fallback
   const speakSpark = useCallback((
     text: string,
     onStart?: () => void,
     onEnd?: () => void,
     onError?: () => void
   ) => {
-    if (!voiceResponsesEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    if (!voiceResponsesEnabled) {
       if (onEnd) onEnd();
       return;
     }
 
     try {
-      window.speechSynthesis.cancel();
-      const clean = text
-        .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '')
-        .replace(/[*_~`#\[\]\(\)]/g, '')
-        .trim();
-
-      if (!clean) {
-        if (onEnd) onEnd();
-        return;
-      }
-
-      const utterance = new SpeechSynthesisUtterance(clean);
-      const voices = availableVoices.length > 0 ? availableVoices : window.speechSynthesis.getVoices();
-
-      // Pick best English voice on device
-      let selectedVoice = voices.find(v => v.lang === recognitionLanguage || v.lang.replace('_', '-') === recognitionLanguage);
-      if (!selectedVoice) {
-        selectedVoice = voices.find(v => v.lang.startsWith('en-IN') || v.lang.startsWith('en-GB') || v.lang.startsWith('en-US') || v.lang.startsWith('en'));
-      }
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-        utterance.lang = selectedVoice.lang;
-      } else {
-        utterance.lang = recognitionLanguage || 'en-US';
-      }
-
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-
-      utterance.onstart = () => {
-        if (onStart) onStart();
-      };
-
-      utterance.onend = () => {
-        if (onEnd) onEnd();
-      };
-
-      utterance.onerror = (e) => {
-        console.warn('[SPARK SPEECH SYNTHESIS ERROR]', e);
+      sparkTTSManager.speak(text, sparkVoice, onStart, onEnd, onError).catch((err) => {
+        console.warn('[speakSpark error]', err);
         if (onError) onError();
         else if (onEnd) onEnd();
-      };
-
-      window.speechSynthesis.speak(utterance);
+      });
     } catch (err) {
       console.warn('speakSpark error:', err);
       if (onError) onError();
       else if (onEnd) onEnd();
     }
-  }, [voiceResponsesEnabled, recognitionLanguage, availableVoices]);
+  }, [voiceResponsesEnabled, sparkVoice]);
 
   // Check microphone permission via Permissions API
   const checkMicPermission = useCallback(async (): Promise<MicPermissionState> => {
@@ -592,6 +578,8 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setHeySparkEnabled,
         voiceResponsesEnabled,
         setVoiceResponsesEnabled,
+        sparkVoice,
+        setSparkVoice,
         micPermissionStatus,
         checkMicPermission,
         requestMicrophoneAccess,

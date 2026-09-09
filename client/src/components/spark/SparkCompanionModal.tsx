@@ -17,6 +17,9 @@ import Strands from './Strands';
 import { useAuth } from '../../context/AuthContext';
 import { useMorphBar } from '../../context/MorphBarContext';
 import { useSpark } from '../../context/SparkContext';
+import { sparkAudioManager } from '../../services/spark/SparkAudioManager';
+import { sparkTTSManager } from '../../services/spark/SparkTTSProvider';
+import { SPARK_VOICES, SparkVoice } from '../../types/spark-voices';
 
 interface SparkCompanionModalProps {
   context?: {
@@ -118,9 +121,28 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isTypingMode, setIsTypingMode] = useState<boolean>(false);
   const [lastIntent, setLastIntent] = useState<string>('NONE');
+  const [audioAmplitude, setAudioAmplitude] = useState<number>(0);
 
   const stateRef = useRef<SparkState>('LISTENING');
   stateRef.current = state;
+
+  // Real-time audio amplitude monitoring to subtly drive Strands animation during speech
+  useEffect(() => {
+    let animId: number;
+    if (state === 'SPEAKING') {
+      const loop = () => {
+        const amp = sparkAudioManager.getAmplitude();
+        setAudioAmplitude(amp);
+        animId = requestAnimationFrame(loop);
+      };
+      animId = requestAnimationFrame(loop);
+    } else {
+      setAudioAmplitude(0);
+    }
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, [state]);
 
   const conversationContextRef = useRef<{
     taskId?: string;
@@ -562,9 +584,8 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
   const handleRetry = () => {
     unlockIOSAudio();
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    sparkTTSManager.stop();
+    sparkAudioManager.stop();
     setInputText('');
     setInterimTranscript('');
     setResponseMessage('');
@@ -576,9 +597,8 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
   const handleMicToggle = () => {
     unlockIOSAudio();
     if (state === 'SPEAKING' || state === 'PROCESSING') {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
+      sparkTTSManager.stop();
+      sparkAudioManager.stop();
       isExecutingRef.current = false;
       setState('LISTENING');
       startListening();
@@ -696,16 +716,16 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         };
       case 'SPEAKING':
         return {
-          colors: ['#F97316', '#ffffff', '#10B981'],
+          colors: ['#F59E0B', '#FCD34D', '#ffffff'],
           count: 3,
-          speed: 0.65,
-          amplitude: 1.05,
-          waviness: 3.0,
-          thickness: 0.7,
-          glow: 1.15,
+          speed: 0.75 + audioAmplitude * 0.75,
+          amplitude: 1.05 + audioAmplitude * 0.95,
+          waviness: 3.2 + audioAmplitude * 1.5,
+          thickness: 0.72 + audioAmplitude * 0.28,
+          glow: 1.18 + audioAmplitude * 0.4,
           taper: 6,
           spread: 1,
-          intensity: 0.75,
+          intensity: 0.72 + audioAmplitude * 0.35,
           saturation: 2,
           opacity: 1,
           scale: 1.5,

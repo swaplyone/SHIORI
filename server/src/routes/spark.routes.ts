@@ -3,8 +3,61 @@ import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, runQuery } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { getSparkWitResponse, SafeWorkspaceContext } from '../services/spark/sparkWitEngine.js';
+import { kokoroService, KokoroVoiceId } from '../services/kokoro.service.js';
 
 export const sparkRouter = Router();
+
+// POST /api/spark/tts — Kokoro Neural TTS Audio Synthesis
+sparkRouter.post('/tts', async (req: any, res: Response): Promise<void> => {
+  try {
+    const { text, voice = 'af_bella' } = req.body;
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      res.status(400).json({ error: 'Text is required for TTS synthesis' });
+      return;
+    }
+
+    const audioBuffer = await kokoroService.synthesize(text, voice as KokoroVoiceId);
+    if (audioBuffer && audioBuffer.length > 0) {
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', audioBuffer.length);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.end(audioBuffer);
+      return;
+    }
+
+    // Fallback indicator for client
+    res.status(204).end();
+  } catch (err) {
+    console.warn('[SPARK TTS ERROR]', err);
+    res.status(500).json({ error: 'TTS synthesis error', fallback: true });
+  }
+});
+
+// GET /api/spark/tts — Kokoro Neural TTS Audio Synthesis via Query
+sparkRouter.get('/tts', async (req: any, res: Response): Promise<void> => {
+  try {
+    const text = req.query.text as string;
+    const voice = (req.query.voice as KokoroVoiceId) || 'af_bella';
+    if (!text || !text.trim()) {
+      res.status(400).json({ error: 'Text query parameter is required' });
+      return;
+    }
+
+    const audioBuffer = await kokoroService.synthesize(text, voice);
+    if (audioBuffer && audioBuffer.length > 0) {
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', audioBuffer.length);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.end(audioBuffer);
+      return;
+    }
+
+    res.status(204).end();
+  } catch (err) {
+    console.warn('[SPARK TTS ERROR]', err);
+    res.status(500).json({ error: 'TTS synthesis error', fallback: true });
+  }
+});
 
 // Helper to strip markdown symbols for clean, natural speech synthesis
 function stripMarkdownForSpeech(text: string): string {
