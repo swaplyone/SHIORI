@@ -332,57 +332,93 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
 
   if (!isSparkOpen) return null;
 
-  // Strands dynamic shader mapping according to state (quiet, restrained, premium)
+  // Strands dynamic shader mapping according to state (quiet, restrained, premium glass)
   const getStrandsProps = () => {
     switch (state) {
       case 'LISTENING':
         return {
           colors: ['#10B981', '#ffffff', '#06B6D4', '#F97316'],
-          count: 5,
-          speed: 0.9,
-          amplitude: 1.25,
-          waviness: 1.5,
-          thickness: 0.85,
-          glow: 3.2,
-          intensity: 0.9,
-          scale: 1.25
+          count: 3,
+          speed: 0.8,
+          amplitude: 1.2,
+          waviness: 3.2,
+          thickness: 0.7,
+          glow: 1.3,
+          taper: 6,
+          spread: 1,
+          intensity: 0.85,
+          saturation: 2,
+          opacity: 1,
+          scale: 1.5,
+          glass: true,
+          refraction: 1,
+          dispersion: 1,
+          glassSize: 1,
+          hueShift: 0
         };
       case 'PROCESSING':
         return {
           colors: ['#7C3AED', '#06B6D4', '#ffffff', '#FF4242'],
-          count: 6,
-          speed: 1.15,
+          count: 4,
+          speed: 1.1,
           amplitude: 0.95,
-          waviness: 1.8,
-          thickness: 0.8,
-          glow: 2.8,
-          intensity: 0.85,
-          scale: 1.2
+          waviness: 3.5,
+          thickness: 0.7,
+          glow: 1.2,
+          taper: 6,
+          spread: 1,
+          intensity: 0.8,
+          saturation: 2,
+          opacity: 1,
+          scale: 1.5,
+          glass: true,
+          refraction: 1,
+          dispersion: 1,
+          glassSize: 1,
+          hueShift: 0
         };
       case 'SPEAKING':
         return {
           colors: ['#F97316', '#ffffff', '#10B981'],
-          count: 4,
-          speed: 0.7,
-          amplitude: 1.0,
-          waviness: 1.1,
-          thickness: 0.8,
-          glow: 2.7,
-          intensity: 0.8,
-          scale: 1.2
+          count: 3,
+          speed: 0.65,
+          amplitude: 1.05,
+          waviness: 3.0,
+          thickness: 0.7,
+          glow: 1.15,
+          taper: 6,
+          spread: 1,
+          intensity: 0.75,
+          saturation: 2,
+          opacity: 1,
+          scale: 1.5,
+          glass: true,
+          refraction: 1,
+          dispersion: 1,
+          glassSize: 1,
+          hueShift: 0
         };
       case 'CONFIRMATION':
       case 'ERROR':
         return {
           colors: ['#FF4242', '#EAB308', '#ffffff'],
-          count: 4,
+          count: 3,
           speed: 0.45,
           amplitude: 0.75,
-          waviness: 1.0,
+          waviness: 2.5,
           thickness: 0.7,
-          glow: 2.2,
-          intensity: 0.7,
-          scale: 1.1
+          glow: 1.0,
+          taper: 6,
+          spread: 1,
+          intensity: 0.65,
+          saturation: 2,
+          opacity: 1,
+          scale: 1.5,
+          glass: true,
+          refraction: 1,
+          dispersion: 1,
+          glassSize: 1,
+          hueShift: 0
         };
       case 'WAKE_LISTENING':
       case 'IDLE':
@@ -390,13 +426,22 @@ export const SparkCompanionModal: React.FC<SparkCompanionModalProps> = ({
         return {
           colors: ['#F97316', '#ffffff', '#10B981'],
           count: 3,
-          speed: 0.35,
-          amplitude: 0.5,
-          waviness: 0.9,
+          speed: 0.5,
+          amplitude: 1,
+          waviness: 3,
           thickness: 0.7,
-          glow: 2.3,
-          intensity: 0.65,
-          scale: 1.15
+          glow: 1.1,
+          taper: 6,
+          spread: 1,
+          intensity: 0.6,
+          saturation: 2,
+          opacity: 1,
+          scale: 1.5,
+          glass: true,
+          refraction: 1,
+          dispersion: 1,
+          glassSize: 1,
+          hueShift: 0
         };
     }
   };

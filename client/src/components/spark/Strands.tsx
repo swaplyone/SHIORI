@@ -1,5 +1,6 @@
 import { Renderer, Program, Mesh, Color, Triangle, RenderTarget } from 'ogl';
 import { useEffect, useRef, type CSSProperties } from 'react';
+
 import './Strands.css';
 
 const MAX_STRANDS = 12;
@@ -129,9 +130,11 @@ void main() {
     return;
   }
 
+  // sphere height: 0 at the rim, 1 at the center
   float z = sqrt(max(r * r - d * d, 0.0)) / r;
-  float nd = d / r;
+  float nd = d / r; // 0 at the center, 1 at the rim
 
+  // refraction is confined to a narrow band near the rim; the rest stays undistorted
   vec2 dir = d > 0.0 ? p / d : vec2(0.0);
   float lens = smoothstep(0.85, 1.0, nd) * pow(nd, 6.0);
   vec2 offset = -dir * lens * uRefraction * 0.15;
@@ -142,17 +145,22 @@ void main() {
   light.g = texture(uScene, toUv(p + offset)).g;
   light.b = texture(uScene, toUv(p + offset + disp)).b;
 
+  // neutral fresnel rim (no color tint so the glass stays clear)
   float fres = pow(1.0 - z, 3.0);
   vec3 rim = vec3(1.0) * fres * 0.18;
 
+  // specular highlight from the upper-left
   vec2 lightDir = normalize(vec2(-0.55, 0.6));
   float spec = pow(max(dot(p / max(r, 1e-4), lightDir), 0.0), 6.0);
   spec *= smoothstep(r, r * 0.55, d);
 
   vec3 emissive = light + rim + vec3(spec) * 0.4;
   float emissiveA = clamp(max(max(emissive.r, emissive.g), emissive.b), 0.0, 1.0);
+
+  // almost clear glass body: only a faint neutral darkening, mostly near the rim
   float bodyA = 0.05 + fres * 0.05;
 
+  // composite emissive light over the clear body (premultiplied)
   float outA = emissiveA + bodyA * (1.0 - emissiveA);
   vec3 outRGB = emissive;
 
@@ -187,7 +195,7 @@ export interface StrandsProps {
 }
 
 const buildPalette = (colors: string[]): number[][] => {
-  const filled = colors && colors.length ? colors : ['#F97316', '#ffffff', '#10B981'];
+  const filled = colors && colors.length ? colors : ['#ffffff'];
   const padded: number[][] = [];
   for (let i = 0; i < MAX_COLORS; i++) {
     const hex = filled[i] ?? filled[filled.length - 1];
@@ -202,17 +210,17 @@ export default function Strands({
   count = 3,
   speed = 0.5,
   amplitude = 1,
-  waviness = 1,
+  waviness = 3,
   thickness = 0.7,
-  glow = 2.6,
-  taper = 3,
+  glow = 1.1,
+  taper = 6,
   spread = 1,
   hueShift = 0,
-  intensity = 0.7,
-  saturation = 1.5,
+  intensity = 0.6,
+  saturation = 2,
   opacity = 1,
   scale = 1.5,
-  glass = false,
+  glass = true,
   refraction = 1,
   dispersion = 1,
   glassSize = 1,
@@ -239,7 +247,6 @@ export default function Strands({
     dispersion,
     glassSize
   });
-
   propsRef.current = {
     colors,
     count,
@@ -275,7 +282,7 @@ export default function Strands({
         antialias: true
       });
     } catch (err) {
-      console.warn('WebGL Renderer initialization failed:', err);
+      console.warn('WebGL Renderer init failed:', err);
       return;
     }
 
@@ -290,15 +297,15 @@ export default function Strands({
       delete (geometry as any).attributes.uv;
     }
 
-    const w = Math.max(ctn.clientWidth || ctn.offsetWidth || 320, 100);
-    const h = Math.max(ctn.clientHeight || ctn.offsetHeight || 180, 80);
+    const initialW = Math.max(ctn.offsetWidth || ctn.clientWidth || 300, 100);
+    const initialH = Math.max(ctn.offsetHeight || ctn.clientHeight || 300, 100);
 
     const program = new Program(gl, {
       vertex: VERT,
       fragment: FRAG,
       uniforms: {
         uTime: { value: 0 },
-        uResolution: { value: [w, h] },
+        uResolution: { value: [initialW, initialH] },
         uColors: { value: buildPalette(propsRef.current.colors) },
         uColorCount: { value: Math.min(propsRef.current.colors.length, MAX_COLORS) },
         uStrandCount: { value: Math.min(propsRef.current.count, MAX_STRANDS) },
@@ -320,8 +327,8 @@ export default function Strands({
     const mesh = new Mesh(gl, { geometry, program });
 
     const renderTarget = new RenderTarget(gl, {
-      width: w,
-      height: h
+      width: initialW,
+      height: initialH
     });
 
     const glassProgram = new Program(gl, {
@@ -329,7 +336,7 @@ export default function Strands({
       fragment: GLASS_FRAG,
       uniforms: {
         uScene: { value: renderTarget.texture },
-        uResolution: { value: [w, h] },
+        uResolution: { value: [initialW, initialH] },
         uRadius: { value: 0.46 * glassSize },
         uRefraction: { value: refraction },
         uDispersion: { value: dispersion }
@@ -339,27 +346,24 @@ export default function Strands({
 
     ctn.appendChild(gl.canvas);
 
-    const handleResize = () => {
+    function resize() {
       if (!ctn || !renderer) return;
-      const width = Math.max(ctn.clientWidth || ctn.offsetWidth || 320, 100);
-      const height = Math.max(ctn.clientHeight || ctn.offsetHeight || 180, 80);
+      const width = Math.max(ctn.offsetWidth || ctn.clientWidth || 300, 100);
+      const height = Math.max(ctn.offsetHeight || ctn.clientHeight || 300, 100);
       renderer.setSize(width, height);
       program.uniforms.uResolution.value = [width, height];
       renderTarget.setSize(width, height);
       glassProgram.uniforms.uResolution.value = [width, height];
-    };
+    }
+    
+    window.addEventListener('resize', resize);
+    resize();
 
-    handleResize();
-
-    // Use ResizeObserver to adapt smoothly whenever parent modal mounts or expands
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver(() => {
-        handleResize();
-      });
+      resizeObserver = new ResizeObserver(() => resize());
       resizeObserver.observe(ctn);
     }
-    window.addEventListener('resize', handleResize);
 
     let animateId = 0;
     const update = (t: number) => {
@@ -397,15 +401,14 @@ export default function Strands({
 
     return () => {
       cancelAnimationFrame(animateId);
-      window.removeEventListener('resize', handleResize);
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
+      window.removeEventListener('resize', resize);
+      if (resizeObserver) resizeObserver.disconnect();
       if (ctn && gl.canvas.parentNode === ctn) {
         ctn.removeChild(gl.canvas);
       }
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return <div ref={ctnDom} className={`strands-container ${className}`} style={style} />;
