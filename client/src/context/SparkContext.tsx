@@ -38,35 +38,44 @@ interface SparkContextType {
 
 const SparkContext = createContext<SparkContextType | undefined>(undefined);
 
-// Helper for fuzzy wake-word matching
+// Helper for fuzzy wake-word matching and command extraction
 function extractWakeCommand(transcript: string): { isWake: boolean; commandText: string } {
+  if (!transcript) return { isWake: false, commandText: '' };
   const lower = transcript.toLowerCase().trim();
-  
+
   // List of wake-word patterns (including common speech engine misrecognitions)
-  const wakePatterns = [
-    /^hey\s+spark[,.]?\s*/i,
-    /^spark[,.]?\s*/i,
-    /^hey\s+sparks[,.]?\s*/i,
-    /^sparks[,.]?\s*/i,
-    /^hey\s+spot[,.]?\s*/i,
-    /^hey\s+smart[,.]?\s*/i,
-    /^hey\s+shark[,.]?\s*/i,
-    /^hey\s+shiori[,.]?\s*/i,
-    /^shiori[,.]?\s*/i
+  const wakePrefixes = [
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*spark[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*sparky[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*sparks[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*spot[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*smart[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*spock[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*stark[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*start[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*shark[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*bark[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*mark[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*park[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*spar[,.]?\s*/i,
+    /^(?:hey|hi|hello|ok|okay|yo)?\s*shiori[,.]?\s*/i
   ];
 
-  for (const pattern of wakePatterns) {
+  for (const pattern of wakePrefixes) {
     if (pattern.test(lower)) {
       const remaining = lower.replace(pattern, '').trim();
       return { isWake: true, commandText: remaining };
     }
   }
 
-  // Also check anywhere inside sentence (e.g., "okay hey spark what is overdue")
-  if (lower.includes('hey spark') || lower.includes('spark')) {
-    const idx = lower.indexOf('hey spark') !== -1 ? lower.indexOf('hey spark') + 9 : lower.indexOf('spark') + 5;
-    const remaining = lower.substring(idx).replace(/^[,.\s]+/, '').trim();
-    return { isWake: true, commandText: remaining };
+  // Also check if wake-phrase occurs anywhere in the transcript
+  const keywordVariants = ['hey spark', 'hi spark', 'ok spark', 'spark', 'sparky', 'hey spot', 'hey spock', 'hey stark'];
+  for (const kw of keywordVariants) {
+    const idx = lower.indexOf(kw);
+    if (idx !== -1) {
+      const remaining = lower.substring(idx + kw.length).replace(/^[,.\s]+/, '').trim();
+      return { isWake: true, commandText: remaining };
+    }
   }
 
   return { isWake: false, commandText: '' };
@@ -77,7 +86,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isSparkOpen, setIsSparkOpen] = useState(false);
   const [initialCommand, setInitialCommand] = useState('');
   const [heySparkEnabled, setHeySparkEnabledState] = useState<boolean>(() => {
-    return localStorage.getItem('shiori_hey_spark_enabled') === 'true';
+    const saved = localStorage.getItem('shiori_hey_spark_enabled');
+    // Default to true so Wake Word works out-of-the-box
+    return saved !== 'false';
   });
   const [isWakeListening, setIsWakeListening] = useState(false);
   const [briefingData, setBriefingData] = useState<BriefingData | null>(null);
@@ -87,6 +98,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const wakeRecognitionRef = useRef<any>(null);
   const isListeningLoopRef = useRef(false);
+  const restartTimerRef = useRef<any>(null);
 
   // Play pleasant double chime on wake detection
   const playWakeChime = useCallback(() => {
@@ -94,6 +106,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -103,7 +118,7 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
       osc2.frequency.setValueAtTime(880.00, ctx.currentTime + 0.08); // A5
 
-      gain.gain.setValueAtTime(0.09, ctx.currentTime);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
 
       osc1.connect(gain);
@@ -120,6 +135,9 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setHeySparkEnabled = (enabled: boolean) => {
     setHeySparkEnabledState(enabled);
     localStorage.setItem('shiori_hey_spark_enabled', enabled ? 'true' : 'false');
+    if (enabled && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {});
+    }
   };
 
   const openSpark = (cmd?: string) => {
@@ -165,14 +183,16 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [isAuthenticated, token]);
 
-  // Robust on-device wake-word detection loop
+  // Robust, resilient on-device wake-word detection loop
   useEffect(() => {
     if (!heySparkEnabled || isSparkOpen || !isAuthenticated) {
+      isListeningLoopRef.current = false;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       if (wakeRecognitionRef.current) {
         try {
-          isListeningLoopRef.current = false;
           wakeRecognitionRef.current.abort();
         } catch {}
+        wakeRecognitionRef.current = null;
       }
       setIsWakeListening(false);
       return;
@@ -180,79 +200,89 @@ export const SparkProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
+      console.warn('[SPARK WAKE] SpeechRecognition API not supported in this browser.');
       setIsWakeListening(false);
       return;
     }
 
-    let recognition: any = null;
+    isListeningLoopRef.current = true;
 
-    const startWakeRecognition = () => {
-      if (!heySparkEnabled || isSparkOpen || !isAuthenticated) return;
+    const startInstance = () => {
+      if (!isListeningLoopRef.current || !heySparkEnabled || isSparkOpen) return;
+
       try {
-        recognition = new SpeechRecognition();
+        const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = 'en-US';
+        recognition.maxAlternatives = 3;
 
         recognition.onstart = () => {
-          isListeningLoopRef.current = true;
           setIsWakeListening(true);
         };
 
         recognition.onresult = (event: any) => {
           for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript || '';
-            const { isWake, commandText } = extractWakeCommand(transcript);
+            const result = event.results[i];
+            for (let a = 0; a < result.length; a++) {
+              const transcript = result[a].transcript || '';
+              const { isWake, commandText } = extractWakeCommand(transcript);
 
-            if (isWake) {
-              playWakeChime();
-              isListeningLoopRef.current = false;
-              try {
-                recognition.abort();
-              } catch {}
-              openSpark(commandText);
-              break;
+              if (isWake) {
+                playWakeChime();
+                isListeningLoopRef.current = false;
+                try {
+                  recognition.abort();
+                } catch {}
+                wakeRecognitionRef.current = null;
+                openSpark(commandText);
+                return;
+              }
             }
           }
         };
 
         recognition.onerror = (event: any) => {
           if (event.error === 'not-allowed') {
-            console.warn('[SPARK WAKE] Microphone permission not allowed.');
-            setHeySparkEnabled(false);
+            console.warn('[SPARK WAKE] Mic permission not granted.');
             setIsWakeListening(false);
+            isListeningLoopRef.current = false;
           }
         };
 
         recognition.onend = () => {
           setIsWakeListening(false);
-          // Restart gracefully if still enabled and modal closed
+          wakeRecognitionRef.current = null;
+          // Gracefully spawn new instance to maintain perpetual standby listener
           if (isListeningLoopRef.current && heySparkEnabled && !isSparkOpen) {
-            setTimeout(() => {
+            restartTimerRef.current = setTimeout(() => {
               if (isListeningLoopRef.current && !isSparkOpen) {
-                try {
-                  recognition.start();
-                } catch {}
+                startInstance();
               }
-            }, 500);
+            }, 300);
           }
         };
 
         recognition.start();
         wakeRecognitionRef.current = recognition;
       } catch (err) {
-        console.warn('Wake speech recognition error:', err);
+        console.warn('Wake speech recognition spawn error:', err);
+        if (isListeningLoopRef.current && !isSparkOpen) {
+          restartTimerRef.current = setTimeout(startInstance, 1000);
+        }
       }
     };
 
-    startWakeRecognition();
+    startInstance();
 
     return () => {
       isListeningLoopRef.current = false;
-      if (recognition) {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      if (wakeRecognitionRef.current) {
         try {
-          recognition.abort();
+          wakeRecognitionRef.current.abort();
         } catch {}
+        wakeRecognitionRef.current = null;
       }
     };
   }, [heySparkEnabled, isSparkOpen, isAuthenticated, playWakeChime]);
