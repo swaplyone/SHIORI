@@ -89,6 +89,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 import { verifySmtpConnection } from './services/email.service.js';
 import { initDatabaseConnection } from './db/index.js';
+import { startGithubPolling } from './services/githubPolling.service.js';
 
 // Seed & Start Server
 async function start() {
@@ -102,6 +103,7 @@ async function start() {
       console.log(`  A SwaplyOne product                   `);
       console.log(`  Running on http://localhost:${config.port}`);
       console.log(`=========================================`);
+      startGithubPolling(60000);
     });
   } catch (error) {
     console.error('Failed to start SHIORI backend:', error);
@@ -110,3 +112,4 @@ async function start() {
 }
 
 start();
+

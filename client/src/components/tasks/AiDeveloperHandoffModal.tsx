@@ -18,35 +18,43 @@ export const AiDeveloperHandoffModal: React.FC<AiDeveloperHandoffModalProps> = (
 
   if (!isOpen || !task) return null;
 
-  const commitTitle = task.title.toLowerCase().replace(/[^\w\s-]/g, '').trim();
+  const commitTitle = task.title.trim();
+  const assigneeName = task.assignee_name || (task.assignee_id ? 'Assigned Developer' : 'Developer');
+  const assigneeGithub = task.assignee_github_username || task.assignee_username || task.assignee_name?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'developer';
+  const effectiveBranch = task.github_branch || `feature/${assigneeGithub}`;
 
-  const generatedPrompt = `Implement Shiori task ${task.task_code}.
+  const generatedPrompt = `You are working on ${task.task_code}.
+
+Assigned developer:
+${assigneeName}
+
+GitHub:
+@${assigneeGithub}
+
+Required branch:
+${effectiveBranch}
 
 Task:
 ${task.title}
 ${task.description ? `\nDescription:\n${task.description}\n` : ''}
+Before making changes:
+git switch ${effectiveBranch}
+git pull origin ${effectiveBranch}
+
 Requirements:
-- Implement the requested task.
-- Follow the existing Shiori architecture and design system.
-- Do not modify unrelated functionality.
-- Keep changes isolated to ${task.task_code}.
-- Preserve existing behavior.
-- Run relevant tests/build checks.
-- Fix issues caused by this task before committing.
+- Implement the requested task according to requirements.
+- Follow the existing codebase architecture and conventions.
+- Keep all modifications isolated to ${task.task_code}.
+- Do not modify or break unrelated functionality.
+- Run tests and verify builds before committing.
 
-Git commit convention:
-feat(${task.task_code}): ${commitTitle}
-
-Before finishing:
-1. Verify the implementation.
-2. Run relevant tests.
-3. Run the build if appropriate.
-4. Review the changed files.
-5. Ensure there are no unrelated changes.
-6. Commit the completed work using the task ID.
+After completing the task:
+git add .
+git commit -m "[${task.task_code}] ${commitTitle}"
+git push origin ${effectiveBranch}
 
 Expected commit format:
-feat(${task.task_code}): ${commitTitle}`;
+[${task.task_code}] ${commitTitle}`;
 
   const handleCopyPrompt = async () => {
     try {

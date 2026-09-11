@@ -229,56 +229,103 @@ export const GitHubHubPage: React.FC = () => {
                   <span className="text-[10px] text-eink-textMuted uppercase font-bold block">
                     GITHUB INTEGRATION
                   </span>
-                  <h2 className="text-sm font-bold text-eink-text flex items-center gap-2">
-                    {ghStatus?.connected ? (
-                      <>
+                  
+                  {/* State 1: Connected */}
+                  {ghStatus?.connected && ghStatus?.status === 'connected' && (
+                    <>
+                      <h2 className="text-sm font-bold text-eink-text flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4 text-eink-accent" />
-                        <span>GitHub Connected @{ghStatus.username || 'user'}</span>
-                        {ghStatus?.hasLiveToken === false && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-eink-bg border border-eink-border text-eink-text font-bold rounded-xs">
-                            Token Expired — Re-Auth Recommended
+                        <span>Connected</span>
+                        {ghStatus.username && (
+                          <span className="text-xs text-eink-textSecondary font-mono font-normal">
+                            @{ghStatus.username}
                           </span>
                         )}
-                      </>
-                    ) : (
-                      <>
+                      </h2>
+                      <p className="text-xs text-eink-textSecondary font-sans mt-0.5">
+                        Your GitHub account is connected to SHIORI.
+                      </p>
+                    </>
+                  )}
+
+                  {/* State 2: Needs Attention */}
+                  {ghStatus?.connected && ghStatus?.status === 'needs_attention' && (
+                    <>
+                      <h2 className="text-sm font-bold text-amber-600 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block animate-pulse" />
+                        <span>Connection needs attention</span>
+                        {ghStatus.username && (
+                          <span className="text-xs text-eink-textSecondary font-mono font-normal">
+                            @{ghStatus.username}
+                          </span>
+                        )}
+                      </h2>
+                      <p className="text-xs text-eink-textSecondary font-sans mt-0.5">
+                        SHIORI couldn't access your GitHub account. Reconnect your GitHub account to continue Git verification.
+                      </p>
+                      {ghStatus.lastVerifiedAt && (
+                        <p className="text-[10px] text-eink-textMuted font-sans mt-0.5">
+                          Last active: {new Date(ghStatus.lastVerifiedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                      )}
+                    </>
+                  )}
+
+                  {/* State 3: Not Connected */}
+                  {(!ghStatus?.connected || ghStatus?.status === 'disconnected') && (
+                    <>
+                      <h2 className="text-sm font-bold text-eink-text flex items-center gap-2">
                         <XCircle className="w-4 h-4 text-eink-textSecondary" />
-                        <span>NOT CONNECTED</span>
-                      </>
-                    )}
-                  </h2>
-                  <p className="text-xs text-eink-textSecondary font-sans mt-0.5">
-                    {ghStatus?.hasLiveToken === false
-                      ? 'Your GitHub access token has expired or was reset. Click "RE-AUTHORIZE GITHUB" to refresh real-time git syncing.'
-                      : 'Sign in to the GitHub account you want to connect to SHIORI.'}
-                  </p>
+                        <span>GitHub isn't connected yet</span>
+                      </h2>
+                      <p className="text-xs text-eink-textSecondary font-sans mt-0.5">
+                        Connect your GitHub account to enable repository and commit verification.
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
 
+              {/* Action Buttons based on state */}
               <div className="flex flex-wrap items-center gap-2">
-                {ghStatus?.connected ? (
+                {/* State 1: Healthy Connected */}
+                {ghStatus?.connected && ghStatus?.status === 'connected' && (
                   <>
-                    <button
-                      onClick={() => handleAuthorizeOAuth(ghStatus.username)}
-                      disabled={isConnecting}
-                      className="px-3.5 py-1.5 bg-eink-text text-eink-bg text-xs font-bold rounded-sm shadow-eink-sm hover:opacity-90 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                    >
-                      <Github className="w-3.5 h-3.5" />
-                      <span>{isConnecting ? 'CONNECTING...' : 'RE-AUTHORIZE GITHUB'}</span>
-                    </button>
                     <button
                       onClick={handleSwitchGitHubAccount}
                       disabled={isConnecting}
-                      className="px-3 py-1.5 bg-eink-bg border border-eink-border hover:bg-eink-surface text-xs font-bold text-eink-text rounded-sm cursor-pointer flex items-center gap-1.5"
+                      className="px-3.5 py-1.5 bg-eink-surface border border-eink-border hover:bg-eink-bg text-xs font-bold text-eink-text rounded-sm cursor-pointer flex items-center gap-1.5 transition-colors"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>Switch Account</span>
                     </button>
                     <button
-                      onClick={() => setShowTokenInput(!showTokenInput)}
-                      className="px-3 py-1.5 border border-eink-border hover:bg-eink-bg text-xs font-bold text-eink-text rounded-sm cursor-pointer"
+                      onClick={handleDisconnect}
+                      className="px-3 py-1.5 border border-eink-border hover:bg-eink-bg text-xs font-bold text-eink-textMuted hover:text-eink-text rounded-sm cursor-pointer transition-colors"
                     >
-                      PAT Token
+                      Disconnect
+                    </button>
+                  </>
+                )}
+
+                {/* State 2: Needs Attention */}
+                {ghStatus?.connected && ghStatus?.status === 'needs_attention' && (
+                  <>
+                    <button
+                      onClick={() => handleAuthorizeOAuth(ghStatus.username)}
+                      disabled={isConnecting}
+                      className="px-4 py-2 bg-eink-text text-eink-bg text-xs font-bold rounded-sm shadow-eink-sm hover:opacity-90 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Github className="w-4 h-4" />
+                      <span>{isConnecting ? 'CONNECTING...' : 'Reconnect GitHub'}</span>
+                    </button>
+                    <button
+                      onClick={handleSwitchGitHubAccount}
+                      disabled={isConnecting}
+                      className="px-3 py-1.5 bg-eink-surface border border-eink-border hover:bg-eink-bg text-xs font-bold text-eink-text rounded-sm cursor-pointer flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Switch Account</span>
                     </button>
                     <button
                       onClick={handleDisconnect}
@@ -287,72 +334,23 @@ export const GitHubHubPage: React.FC = () => {
                       Disconnect
                     </button>
                   </>
-                ) : (
+                )}
+
+                {/* State 3: Not Connected */}
+                {(!ghStatus?.connected || ghStatus?.status === 'disconnected') && (
                   <div className="flex flex-wrap items-center gap-2">
                     <button
-                      onClick={handleAuthorizeOAuth}
+                      onClick={() => handleAuthorizeOAuth()}
                       disabled={isConnecting}
                       className="px-4 py-2 bg-eink-text text-eink-bg text-xs font-bold rounded-sm shadow-eink-sm hover:opacity-90 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
                       <Github className="w-4 h-4" />
-                      <span>{isConnecting ? 'REDIRECTING TO GITHUB...' : 'CONNECT GITHUB ACCOUNT'}</span>
-                    </button>
-                    <button
-                      onClick={() => setShowTokenInput(!showTokenInput)}
-                      className="px-3 py-2 border border-eink-border text-xs text-eink-text rounded-sm hover:bg-eink-bg cursor-pointer font-bold"
-                    >
-                      USE PAT TOKEN
+                      <span>{isConnecting ? 'REDIRECTING TO GITHUB...' : 'Connect GitHub'}</span>
                     </button>
                   </div>
                 )}
               </div>
             </div>
-
-            {/* PAT Token Form */}
-            {showTokenInput && (
-              <form onSubmit={handleConnectPat} className="p-4 bg-eink-bg border border-eink-border rounded-sm space-y-3 text-xs animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-eink-text uppercase flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>CONNECT VIA PERSONAL ACCESS TOKEN (PAT)</span>
-                  </h4>
-                  <button type="button" onClick={() => setShowTokenInput(false)} className="text-eink-textMuted hover:text-eink-text">✕</button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] text-eink-textMuted uppercase block mb-1 font-bold">GitHub Username</label>
-                    <input
-                      type="text"
-                      value={customUsername}
-                      onChange={(e) => setCustomUsername(e.target.value)}
-                      placeholder="e.g. lijith-swaply"
-                      className="w-full px-3 py-2 bg-eink-surface border border-eink-border rounded-sm outline-none font-mono"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-eink-textMuted uppercase block mb-1 font-bold">Personal Access Token</label>
-                    <input
-                      type="password"
-                      value={patToken}
-                      onChange={(e) => setPatToken(e.target.value)}
-                      placeholder="ghp_************************************"
-                      className="w-full px-3 py-2 bg-eink-surface border border-eink-border rounded-sm outline-none font-mono"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-1">
-                  <button
-                    type="submit"
-                    disabled={isConnecting}
-                    className="px-4 py-2 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm hover:opacity-90 cursor-pointer disabled:opacity-50"
-                  >
-                    {isConnecting ? 'VERIFYING...' : 'SAVE & VERIFY TOKEN'}
-                  </button>
-                </div>
-              </form>
-            )}
 
             {/* Connected Overview Stats */}
             {ghStatus?.connected && (
@@ -483,6 +481,60 @@ export const GitHubHubPage: React.FC = () => {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Advanced Developer Settings (Collapsed by default, zero clutter for non-technical users) */}
+          <div className="pt-4 border-t border-eink-border/50">
+            <details className="group text-xs">
+              <summary className="cursor-pointer text-[11px] text-eink-textMuted hover:text-eink-text font-bold uppercase tracking-wider flex items-center gap-1.5 select-none">
+                <span>▸</span>
+                <span>Advanced Developer Authentication (Optional PAT)</span>
+              </summary>
+              <div className="mt-4 p-4 bg-eink-surface border border-eink-border rounded-sm space-y-3">
+                <form onSubmit={handleConnectPat} className="space-y-3">
+                  <div className="flex items-center gap-1.5 text-eink-text font-bold">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Personal Access Token</span>
+                  </div>
+                  <p className="text-[11px] text-eink-textSecondary font-sans">
+                    Only required for custom self-hosted runners or developer debugging. Standard users should use the 1-click GitHub OAuth button above.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] text-eink-textMuted uppercase block mb-1 font-bold">GitHub Username</label>
+                      <input
+                        type="text"
+                        value={customUsername}
+                        onChange={(e) => setCustomUsername(e.target.value)}
+                        placeholder="e.g. username"
+                        className="w-full px-3 py-2 bg-eink-bg border border-eink-border rounded-sm outline-none font-mono text-xs text-eink-text"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-eink-textMuted uppercase block mb-1 font-bold">Personal Access Token</label>
+                      <input
+                        type="password"
+                        value={patToken}
+                        onChange={(e) => setPatToken(e.target.value)}
+                        placeholder="ghp_..."
+                        className="w-full px-3 py-2 bg-eink-bg border border-eink-border rounded-sm outline-none font-mono text-xs text-eink-text"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={isConnecting}
+                      className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm shadow-eink-sm hover:opacity-90 cursor-pointer disabled:opacity-50 text-xs"
+                    >
+                      {isConnecting ? 'VERIFYING...' : 'SAVE TOKEN'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </details>
           </div>
         </div>
       )}

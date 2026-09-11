@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   workspace_id TEXT NOT NULL,
   title TEXT NOT NULL,
   description TEXT,
-  status TEXT NOT NULL DEFAULT 'TODO', -- 'TODO', 'IN_PROGRESS', 'DONE'
+  status TEXT NOT NULL DEFAULT 'PENDING', -- Canonical statuses: 'PENDING', 'NEEDS_VERIFICATION', 'DONE'
   priority TEXT NOT NULL DEFAULT 'MEDIUM',
   user_status TEXT DEFAULT 'PENDING', -- 'PENDING', 'COMPLETED'
   assignee_id TEXT,
@@ -229,10 +229,17 @@ CREATE TABLE IF NOT EXISTS tasks (
   github_last_commit_author TEXT,
   github_last_commit_time TEXT,
   
-  -- Automatic Completion Engine
+  -- Automatic Completion Engine & Evidence
   auto_completed INTEGER DEFAULT 0,
   auto_completed_reason TEXT,
   completed_at TEXT,
+  completed_by TEXT,
+  completion_source TEXT, -- 'MANUAL', 'GITHUB_COMMIT', 'GITHUB_AI_MATCH', 'SYSTEM'
+  completion_commit_sha TEXT,
+  completion_commit_url TEXT,
+  completion_reason TEXT,
+  is_deleted INTEGER DEFAULT 0,
+  deleted_at TEXT,
   
   -- Development Evidence
   dev_evidence_commits_count INTEGER DEFAULT 0,
@@ -249,6 +256,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
   FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (completed_by) REFERENCES users(id) ON DELETE SET NULL,
   FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
@@ -306,6 +314,10 @@ CREATE TABLE IF NOT EXISTS github_accounts (
   username TEXT NOT NULL,
   avatar_url TEXT,
   access_token TEXT,
+  auth_status TEXT DEFAULT 'CONNECTED', -- 'CONNECTED', 'NEEDS_ATTENTION', 'DISCONNECTED'
+  last_notified_at TEXT,
+  last_verified_at TEXT DEFAULT (datetime('now')),
+  auth_attention_at TEXT,
   connected_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

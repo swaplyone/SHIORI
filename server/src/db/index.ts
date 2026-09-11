@@ -122,7 +122,7 @@ async function initPgSchema(pool: pg.Pool) {
       workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
       description TEXT,
-      status TEXT NOT NULL DEFAULT 'TODO',
+      status TEXT NOT NULL DEFAULT 'PENDING',
       priority TEXT NOT NULL DEFAULT 'MEDIUM',
       user_status TEXT DEFAULT 'PENDING',
       created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -200,6 +200,10 @@ async function initPgSchema(pool: pg.Pool) {
       username TEXT NOT NULL,
       avatar_url TEXT,
       access_token TEXT,
+      auth_status TEXT DEFAULT 'CONNECTED',
+      last_notified_at TIMESTAMPTZ,
+      last_verified_at TIMESTAMPTZ DEFAULT NOW(),
+      auth_attention_at TIMESTAMPTZ,
       connected_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (user_id, github_id)
     );
@@ -467,6 +471,10 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS matte_level TEXT DEFAULT 'natural';`,
       `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS accent_color TEXT DEFAULT '#2E5A36';`,
       `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS font_family TEXT DEFAULT 'geist';`,
+      `ALTER TABLE github_accounts ADD COLUMN IF NOT EXISTS auth_status TEXT DEFAULT 'CONNECTED';`,
+      `ALTER TABLE github_accounts ADD COLUMN IF NOT EXISTS last_notified_at TIMESTAMPTZ;`,
+      `ALTER TABLE github_accounts ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ DEFAULT NOW();`,
+      `ALTER TABLE github_accounts ADD COLUMN IF NOT EXISTS auth_attention_at TIMESTAMPTZ;`,
       `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;`,
       `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS branch_name TEXT DEFAULT 'main';`,
       `ALTER TABLE github_commits ADD COLUMN IF NOT EXISTS author_name TEXT;`,
@@ -489,6 +497,11 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_deleted INTEGER DEFAULT 0;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_by TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_source TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_commit_sha TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_commit_url TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_reason TEXT;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignment_status TEXT DEFAULT 'NONE';`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline TEXT;`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sequence_order INTEGER DEFAULT 0;`,
@@ -530,6 +543,11 @@ async function initPgSchema(pool: pg.Pool) {
       `CREATE INDEX IF NOT EXISTS idx_project_members_lookup ON project_members(project_id, user_id);`,
       `CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);`,
       `CREATE INDEX IF NOT EXISTS idx_global_activities_proj ON global_activities(project_id, created_at DESC);`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_by TEXT REFERENCES users(id) ON DELETE SET NULL;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_source TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_commit_sha TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_commit_url TEXT;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_reason TEXT;`,
       `CREATE TABLE IF NOT EXISTS password_reset_otps (
         email TEXT PRIMARY KEY,
         otp_hash TEXT NOT NULL,
@@ -559,29 +577,20 @@ async function initPgSchema(pool: pg.Pool) {
 
     console.log('[DATABASE] ✓ Supabase PostgreSQL schema initialized successfully.');
 
-    // Renumber existing project tasks to be cleanly sequential per project (TASK-01, TASK-02...)
+    // Safe normalization of task_code to standard 3-digit format (TASK-001, TASK-002...) preserving existing task numbers permanently
     try {
-      const projectsRes = await queryAll('SELECT id, github_repo_name, name FROM projects');
-      for (const proj of (projectsRes || [])) {
-        const projTasks = await queryAll(
-          'SELECT id, task_number, task_code FROM tasks WHERE project_id = ? OR (github_repo = ? AND github_repo IS NOT NULL) ORDER BY created_at ASC',
-          [proj.id, proj.github_repo_name || proj.name]
-        );
-        if (projTasks && projTasks.length > 0) {
-          for (let i = 0; i < projTasks.length; i++) {
-            const desiredNum = i + 1;
-            const desiredCode = `TASK-${String(desiredNum).padStart(2, '0')}`;
-            const t = projTasks[i];
-            if (t.task_number !== desiredNum || t.task_code !== desiredCode) {
-              await runQuery(
-                'UPDATE tasks SET task_number = ?, task_code = ? WHERE id = ?',
-                [desiredNum, desiredCode, t.id]
-              );
-            }
-          }
+      const allExistingTasks = await queryAll('SELECT id, task_number, task_code FROM tasks');
+      for (const t of (allExistingTasks || [])) {
+        const num = Number(t.task_number || 1);
+        const desiredCode = `TASK-${String(num).padStart(3, '0')}`;
+        if (t.task_code !== desiredCode) {
+          await runQuery(
+            'UPDATE tasks SET task_code = ? WHERE id = ?',
+            [desiredCode, t.id]
+          );
         }
       }
-      console.log('[DATABASE] ✓ All existing project tasks normalized to sequential numbering (TASK-01, TASK-02...).');
+      console.log('[DATABASE] ✓ Task codes normalized to permanent 3-digit format (TASK-001, TASK-002...).');
     } catch (normErr: any) {
       console.warn('[DATABASE] Task sequence normalization notice:', normErr?.message || normErr);
     }
@@ -653,7 +662,11 @@ function translateSqlForPostgres(sql: string, params: any[]): { sql: string; par
       translatedSql += ` ON CONFLICT (user_id, github_id) DO UPDATE SET 
         username = EXCLUDED.username,
         avatar_url = EXCLUDED.avatar_url,
-        access_token = EXCLUDED.access_token,
+        access_token = COALESCE(EXCLUDED.access_token, github_accounts.access_token),
+        auth_status = COALESCE(EXCLUDED.auth_status, 'CONNECTED'),
+        last_verified_at = COALESCE(EXCLUDED.last_verified_at, NOW()),
+        last_notified_at = EXCLUDED.last_notified_at,
+        auth_attention_at = EXCLUDED.auth_attention_at,
         connected_at = NOW()`;
     }
   } else if (/INSERT OR REPLACE INTO user_settings/i.test(sql)) {

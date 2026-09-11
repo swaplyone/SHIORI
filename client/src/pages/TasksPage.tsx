@@ -34,6 +34,7 @@ import { AiDeveloperHandoffModal } from '../components/tasks/AiDeveloperHandoffM
 import { TaskCalendarView } from '../components/tasks/TaskCalendarView';
 import { UndoToast, triggerUndoToast } from '../components/ui/UndoToast';
 import { parseNaturalLanguageTask, ParsedTaskInput } from '../utils/nlpTaskParser';
+import { getTodoLifecycleStatus } from '../utils/taskLifecycle';
 
 export const TasksPage: React.FC = () => {
   const { token, user } = useAuth();
@@ -51,7 +52,7 @@ export const TasksPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'calendar'>('list');
   const [quickTaskTitle, setQuickTaskTitle] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [createInitialStatus, setCreateInitialStatus] = useState<TaskStatus>('TODO');
+  const [createInitialStatus, setCreateInitialStatus] = useState<TaskStatus>('PENDING');
   const [createdHandoffTask, setCreatedHandoffTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -147,8 +148,8 @@ export const TasksPage: React.FC = () => {
 
   const handleToggleTaskStatus = async (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
-    const newStatus = task.status === 'DONE' ? 'IN_PROGRESS' : 'DONE';
-    const newUserStatus = newStatus === 'DONE' ? 'COMPLETED' : 'IN_PROGRESS';
+    const newStatus = task.status === 'DONE' ? 'PENDING' : 'DONE';
+    const newUserStatus = newStatus === 'DONE' ? 'COMPLETED' : 'PENDING';
     if (!token) return;
 
     // 1. Instant optimistic update
@@ -201,9 +202,9 @@ export const TasksPage: React.FC = () => {
       id: tempId,
       task_code: '...',
       title: finalTitle,
-      status: 'TODO',
+      status: 'PENDING',
       priority: finalPriority,
-      user_status: 'TODO',
+      user_status: 'PENDING',
       due_date: finalDueDate,
       due_at: quickNlp.dueAt || null,
       recurrence_rule: finalRecurrence,
@@ -312,41 +313,38 @@ export const TasksPage: React.FC = () => {
   const totalCompletedCount = completedTasks.length;
   const totalEvidenceCommits = tasks.reduce((sum, t) => sum + (t.dev_evidence_commits_count || (t.github_last_commit_hash ? 1 : 0)), 0);
 
-  const renderTaskRow = (task: Task, isDone: boolean) => {
+  const renderTaskRow = (task: Task, isDoneOverride?: boolean) => {
+    const isDone = isDoneOverride !== undefined ? isDoneOverride : (task.status === 'DONE' || task.user_status === 'COMPLETED');
+    const isNeedsVerification = task.status === 'NEEDS_VERIFICATION';
     const hasDiscrepancy = Boolean(task.has_ci_discrepancy);
-    const isOverdue =
-      !isDone &&
-      task.due_date &&
-      (task.due_date.toLowerCase().includes('yesterday') ||
-        (task.due_at && new Date(task.due_at).getTime() < Date.now()));
+    const lifecycle = getTodoLifecycleStatus(task);
 
     return (
       <div
         key={task.id}
         onClick={() => openTaskModal(task.id)}
-        className={`p-3 sm:p-3.5 flex items-start justify-between gap-2.5 sm:gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
-          isDone ? 'opacity-75 bg-eink-bg/60' : 'bg-eink-surface'
+        className={`p-3 sm:p-3.5 flex items-start sm:items-center justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
+          isDone ? 'opacity-85 bg-eink-bg/40' : isNeedsVerification ? 'bg-amber-50/40 dark:bg-amber-950/20 border-l-2 border-l-amber-500' : ''
         }`}
       >
-        <div className="flex items-start gap-2 sm:gap-2.5 min-w-0 flex-1">
-          <div className="mt-0.5 p-0.5 shrink-0 flex items-center justify-center">
+        <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1">
+          <div
+            onClick={(e) => handleToggleTaskStatus(task, e)}
+            className="mt-0.5 p-0.5 shrink-0 flex items-center justify-center hover:opacity-80 transition-opacity cursor-pointer"
+            title={isDone ? 'Mark as In Progress' : 'Mark as Done'}
+          >
             {isDone ? (
-              <span
-                className="w-4 h-4 rounded-full bg-eink-text text-eink-bg flex items-center justify-center text-[10px] font-bold"
-                title="Auto-completed via GitHub commit"
-              >
+              <span className="w-5 h-5 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-bold shadow-xs">
                 ✓
               </span>
+            ) : isNeedsVerification ? (
+              <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-bold shadow-xs animate-pulse">
+                ?
+              </span>
             ) : task.status === 'IN_PROGRESS' ? (
-              <span
-                className="w-4 h-4 rounded-full border-2 border-eink-text border-t-transparent animate-spin inline-block"
-                title="In Progress • Waiting for Git commit"
-              />
+              <span className="w-5 h-5 rounded-full border-2 border-eink-text border-t-transparent animate-spin inline-block" />
             ) : (
-              <span
-                className="w-4 h-4 rounded-full border border-eink-border bg-eink-bg inline-block"
-                title="TODO • Auto-completes upon Git push"
-              />
+              <span className="w-5 h-5 rounded-full border border-eink-border bg-eink-bg inline-block hover:border-eink-text" />
             )}
           </div>
 
@@ -394,14 +392,6 @@ export const TasksPage: React.FC = () => {
                 </span>
               )}
 
-              {/* Overdue Notice */}
-              {isOverdue && (
-                <span className="text-[9px] sm:text-[10px] font-bold bg-eink-surface text-eink-text px-1.5 py-0.2 border border-eink-text rounded flex items-center gap-1">
-                  <AlertCircle className="w-2.5 h-2.5" />
-                  <span>OVERDUE</span>
-                </span>
-              )}
-
               {hasDiscrepancy && (
                 <span className="text-[9px] sm:text-[10px] font-bold bg-eink-darkSurface text-eink-darkText px-1.5 py-0.2 rounded flex items-center gap-1">
                   <ShieldAlert className="w-3 h-3" />
@@ -431,12 +421,10 @@ export const TasksPage: React.FC = () => {
                   <span>{task.dev_evidence_commits_count} commits</span>
                 </>
               )}
-              {task.due_date && (
-                <>
-                  <span>•</span>
-                  <span>📅 {task.due_date}</span>
-                </>
-              )}
+              <span>•</span>
+              <span className={`px-1.5 py-0.2 rounded font-bold ${lifecycle.badgeClass}`}>
+                {lifecycle.displayText}
+              </span>
             </div>
           </div>
         </div>

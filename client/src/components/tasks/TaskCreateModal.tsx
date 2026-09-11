@@ -16,7 +16,7 @@ interface TaskCreateModalProps {
 
 export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   isOpen,
-  initialStatus = 'TODO',
+  initialStatus = 'PENDING',
   initialRepo,
   onClose,
   onTaskCreated,
@@ -366,8 +366,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 onChange={(e) => setStatus(e.target.value as TaskStatus)}
                 className="w-full px-2 py-1.5 bg-eink-surface border border-eink-border rounded-sm text-xs font-technical outline-none text-eink-text"
               >
-                <option value="TODO">○ TODO</option>
-                <option value="IN_PROGRESS">◐ IN PROGRESS</option>
+                <option value="PENDING">○ PENDING</option>
                 <option value="DONE">✓ DONE</option>
               </select>
             </div>

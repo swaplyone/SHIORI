@@ -378,3 +378,152 @@ SHIORI — A SwaplyOne product • Plan. Build. Verify.`;
 
   return { success: true, messageId: `console-${Date.now()}`, provider: 'console' };
 }
+
+export interface SendGithubNeedsAttentionEmailParams {
+  toEmail: string;
+  userName?: string;
+}
+
+export async function sendGithubNeedsAttentionEmail({
+  toEmail,
+  userName = 'Developer',
+}: SendGithubNeedsAttentionEmailParams): Promise<SendEmailResult> {
+  const cleanTo = toEmail.trim().toLowerCase();
+  const rawFrom = process.env.SMTP_FROM || 'SHIORI <founder@swaplyone.in>';
+  const from = rawFrom.includes('<') ? rawFrom : `"SHIORI" <${rawFrom}>`;
+
+  const clientUrl = process.env.CLIENT_URL || 'https://shiori-six-plum.vercel.app';
+  const reconnectUrl = `${clientUrl.replace(/\/$/, '')}/github`;
+
+  const subject = 'Your SHIORI GitHub connection needs attention';
+  const textContent = `Hi ${userName},
+
+SHIORI couldn't access your GitHub account.
+
+Your GitHub connection needs to be reconnected to continue Git verification and commit-based task updates.
+
+Reconnect your GitHub account:
+${reconnectUrl}
+
+Reconnecting takes less than a minute.
+
+If you did not expect this, you can safely ignore this email.
+
+— SHIORI`;
+
+  const htmlContent = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px; background-color: #F4F3ED; border: 1px solid #D5D3C8; border-radius: 4px; color: #1A1A1A;">
+      <div style="border-bottom: 2px solid #1A1A1A; padding-bottom: 12px; margin-bottom: 24px;">
+        <span style="font-family: 'Courier New', Courier, monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #666666; font-weight: bold;">SHIORI • GITHUB INTEGRATION</span>
+      </div>
+      
+      <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 700; letter-spacing: -0.3px; color: #1A1A1A;">
+        GitHub Connection Needs Attention
+      </h2>
+      
+      <p style="font-size: 14px; line-height: 1.6; color: #333333; margin-bottom: 16px;">
+        Hi <strong>${userName}</strong>,
+      </p>
+      
+      <p style="font-size: 14px; line-height: 1.6; color: #333333; margin-bottom: 16px;">
+        SHIORI couldn't access your GitHub account.
+      </p>
+      
+      <p style="font-size: 14px; line-height: 1.6; color: #333333; margin-bottom: 24px;">
+        Your GitHub connection needs to be reconnected to continue Git verification and commit-based task updates.
+      </p>
+      
+      <div style="margin: 28px 0; text-align: center;">
+        <a href="${reconnectUrl}" style="display: inline-block; padding: 12px 28px; background-color: #1A1A1A; color: #F4F3ED; text-decoration: none; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; border-radius: 2px; text-transform: uppercase;">
+          Reconnect GitHub
+        </a>
+      </div>
+      
+      <p style="font-size: 12px; line-height: 1.5; color: #666666; margin-top: 24px;">
+        Reconnecting takes less than a minute.<br/>
+        If you did not expect this, you can safely ignore this email.
+      </p>
+      
+      <div style="border-top: 1px solid #B8B7B1; margin-top: 28px; padding-top: 14px; font-size: 10px; color: #777777; letter-spacing: 1px;">
+        SHIORI — A SwaplyOne product • Plan. Build. Verify.
+      </div>
+    </div>
+  `;
+
+  console.log(`=========================================`);
+  console.log(`[EMAIL DISPATCH - GITHUB RECONNECT] To: ${cleanTo}`);
+  console.log(`[EMAIL DISPATCH] Subject: ${subject}`);
+  console.log(`=========================================`);
+
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      const resendRes = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM || 'SHIORI <verify@swaplyone.in>',
+          to: [cleanTo],
+          subject,
+          text: textContent,
+          html: htmlContent,
+        }),
+      });
+
+      const resData = (await resendRes.json()) as any;
+      if (resendRes.ok && resData?.id) {
+        return { success: true, messageId: resData.id, provider: 'resend' };
+      }
+    } catch (resendErr: any) {
+      console.warn('[EMAIL NOTICE] Resend GitHub notice delivery:', resendErr.message);
+    }
+  }
+
+  const brevoApiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
+  if (brevoApiKey) {
+    try {
+      const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'SHIORI', email: process.env.BREVO_FROM_EMAIL || 'founder@swaplyone.in' },
+          to: [{ email: cleanTo, name: userName || 'Developer' }],
+          subject,
+          htmlContent,
+          textContent,
+        }),
+      });
+
+      const brevoData = (await brevoRes.json()) as any;
+      if (brevoRes.ok && (brevoData?.messageId || brevoData?.messageIds)) {
+        return { success: true, messageId: brevoData.messageId, provider: 'resend' };
+      }
+    } catch (brevoErr: any) {
+      console.warn('[EMAIL NOTICE] Brevo GitHub notice failed:', brevoErr.message);
+    }
+  }
+
+  const transporter = createTransporter();
+  if (transporter) {
+    try {
+      const info = await transporter.sendMail({
+        from,
+        to: cleanTo,
+        subject,
+        text: textContent,
+        html: htmlContent,
+      });
+      return { success: true, messageId: info.messageId, provider: 'smtp' };
+    } catch (smtpErr: any) {
+      return { success: false, error: smtpErr.message || 'SMTP delivery failed' };
+    }
+  }
+
+  return { success: true, messageId: `console-${Date.now()}`, provider: 'console' };
+}

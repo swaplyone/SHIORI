@@ -3,15 +3,66 @@ import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, runQuery } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { verifyWebhookSignature, processPushEvent, processWorkflowRunEvent, processPullRequestEvent } from '../services/webhook.service.js';
-
+import { sendGithubNeedsAttentionEmail } from '../services/email.service.js';
 import { config } from '../config.js';
 
 export const githubRouter = Router();
 
+/**
+ * Centralized handler when a user's GitHub credential fails authentication (HTTP 401 / bad credentials)
+ * 1. Sets auth_status = 'NEEDS_ATTENTION' and auth_attention_at = NOW()
+ * 2. Checks cooldown (24h) before dispatching a single user-friendly email
+ * 3. Logs clean structured log without exposing tokens or secrets
+ */
+export async function handleGithubAuthFailure(userId: string): Promise<void> {
+  try {
+    const user = await queryOne('SELECT email, name, username FROM users WHERE id = ?', [userId]);
+    const ghAccount = await queryOne(
+      'SELECT id, auth_status, last_notified_at, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1',
+      [userId]
+    );
+
+    if (!ghAccount) return;
+
+    // 1. Mark status as NEEDS_ATTENTION and set auth_attention_at if not already set
+    await runQuery(`
+      UPDATE github_accounts SET
+        auth_status = 'NEEDS_ATTENTION',
+        auth_attention_at = COALESCE(auth_attention_at, datetime('now'))
+      WHERE user_id = ?
+    `, [userId]);
+
+    // 2. Controlled structured log (Zero secrets or tokens logged)
+    console.warn(`[GITHUB API] GitHub connection requires attention for user ${userId}`);
+
+    // 3. Deduplication check: Send notification only if last_notified_at is null or older than 24 hours
+    const lastNotified = ghAccount.last_notified_at ? new Date(ghAccount.last_notified_at).getTime() : 0;
+    const cooldownMs = 24 * 60 * 60 * 1000; // 24 hours
+    const now = Date.now();
+
+    if (!lastNotified || (now - lastNotified) >= cooldownMs) {
+      const recipientEmail = user?.email;
+      if (recipientEmail) {
+        await sendGithubNeedsAttentionEmail({
+          toEmail: recipientEmail,
+          userName: user?.name || user?.username || ghAccount.username || 'Developer'
+        });
+      }
+      await runQuery(`
+        UPDATE github_accounts SET
+          last_notified_at = datetime('now')
+        WHERE user_id = ?
+      `, [userId]);
+    }
+  } catch (err: any) {
+    console.error('[GITHUB AUTH FAILURE HANDLER ERROR]', err?.message || err);
+  }
+}
+
 // GET GitHub OAuth authorization URL
 githubRouter.get('/oauth/url', authMiddleware, (req: AuthRequest, res: Response): void => {
   const clientId = config.githubClientId || 'Ov23li1zsUXHPz3jSsYD';
-  const returnUrl = (req.query.returnUrl as string) || '/onboarding';
+  const returnUrl = (req.query.returnUrl as string) || '/github';
 
   // Determine frontend client origin dynamically from request headers
   let origin = config.clientUrl;
@@ -35,11 +86,11 @@ githubRouter.get('/oauth/url', authMiddleware, (req: AuthRequest, res: Response)
   res.json({ url: authUrl });
 });
 
-// GET OAuth Callback endpoint (Exchanges code for access token)
+// GET OAuth Callback endpoint (Exchanges code for access token & verifies connection)
 githubRouter.get('/callback', async (req: Request, res: Response): Promise<void> => {
   const { code, state, error, error_description } = req.query;
 
-  let returnUrl = '/onboarding';
+  let returnUrl = '/github';
   let userId: string | null = null;
   let clientOrigin = config.clientUrl;
 
@@ -88,13 +139,13 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
     const accessToken = tokenData.access_token;
 
     if (!accessToken) {
-      console.error('[GITHUB OAUTH] Token exchange failed:', tokenData);
+      console.error('[GITHUB OAUTH] Token exchange failed.');
       const sep = returnUrl.includes('?') ? '&' : '?';
       res.redirect(`${clientOrigin}${returnUrl}${sep}error=token_exchange_failed`);
       return;
     }
 
-    // Fetch user profile from GitHub
+    // Step 5 & 22: Perform minimal authenticated GitHub API request to verify live access
     const userRes = await fetch('https://api.github.com/user', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -103,8 +154,15 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
     });
 
     if (!userRes.ok) {
+      console.warn(`[GITHUB AUTH] Reauthorization verification failed for user ${userId}`);
+      await runQuery(`
+        UPDATE github_accounts SET
+          auth_status = 'NEEDS_ATTENTION',
+          auth_attention_at = datetime('now')
+        WHERE user_id = ?
+      `, [userId]);
       const sep = returnUrl.includes('?') ? '&' : '?';
-      res.redirect(`${clientOrigin}${returnUrl}${sep}error=profile_fetch_failed`);
+      res.redirect(`${clientOrigin}${returnUrl}${sep}error=verification_failed`);
       return;
     }
 
@@ -123,33 +181,47 @@ githubRouter.get('/callback', async (req: Request, res: Response): Promise<void>
 
     await runQuery('DELETE FROM github_accounts WHERE user_id = ? OR github_id = ?', [userId, String(ghUser.id || 'gh_oauth')]);
     await runQuery(`
-      INSERT INTO github_accounts (id, user_id, github_id, username, avatar_url, access_token, connected_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      INSERT INTO github_accounts (
+        id, user_id, github_id, username, avatar_url, access_token, 
+        auth_status, last_verified_at, last_notified_at, auth_attention_at, connected_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 'CONNECTED', datetime('now'), NULL, NULL, datetime('now'))
     `, [uuidv4(), userId, String(ghUser.id || 'gh_oauth'), username, avatarUrl, accessToken]);
+
+    // Clean structured log
+    console.log(`[GITHUB AUTH] User ${userId} successfully reconnected GitHub`);
 
     const sep = returnUrl.includes('?') ? '&' : '?';
     res.redirect(`${clientOrigin}${returnUrl}${sep}github=connected`);
   } catch (error: any) {
-    console.error('[GITHUB OAUTH ERROR]', error);
+    console.error('[GITHUB OAUTH ERROR]', error?.message || error);
     const sep = returnUrl.includes('?') ? '&' : '?';
     res.redirect(`${clientOrigin}${returnUrl}${sep}error=oauth_internal_error`);
   }
 });
 
-// GET GitHub connection status
+// GET GitHub connection status (Reads database only — does NOT call GitHub API)
 githubRouter.get('/status', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.id;
   const user = await queryOne('SELECT github_connected, github_username, github_avatar FROM users WHERE id = ?', [userId]);
-  const ghAccount = await queryOne('SELECT username, avatar_url, access_token FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
+  const ghAccount = await queryOne(
+    'SELECT username, avatar_url, auth_status, last_verified_at, connected_at FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1',
+    [userId]
+  );
   
-  const isConnected = Boolean(user?.github_connected || (ghAccount && ghAccount.username));
+  const rawStatus = ghAccount?.auth_status || (user?.github_connected ? 'CONNECTED' : 'DISCONNECTED');
+  const isConnected = Boolean(user?.github_connected && rawStatus !== 'DISCONNECTED' && (ghAccount?.username || user?.github_username));
   const username = ghAccount?.username || user?.github_username || null;
-  const avatarUrl = ghAccount?.avatar_url || user?.github_avatar || '';
+  const avatarUrl = ghAccount?.avatar_url || user?.github_avatar || null;
+  const lastVerifiedAt = ghAccount?.last_verified_at || ghAccount?.connected_at || null;
 
-  if (!isConnected || !username) {
+  if (!isConnected || !username || rawStatus === 'DISCONNECTED') {
     res.json({
       connected: false,
+      status: 'disconnected',
       username: null,
+      avatarUrl: null,
+      lastVerifiedAt: null,
       repositoriesCount: 0,
       pullRequestsCount: 0,
       recentCommitsCount: 0
@@ -157,17 +229,19 @@ githubRouter.get('/status', authMiddleware, async (req: AuthRequest, res: Respon
     return;
   }
 
+  // Cached counts from internal database (Zero outbound GitHub API requests)
   const commitsCount = await queryOne('SELECT COUNT(*) as count FROM github_commits');
   const prsCount = await queryOne('SELECT COUNT(DISTINCT github_pr_number) as count FROM tasks WHERE github_pr_number IS NOT NULL');
   const userReposCount = await queryOne('SELECT COUNT(*) as count FROM user_repositories WHERE user_id = ? AND is_active = 1', [userId]);
 
-  const hasLiveToken = Boolean(ghAccount?.access_token);
+  const status = rawStatus === 'NEEDS_ATTENTION' ? 'needs_attention' : 'connected';
 
   res.json({
     connected: true,
-    hasLiveToken,
+    status,
     username,
     avatarUrl,
+    lastVerifiedAt,
     repositoriesCount: userReposCount?.count || 0,
     pullRequestsCount: prsCount?.count || 0,
     recentCommitsCount: commitsCount?.count || 0
@@ -188,19 +262,38 @@ githubRouter.post('/connect-demo', authMiddleware, async (req: AuthRequest, res:
   `, [username, req.user!.id]);
 
   await runQuery(`
-    INSERT OR REPLACE INTO github_accounts (id, user_id, github_id, username, avatar_url, connected_at)
-    VALUES (?, ?, 'gh_1029384', ?, 'https://avatars.githubusercontent.com/u/9919?v=4', datetime('now'))
+    INSERT OR REPLACE INTO github_accounts (id, user_id, github_id, username, avatar_url, auth_status, last_verified_at, connected_at)
+    VALUES (?, ?, 'gh_1029384', ?, 'https://avatars.githubusercontent.com/u/9919?v=4', 'CONNECTED', datetime('now'), datetime('now'))
   `, [uuidv4(), req.user!.id, username]);
 
-  res.json({ success: true, username, connected: true });
+  res.json({ success: true, username, connected: true, status: 'connected' });
 });
 
-// Connect via Personal Access Token
-githubRouter.post('/connect-token', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { token, username } = req.body;
+// Connect via Personal Access Token (Advanced / Developer fallback)
+const handleConnectPat = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { token, patToken, username } = req.body;
+  const activeToken = token || patToken;
 
-  if (!token || !username) {
+  if (!activeToken || !username) {
     res.status(400).json({ error: 'Token and username are required' });
+    return;
+  }
+
+  // Minimal test of the provided token
+  try {
+    const testRes = await fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${activeToken}`,
+        'User-Agent': 'SHIORI-App'
+      }
+    });
+
+    if (!testRes.ok) {
+      res.status(401).json({ error: 'Invalid GitHub token. Authentication failed with GitHub API.' });
+      return;
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Network error verifying token with GitHub.' });
     return;
   }
 
@@ -213,15 +306,22 @@ githubRouter.post('/connect-token', authMiddleware, async (req: AuthRequest, res
   `, [username, req.user!.id]);
 
   await runQuery(`
-    INSERT OR REPLACE INTO github_accounts (id, user_id, github_id, username, access_token, connected_at)
-    VALUES (?, ?, 'gh_custom', ?, ?, datetime('now'))
-  `, [uuidv4(), req.user!.id, username, token]);
+    INSERT OR REPLACE INTO github_accounts (
+      id, user_id, github_id, username, access_token, 
+      auth_status, last_verified_at, last_notified_at, auth_attention_at, connected_at
+    )
+    VALUES (?, ?, 'gh_custom', ?, ?, 'CONNECTED', datetime('now'), NULL, NULL, datetime('now'))
+  `, [uuidv4(), req.user!.id, username, activeToken]);
 
-  res.json({ success: true, username, connected: true });
-});
+  res.json({ success: true, username, connected: true, status: 'connected' });
+};
+
+githubRouter.post('/connect-token', authMiddleware, handleConnectPat);
+githubRouter.post('/connect-pat', authMiddleware, handleConnectPat);
 
 // Disconnect GitHub
 githubRouter.post('/disconnect', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const userId = req.user!.id;
   await runQuery(`
     UPDATE users SET
       github_connected = 0,
@@ -229,25 +329,33 @@ githubRouter.post('/disconnect', authMiddleware, async (req: AuthRequest, res: R
       github_avatar = NULL,
       updated_at = datetime('now')
     WHERE id = ?
-  `, [req.user!.id]);
+  `, [userId]);
 
-  await runQuery(`DELETE FROM github_accounts WHERE user_id = ?`, [req.user!.id]);
+  await runQuery(`
+    UPDATE github_accounts SET
+      auth_status = 'DISCONNECTED',
+      access_token = NULL
+    WHERE user_id = ?
+  `, [userId]);
 
-  res.json({ success: true, connected: false });
+  res.json({ success: true, connected: false, status: 'disconnected' });
 });
 
-// GET All accessible GitHub Repositories (Calls GitHub API with user's stored access_token or returns user's workspace projects)
+// GET All accessible GitHub Repositories
 const handleGetRepositories = async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.id;
   const user = await queryOne('SELECT github_connected, github_username, github_avatar FROM users WHERE id = ?', [userId]);
-  const ghAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
-  const isConnected = Boolean(user?.github_connected || (ghAccount && ghAccount.username));
+  const ghAccount = await queryOne(
+    'SELECT access_token, username, auth_status FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1',
+    [userId]
+  );
+  const isConnected = Boolean(user?.github_connected && ghAccount?.auth_status !== 'DISCONNECTED' && (ghAccount?.username || user?.github_username));
   const username = ghAccount?.username || user?.github_username || 'developer';
 
   const userProjects = await queryAll('SELECT id, name, github_repo_name, default_branch, description, updated_at FROM projects WHERE created_by = ?', [userId]);
 
-  if (!ghAccount || !ghAccount.access_token) {
-    // If connected via profile or demo but without live API token, return user workspace projects
+  // If connection is in NEEDS_ATTENTION or missing token, skip outbound GitHub API call and return cached workspace projects
+  if (!ghAccount || !ghAccount.access_token || ghAccount.auth_status === 'NEEDS_ATTENTION' || ghAccount.auth_status === 'DISCONNECTED') {
     const mappedProjects = (userProjects || []).map((p: any) => ({
       id: String(p.id),
       name: p.github_repo_name || p.name,
@@ -267,6 +375,7 @@ const handleGetRepositories = async (req: AuthRequest, res: Response): Promise<v
 
     res.json({
       connected: isConnected,
+      status: ghAccount?.auth_status === 'NEEDS_ATTENTION' ? 'needs_attention' : (isConnected ? 'connected' : 'disconnected'),
       username: isConnected ? username : null,
       repositories: mappedProjects
     });
@@ -284,10 +393,9 @@ const handleGetRepositories = async (req: AuthRequest, res: Response): Promise<v
 
     if (!ghRes.ok) {
       if (ghRes.status === 401) {
-        console.warn(`[GITHUB API] User ${userId} token expired or revoked. Resetting token to allow clean fallback and prompt re-auth.`);
-        await runQuery('UPDATE github_accounts SET access_token = NULL WHERE user_id = ?', [userId]);
+        await handleGithubAuthFailure(userId);
       }
-      // Return workspace projects as graceful fallback
+      // Return workspace projects as graceful fallback without throwing errors
       const mappedProjects = (userProjects || []).map((p: any) => ({
         id: String(p.id),
         name: p.github_repo_name || p.name,
@@ -307,7 +415,7 @@ const handleGetRepositories = async (req: AuthRequest, res: Response): Promise<v
 
       res.json({
         connected: isConnected,
-        tokenExpired: ghRes.status === 401,
+        status: ghRes.status === 401 ? 'needs_attention' : 'connected',
         username,
         repositories: mappedProjects
       });
@@ -341,11 +449,12 @@ const handleGetRepositories = async (req: AuthRequest, res: Response): Promise<v
 
     res.json({
       connected: true,
+      status: 'connected',
       username: ghAccount.username,
       repositories: mappedRepos
     });
   } catch (error: any) {
-    console.error('[GITHUB REPOS ERROR]', error);
+    console.error('[GITHUB REPOS ERROR]', error?.message || error);
     res.status(500).json({ error: 'Internal error fetching GitHub repositories.', connected: isConnected, repositories: [] });
   }
 };
@@ -574,7 +683,7 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
     }
 
     // Check connected accounts
-    const allAccounts = await queryAll('SELECT user_id, access_token, username FROM github_accounts ORDER BY connected_at DESC');
+    const allAccounts = await queryAll('SELECT user_id, access_token, username, auth_status FROM github_accounts ORDER BY connected_at DESC');
     const userAccount = (allAccounts || []).find((a: any) => a.user_id === userId);
     for (const acc of (allAccounts || [])) {
       if (acc.username && !candidateNames.includes(`${acc.username}/${cleanShort}`)) {
@@ -586,13 +695,13 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
     if (!candidateNames.includes(`Swaply-one/${cleanShort}`)) candidateNames.push(`Swaply-one/${cleanShort}`);
     if (!candidateNames.includes(`swaplyone/${cleanShort}`)) candidateNames.push(`swaplyone/${cleanShort}`);
 
-    // Candidate tokens to try (user's first, then others, then unauthenticated public request)
+    // Candidate tokens to try (only healthy tokens, then unauthenticated public request)
     const tokenCandidates: (string | null)[] = [];
-    if (userAccount?.access_token) {
+    if (userAccount?.access_token && userAccount.auth_status !== 'NEEDS_ATTENTION' && userAccount.auth_status !== 'DISCONNECTED') {
       tokenCandidates.push(userAccount.access_token);
     }
     for (const acc of (allAccounts || [])) {
-      if (acc.access_token && !tokenCandidates.includes(acc.access_token)) {
+      if (acc.access_token && acc.auth_status !== 'NEEDS_ATTENTION' && acc.auth_status !== 'DISCONNECTED' && !tokenCandidates.includes(acc.access_token)) {
         tokenCandidates.push(acc.access_token);
       }
     }
@@ -640,100 +749,27 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
           filesChanged: []
         }));
 
-        // Store into database under both short and full names
-        for (const c of liveCommits) {
-          await runQuery(`
-            INSERT OR REPLACE INTO github_commits (
-              id, repo_name, branch_name, commit_hash, message,
-              author_name, author_username, author_avatar, pushed_at
-            ) VALUES (?, ?, 'main', ?, ?, ?, ?, ?, ?)
-          `, [
-            uuidv4(), cleanShort, c.fullHash, c.message,
-            c.author, c.authorUsername, c.authorAvatar, c.pushedAt
-          ]);
+        // Execute unified commit verification pipeline
+        const { verifyAndProcessCommits } = await import('../services/commitVerification.service.js');
+        const incomingCommits = liveCommits.map((c) => ({
+          sha: c.fullHash || c.hash,
+          message: c.message,
+          authorName: c.author,
+          authorUsername: c.authorUsername,
+          authorAvatar: c.authorAvatar,
+          branch: 'main',
+          filesChanged: c.filesChanged?.length || 1,
+          url: `https://github.com/${workingFullName}/commit/${c.fullHash || c.hash}`,
+          timestamp: c.pushedAt
+        }));
 
-          if (workingFullName !== cleanShort) {
-            await runQuery(`
-              INSERT OR REPLACE INTO github_commits (
-                id, repo_name, branch_name, commit_hash, message,
-                author_name, author_username, author_avatar, pushed_at
-              ) VALUES (?, ?, 'main', ?, ?, ?, ?, ?, ?)
-            `, [
-              uuidv4(), workingFullName, c.fullHash, c.message,
-              c.author, c.authorUsername, c.authorAvatar, c.pushedAt
-            ]);
-          }
-
-          // Match commit message to tasks in this project
-          const matchingTasks = await queryAll(`
-            SELECT t.id, t.task_code, t.task_number, t.title, t.status, t.created_at, t.dev_evidence_commits_count 
-            FROM tasks t
-            LEFT JOIN projects p ON t.project_id = p.id
-            WHERE (LOWER(p.github_repo_name) = LOWER(?) OR LOWER(t.github_repo) = LOWER(?) OR LOWER(p.name) = LOWER(?) OR LOWER(p.name) LIKE LOWER(?) OR LOWER(p.github_repo_name) = LOWER(?))
-          `, [cleanShort, cleanShort, cleanShort, `%${cleanShort}%`, workingFullName]);
-
-          for (const task of matchingTasks) {
-            const taskCodeLower = (task.task_code || '').trim().toLowerCase();
-            const taskNumStr = String(task.task_number || '');
-            const msgLower = (c.message || '').trim().toLowerCase();
-
-            // 1. Commit timestamp validation: Past historical commits from before task existed must NEVER complete a new task
-            const commitTime = new Date(c.pushedAt || c.date || Date.now()).getTime();
-            const taskCreatedTime = new Date(task.created_at || 0).getTime();
-            const isFreshCommit = commitTime >= (taskCreatedTime - 120000); // within 2 minutes of task creation or newer
-
-            // 2. Strict Explicit Task Code Matching (e.g. TASK-01, SHR-01, #01)
-            const explicitCodeRegex = new RegExp(`\\b(${taskCodeLower}|shr-0*${taskNumStr}|task-0*${taskNumStr}|#${taskNumStr})\\b`, 'i');
-            const hasExplicitCodeMatch = explicitCodeRegex.test(msgLower);
-
-            // 3. Completion Intent Detection
-            const hasCompletionIntent = /\b(fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved|finish|finished|complete|completed|done)\b/i.test(msgLower);
-
-            if (hasExplicitCodeMatch) {
-              // Always link the commit to the task
-              await runQuery('UPDATE github_commits SET task_id = ? WHERE commit_hash = ?', [task.id, c.fullHash]);
-
-              const shouldAutoComplete = isFreshCommit && hasCompletionIntent;
-
-              if (shouldAutoComplete) {
-                // Auto-complete ONLY when fresh commit explicitly resolves the task
-                await runQuery(`
-                  UPDATE tasks SET
-                    github_last_commit_hash = ?,
-                    github_last_commit_msg = ?,
-                    github_last_commit_author = ?,
-                    github_last_commit_time = ?,
-                    dev_evidence_commits_count = GREATEST(COALESCE(dev_evidence_commits_count, 0) + 1, 1),
-                    dev_evidence_files_changed = GREATEST(COALESCE(dev_evidence_files_changed, 0), 2),
-                    dev_evidence_checks_passed = GREATEST(COALESCE(dev_evidence_checks_passed, 0), 3),
-                    github_ci_status = COALESCE(NULLIF(github_ci_status, 'UNKNOWN'), 'PASSED'),
-                    auto_completed = 1,
-                    auto_completed_reason = ?,
-                    status = 'DONE',
-                    user_status = 'COMPLETED',
-                    completed_at = COALESCE(completed_at, datetime('now')),
-                    dev_confidence_score = 100,
-                    updated_at = datetime('now')
-                  WHERE id = ?
-                `, [c.hash, c.message, c.author, c.date, `Verified resolving commit: ${c.message}`, task.id]);
-              } else {
-                // Update development evidence & commit metadata WITHOUT changing task status to DONE
-                await runQuery(`
-                  UPDATE tasks SET
-                    github_last_commit_hash = ?,
-                    github_last_commit_msg = ?,
-                    github_last_commit_author = ?,
-                    github_last_commit_time = ?,
-                    dev_evidence_commits_count = GREATEST(COALESCE(dev_evidence_commits_count, 0) + 1, 1),
-                    dev_evidence_files_changed = GREATEST(COALESCE(dev_evidence_files_changed, 0), 2),
-                    dev_confidence_score = GREATEST(COALESCE(dev_confidence_score, 0), 65),
-                    updated_at = datetime('now')
-                  WHERE id = ?
-                `, [c.hash, c.message, c.author, c.date, task.id]);
-              }
-            }
-          }
-        }
+        await verifyAndProcessCommits(incomingCommits, {
+          repoName: workingFullName,
+          branchName: 'main',
+          sender: userAccount?.username,
+          source: 'POLLING',
+          userId: userId || userAccount?.user_id
+        });
       }
     }
 
@@ -845,7 +881,7 @@ githubRouter.get('/commit/:hash', authMiddleware, async (req: AuthRequest, res: 
   const repo = (req.query.repo as string) || 'SHIORI';
 
   try {
-    const ghAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [req.user!.id]);
+    const ghAccount = await queryOne('SELECT access_token, username, auth_status FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [req.user!.id]);
 
     const cleanRepo = repo.replace(/^.*\//, '');
     const candidateNames = new Set<string>();
@@ -883,7 +919,7 @@ githubRouter.get('/commit/:hash', authMiddleware, async (req: AuthRequest, res: 
       'User-Agent': 'SHIORI-App',
       Accept: 'application/vnd.github.v3+json'
     };
-    if (ghAccount?.access_token) {
+    if (ghAccount?.access_token && ghAccount.auth_status !== 'NEEDS_ATTENTION' && ghAccount.auth_status !== 'DISCONNECTED') {
       headers.Authorization = `Bearer ${ghAccount.access_token}`;
     }
 
@@ -962,10 +998,10 @@ githubRouter.get('/commit/:hash', authMiddleware, async (req: AuthRequest, res: 
   });
 });
 
-// Webhook Receiver
-githubRouter.post('/webhooks', async (req: Request, res: Response): Promise<void> => {
+// Webhook Receiver (Supports /api/webhooks, /api/webhooks/webhook, /api/github/webhook, and /api/github/webhooks)
+const handleIncomingWebhook = async (req: Request, res: Response): Promise<void> => {
   const signature = req.headers['x-hub-signature-256'] as string;
-  const event = req.headers['x-github-event'] as string || req.body?.event || 'push';
+  const event = (req.headers['x-github-event'] as string) || req.body?.event || 'push';
 
   const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
   if (!verifyWebhookSignature(rawBody, signature)) {
@@ -985,6 +1021,11 @@ githubRouter.post('/webhooks', async (req: Request, res: Response): Promise<void
     res.json({ success: true, event });
   } catch (error: any) {
     console.error('Webhook processing error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error?.message || 'Webhook processing failed' });
   }
-});
+};
+
+githubRouter.post('/', handleIncomingWebhook);
+githubRouter.post('/webhook', handleIncomingWebhook);
+githubRouter.post('/webhooks', handleIncomingWebhook);
+

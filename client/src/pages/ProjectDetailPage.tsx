@@ -17,10 +17,14 @@ import {
   Code,
   FileCode,
   Calendar,
-  ArrowUpDown
+  ArrowUpDown,
+  Copy,
+  ExternalLink,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { useSocket } from '../context/SocketContext';
 import { Task, TaskStatus, TaskPriority } from '../types';
 import { TaskDetailModal } from '../components/tasks/TaskDetailModal';
 import { CodeRecoveryModal } from '../components/recovery/CodeRecoveryModal';
@@ -29,17 +33,20 @@ import { DevelopmentEvidenceBadge } from '../components/tasks/DevelopmentEvidenc
 import { fetchJson } from '../utils/api';
 import { Skeleton, SkeletonTitle, SkeletonBadge, SkeletonButton, TodoListSkeleton } from '../components/ui/Skeleton';
 import { AiDeveloperHandoffModal } from '../components/tasks/AiDeveloperHandoffModal';
+import { getTodoLifecycleStatus } from '../utils/taskLifecycle';
 
 export const ProjectDetailPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const { token, user } = useAuth();
   const { triggerEInkRefresh } = useNotifications();
+  const { socket } = useSocket();
   const navigate = useNavigate();
 
   const [project, setProject] = useState<any | null>(null);
   const [todos, setTodos] = useState<Task[]>([]);
   const [activeTab, setActiveTab] = useState<'todos' | 'git' | 'members'>('todos');
   const [loading, setLoading] = useState(true);
+  const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
 
   // Filter & Sort state for Project TODOs
   const [priorityFilter, setPriorityFilter] = useState<string>('');
@@ -142,16 +149,98 @@ export const ProjectDetailPage: React.FC = () => {
     return () => window.removeEventListener('shiori-refresh', handleRefresh);
   }, [projectId, token]);
 
+  // Real-time Socket.IO synchronization for immediate updates without reload
   useEffect(() => {
-    if (isAddMemberOpen) {
-      fetchConnections();
+    if (!socket || !projectId) return;
+
+    const handleTaskUpdated = (data: { task: Task }) => {
+      if (data?.task) {
+        setTodos((prev) => prev.map((t) => (t.id === data.task.id ? { ...t, ...data.task } : t)));
+      }
+    };
+
+    const handleTodoCompleted = (data: { task: Task }) => {
+      if (data?.task) {
+        setTodos((prev) => prev.map((t) => (t.id === data.task.id ? { ...t, ...data.task } : t)));
+      }
+    };
+
+    const handleTaskCreated = (data: { task: Task }) => {
+      if (data?.task && data.task.project_id === projectId) {
+        setTodos((prev) => {
+          if (prev.some((t) => t.id === data.task.id)) return prev;
+          return [data.task, ...prev];
+        });
+      }
+    };
+
+    const handleTaskDeleted = (data: { taskId: string }) => {
+      if (data?.taskId) {
+        setTodos((prev) => prev.filter((t) => t.id !== data.taskId));
+      }
+    };
+
+    const handleProjectUpdated = () => {
+      fetchProjectData(true);
+    };
+
+    socket.on('task:updated', handleTaskUpdated);
+    socket.on('todo:completed', handleTodoCompleted);
+    socket.on('task:created', handleTaskCreated);
+    socket.on('task:deleted', handleTaskDeleted);
+    socket.on('project:updated', handleProjectUpdated);
+
+    return () => {
+      socket.off('task:updated', handleTaskUpdated);
+      socket.off('todo:completed', handleTodoCompleted);
+      socket.off('task:created', handleTaskCreated);
+      socket.off('task:deleted', handleTaskDeleted);
+      socket.off('project:updated', handleProjectUpdated);
+    };
+  }, [socket, projectId]);
+
+  const handleCopyCommitFormat = (task: Task, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const format = `[${task.task_code}] ${task.title}`;
+    navigator.clipboard.writeText(format);
+    setCopiedTaskId(task.id);
+    setTimeout(() => setCopiedTaskId(null), 2000);
+  };
+
+  const handleConfirmVerification = async (taskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const { ok, data } = await fetchJson(`/api/tasks/${taskId}/confirm-verification`, {
+        method: 'POST'
+      });
+      if (ok && data?.task) {
+        setTodos((prev) => prev.map((t) => (t.id === taskId ? data.task : t)));
+        triggerEInkRefresh();
+      }
+    } catch (err) {
+      console.error(err);
     }
-  }, [isAddMemberOpen, token]);
+  };
+
+  const handleRejectVerification = async (taskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const { ok, data } = await fetchJson(`/api/tasks/${taskId}/reject-verification`, {
+        method: 'POST'
+      });
+      if (ok && data?.task) {
+        setTodos((prev) => prev.map((t) => (t.id === taskId ? data.task : t)));
+        triggerEInkRefresh();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleToggleTaskStatus = async (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
-    const newStatus = task.status === 'DONE' ? 'IN_PROGRESS' : 'DONE';
-    const newUserStatus = newStatus === 'DONE' ? 'COMPLETED' : 'IN_PROGRESS';
+    const newStatus = task.status === 'DONE' ? 'PENDING' : 'DONE';
+    const newUserStatus = newStatus === 'DONE' ? 'COMPLETED' : 'PENDING';
     if (!token) return;
 
     // 1. Instant optimistic state update
@@ -203,9 +292,9 @@ export const ProjectDetailPage: React.FC = () => {
       task_code: '...',
       title: tempTitle,
       description: tempDesc,
-      status: 'TODO',
+      status: 'PENDING',
       priority: tempPriority,
-      user_status: 'TODO',
+      user_status: 'PENDING',
       project_id: project.id,
       github_branch: tempBranch,
       assignee_id: tempAssigneeId,
@@ -567,46 +656,51 @@ export const ProjectDetailPage: React.FC = () => {
               </div>
             ) : (
               filteredAndSortedTodos.map((task) => {
-                const isDone = task.status === 'DONE';
+                const isDone = task.status === 'DONE' || task.user_status === 'COMPLETED';
+                const isNeedsVerification = task.status === 'NEEDS_VERIFICATION';
+                const lifecycle = getTodoLifecycleStatus(task);
+
                 return (
                   <div
                     key={task.id}
                     onClick={() => setSelectedTaskId(task.id)}
-                    className={`p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
-                      isDone ? 'opacity-70 bg-eink-bg/50' : ''
+                    className={`p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
+                      isDone ? 'opacity-85 bg-eink-bg/40' : isNeedsVerification ? 'bg-amber-50/40 dark:bg-amber-950/20 border-l-2 border-l-amber-500' : ''
                     }`}
                   >
-                    <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-                      <div className="mt-0.5 sm:mt-0 p-1 shrink-0 flex items-center justify-center">
+                    <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                      {/* Checkbox / Status Toggle */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleTaskStatus(task, e)}
+                        className="mt-0.5 sm:mt-0 p-1 shrink-0 flex items-center justify-center hover:opacity-80 transition-opacity cursor-pointer"
+                        title={isDone ? 'Mark as In Progress' : 'Mark as Done'}
+                      >
                         {isDone ? (
-                          <span
-                            className="w-4 h-4 rounded-full bg-eink-text text-eink-bg flex items-center justify-center text-[10px] font-bold"
-                            title="Auto-completed via GitHub commit"
-                          >
+                          <span className="w-5 h-5 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-bold shadow-xs">
                             ✓
                           </span>
+                        ) : isNeedsVerification ? (
+                          <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-bold shadow-xs animate-pulse">
+                            ?
+                          </span>
                         ) : task.status === 'IN_PROGRESS' ? (
-                          <span
-                            className="w-4 h-4 rounded-full border-2 border-eink-text border-t-transparent animate-spin inline-block"
-                            title="In Progress • Waiting for Git commit"
-                          />
+                          <span className="w-5 h-5 rounded-full border-2 border-eink-text border-t-transparent animate-spin inline-block" />
                         ) : (
-                          <span
-                            className="w-4 h-4 rounded-full border border-eink-border bg-eink-bg inline-block"
-                            title="TODO • Auto-completes upon Git push"
-                          />
+                          <span className="w-5 h-5 rounded-full border border-eink-border bg-eink-bg inline-block hover:border-eink-text" />
                         )}
-                      </div>
+                      </button>
 
-                      <div className="space-y-1 min-w-0 flex-1">
+                      <div className="space-y-1.5 min-w-0 flex-1">
+                        {/* Row 1: Code, Priority, Title, Badges */}
                         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                          <span className="font-bold text-[10px] sm:text-xs bg-eink-bg px-1.5 py-0.2 border border-eink-border rounded font-mono">
+                          <span className="font-bold text-[10px] sm:text-xs bg-eink-bg px-2 py-0.5 border border-eink-border rounded font-mono">
                             {task.task_code || 'TODO'}
                           </span>
 
                           {/* Priority Badge */}
                           <span
-                            className={`text-[9px] sm:text-[10px] font-mono font-bold px-1.5 py-0.2 border rounded ${
+                            className={`text-[9px] sm:text-[10px] font-mono font-bold px-1.5 py-0.5 border rounded ${
                               (task.priority || 'MEDIUM') === 'URGENT'
                                 ? 'bg-eink-darkSurface text-eink-darkText border-eink-darkSurface'
                                 : task.priority === 'HIGH'
@@ -620,19 +714,79 @@ export const ProjectDetailPage: React.FC = () => {
                           </span>
 
                           <h4
-                            className={`text-xs font-bold text-eink-text truncate max-w-[200px] sm:max-w-md ${
+                            className={`text-xs sm:text-sm font-bold text-eink-text truncate max-w-[240px] sm:max-w-md ${
                               isDone ? 'line-through text-eink-textMuted' : ''
                             }`}
                           >
                             {task.title}
                           </h4>
-                          {Boolean(task.auto_completed) && (
-                            <span className="text-[9px] sm:text-[10px] font-bold bg-eink-bg text-eink-text px-1.5 py-0.2 border border-eink-border rounded flex items-center gap-1 font-mono">
-                              ✓ AUTO COMPLETED • GitHub activity detected
-                            </span>
-                          )}
+
+                          {/* Copy Suggested Commit Format */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyCommitFormat(task, e)}
+                            className="text-[10px] text-eink-textSecondary hover:text-eink-text bg-eink-bg hover:bg-eink-surface border border-eink-border px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors"
+                            title={`Copy commit format: [${task.task_code}] ${task.title}`}
+                          >
+                            <Copy className="w-2.5 h-2.5" />
+                            <span>{copiedTaskId === task.id ? 'COPIED' : `[${task.task_code}]`}</span>
+                          </button>
                         </div>
 
+                        {/* Row 2: Verification Banner or Completion Evidence or Details */}
+                        {isNeedsVerification && (
+                          <div className="p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                              <span>
+                                <strong>Verification Needed</strong> · Possible GitHub match ({task.dev_confidence_score || 78}% match)
+                                {task.completion_reason ? `: ${task.completion_reason}` : ''}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => handleConfirmVerification(task.id, e)}
+                                className="px-2 py-0.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded text-[10px] cursor-pointer"
+                              >
+                                Confirm (DONE)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => handleRejectVerification(task.id, e)}
+                                className="px-2 py-0.5 bg-stone-200 hover:bg-stone-300 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 font-bold rounded text-[10px] cursor-pointer"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {isDone && Boolean(task.auto_completed) && (
+                          <div className="text-[10px] sm:text-[11px] text-emerald-800 dark:text-emerald-300 flex flex-wrap items-center gap-1.5">
+                            <span className="font-bold bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 border border-emerald-300 dark:border-emerald-800 rounded font-mono">
+                              ✓ AUTO COMPLETED • GitHub activity detected
+                            </span>
+                            {task.completion_commit_sha && (
+                              <span className="font-mono text-eink-textSecondary">
+                                ({task.completion_commit_sha})
+                              </span>
+                            )}
+                            {task.completion_commit_url && (
+                              <a
+                                href={task.completion_commit_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-eink-text underline hover:text-emerald-600 flex items-center gap-0.5"
+                              >
+                                View commit <ExternalLink className="w-2.5 h-2.5 inline" />
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Row 3: Meta info (Assignee, Branch, Commits, Lifecycle schedule) */}
                         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] text-eink-textSecondary font-mono">
                           <span>Assigned to: <strong className="text-eink-text">{task.assignee_name || 'Unassigned'}</strong></span>
                           <span>•</span>
@@ -644,15 +798,11 @@ export const ProjectDetailPage: React.FC = () => {
                           <span>
                             {task.dev_evidence_commits_count || (task.github_last_commit_hash ? 1 : 0)} commits
                           </span>
-                          {task.due_date && (
-                            <>
-                              <span>•</span>
-                              <span className="flex items-center gap-1 text-eink-text font-bold">
-                                <Calendar className="w-3 h-3" />
-                                <span>{task.due_date}</span>
-                              </span>
-                            </>
-                          )}
+                          <span>•</span>
+                          {/* Centralized Lifecycle / Deadline Badge */}
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${lifecycle.badgeClass}`}>
+                            {lifecycle.displayText}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -681,7 +831,7 @@ export const ProjectDetailPage: React.FC = () => {
             <div>
               <span className="font-bold text-eink-text block uppercase">GIT WORKSPACE & RECOVERY</span>
               <p className="text-[11px] text-eink-textSecondary">
-                Inspect commit diffs or restore previous versions safely without destroying current code.
+                Inspect commit diffs, organize developer branches, or restore previous versions safely without destroying current code.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -708,6 +858,150 @@ export const ProjectDetailPage: React.FC = () => {
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>RECOVER CODE</span>
               </button>
+            </div>
+          </div>
+
+          {/* WORKFLOW MODE & DEVELOPER BRANCHES */}
+          <div className="border border-eink-border rounded-sm bg-eink-surface p-4 space-y-4">
+            <div className="border-b border-eink-border pb-3">
+              <div className="flex items-center gap-2">
+                <GitBranch className="w-4 h-4 text-eink-text" />
+                <h3 className="font-bold text-sm uppercase text-eink-text">
+                  GIT WORKFLOW & DEVELOPER BRANCHES
+                </h3>
+              </div>
+              <p className="text-xs text-eink-textSecondary pt-1">
+                Repository: <strong className="text-eink-text font-mono">{project.github_repo_name || 'SHIORI'}</strong> · Default branch: <strong className="text-eink-text font-mono">{project.default_branch || 'main'}</strong>
+              </p>
+            </div>
+
+            {/* Work Mode Selection */}
+            <div className="space-y-2">
+              <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider block">
+                HOW ARE YOU WORKING ON THIS REPOSITORY?
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div
+                  className={`p-3 border rounded-sm transition-all cursor-pointer ${
+                    (project.members?.length || 1) <= 1
+                      ? 'bg-eink-bg border-eink-text shadow-eink-sm'
+                      : 'bg-eink-surface border-eink-border hover:bg-eink-surfaceHover'
+                  }`}
+                  onClick={() => {}}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-xs uppercase text-eink-text">
+                      {(project.members?.length || 1) <= 1 ? '●' : '○'} WORKING ALONE
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-eink-textSecondary pt-1">
+                    You are the only developer working on this repository. Pushes use the default branch (<strong>{project.default_branch || 'main'}</strong>).
+                  </p>
+                </div>
+
+                <div
+                  className={`p-3 border rounded-sm transition-all cursor-pointer ${
+                    (project.members?.length || 1) > 1
+                      ? 'bg-eink-bg border-eink-text shadow-eink-sm'
+                      : 'bg-eink-surface border-eink-border hover:bg-eink-surfaceHover'
+                  }`}
+                  onClick={() => setIsAddMemberOpen(true)}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-xs uppercase text-eink-text">
+                      {(project.members?.length || 1) > 1 ? '●' : '○'} WORKING AS A TEAM
+                    </span>
+                    {(project.members?.length || 1) <= 1 && (
+                      <span className="text-[10px] bg-eink-text text-eink-bg px-1.5 py-0.2 rounded font-bold">
+                        + ADD MEMBERS
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-eink-textSecondary pt-1">
+                    Multiple developers will work on this repository. SHIORI organizes tasks and isolated developer branches (<code className="bg-eink-surface px-1 py-0.2 rounded">feature/&lt;username&gt;</code>) for each developer.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Developer Branches List */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider">
+                  DEVELOPER BRANCHES ({project.members?.length || 1})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsAddMemberOpen(true)}
+                  className="text-xs text-eink-text font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <UserPlus className="w-3 h-3" />
+                  <span>+ ADD DEVELOPER</span>
+                </button>
+              </div>
+
+              <div className="divide-y divide-eink-border border border-eink-border rounded-sm bg-eink-bg">
+                {(project.members && project.members.length > 0 ? project.members : [user]).map((m: any) => {
+                  const githubUsername = m?.github_username || m?.username || (m?.name ? m.name.toLowerCase().replace(/\s+/g, '-') : 'developer');
+                  const branchName = `feature/${githubUsername}`;
+                  const defaultBranch = project.default_branch || 'main';
+                  const setupCommand = `git fetch origin\ngit switch -c ${branchName} origin/${defaultBranch}\ngit push -u origin ${branchName}`;
+                  const checkoutCommand = `git fetch origin\ngit switch ${branchName}\ngit pull origin ${branchName}`;
+
+                  return (
+                    <div key={m?.id || 'dev-1'} className="p-3.5 space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs uppercase text-eink-text">{m?.name || 'Developer'}</span>
+                            <span className="text-[10px] font-mono bg-eink-surface border border-eink-border px-1.5 py-0.2 rounded text-eink-textSecondary">
+                              @{githubUsername}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.2 rounded">
+                              ✓ {branchName}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-eink-textMuted font-mono">
+                            Assigned branch: <strong>{branchName}</strong> (Origin: {defaultBranch})
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(setupCommand);
+                              setCopiedTaskId(m?.id || 'dev-1');
+                              setTimeout(() => setCopiedTaskId(null), 2000);
+                            }}
+                            className="px-2.5 py-1 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border rounded text-xs font-mono font-bold text-eink-text flex items-center gap-1 cursor-pointer transition-colors shadow-eink-sm"
+                            title="Copy branch creation command"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>{copiedTaskId === (m?.id || 'dev-1') ? 'COPIED SETUP COMMANDS!' : 'COPY SETUP COMMANDS'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Exact copy-ready code blocks */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
+                        <div className="p-2.5 bg-eink-surface border border-eink-border rounded space-y-1">
+                          <span className="text-[9px] text-eink-textMuted uppercase font-bold block">
+                            FIRST-TIME BRANCH SETUP
+                          </span>
+                          <pre className="text-eink-text select-all whitespace-pre-wrap leading-relaxed">{setupCommand}</pre>
+                        </div>
+                        <div className="p-2.5 bg-eink-surface border border-eink-border rounded space-y-1">
+                          <span className="text-[9px] text-eink-textMuted uppercase font-bold block">
+                            CHECKOUT & WORK COMMAND
+                          </span>
+                          <pre className="text-eink-text select-all whitespace-pre-wrap leading-relaxed">{checkoutCommand}</pre>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

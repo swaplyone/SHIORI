@@ -8,6 +8,17 @@ import { sendPushToUser } from '../services/push.service.js';
 
 export const tasksRouter = Router();
 
+// Permanent task numbering: Never reuse task numbers, calculate from highest historical task number including deleted
+export async function getNextTaskNumber(projectId: string, githubRepo?: string | null): Promise<{ nextNum: number; taskCode: string }> {
+  const maxRow = await queryOne(
+    'SELECT COALESCE(MAX(task_number), 0) as max_num FROM tasks WHERE project_id = ? OR (github_repo = ? AND github_repo IS NOT NULL)',
+    [projectId, githubRepo || null]
+  );
+  const nextNum = Math.max(Number(maxRow?.max_num || 0) + 1, 1);
+  const taskCode = `TASK-${String(nextNum).padStart(3, '0')}`;
+  return { nextNum, taskCode };
+}
+
 // Helper for computing next recurring occurrence
 function getNextRecurrenceDate(rule: string, baseDateStr?: string | null): string {
   const base = baseDateStr ? new Date(baseDateStr) : new Date();
@@ -49,6 +60,7 @@ tasksRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response): Pr
       SELECT t.*, 
              p.name as project_name, p.slug as project_slug,
              u.name as assignee_name, u.avatar_url as assignee_avatar,
+             u.github_username as assignee_github_username, u.username as assignee_username,
              (SELECT COUNT(*) FROM task_subtasks WHERE task_id = t.id) as subtasks_count,
              (SELECT COUNT(*) FROM task_subtasks WHERE task_id = t.id AND completed = 1) as subtasks_completed,
              (SELECT COUNT(*) FROM task_comments WHERE task_id = t.id) as comments_count
@@ -131,6 +143,7 @@ tasksRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Response):
     SELECT t.*, 
            p.name as project_name, p.slug as project_slug, p.github_repo_name as project_github_repo,
            u.name as assignee_name, u.avatar_url as assignee_avatar,
+           u.github_username as assignee_github_username, u.username as assignee_username,
            creator.name as creator_name
     FROM tasks t
     LEFT JOIN projects p ON t.project_id = p.id
@@ -179,7 +192,6 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     workspaceId,
     title,
     description,
-    status = 'TODO',
     priority = 'MEDIUM',
     assigneeId,
     dueDate,
@@ -190,6 +202,23 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     githubRepo,
     githubBranch
   } = req.body;
+
+  // Strict Canonical Task Status Machine: Canonical statuses are strictly PENDING, NEEDS_VERIFICATION, DONE
+  let rawStatus = (req.body.status || 'PENDING').toString().toUpperCase().trim();
+  let status: 'PENDING' | 'NEEDS_VERIFICATION' | 'DONE' = 'PENDING';
+  if (rawStatus === 'DONE' || rawStatus === 'COMPLETED') {
+    status = 'DONE';
+  } else if (rawStatus === 'NEEDS_VERIFICATION') {
+    status = 'NEEDS_VERIFICATION';
+  } else {
+    status = 'PENDING';
+  }
+
+  const isDone = status === 'DONE';
+  const userStatus = isDone ? 'COMPLETED' : 'PENDING';
+  const completedAt = isDone ? new Date().toISOString() : null;
+  const completionSource = isDone ? 'MANUAL' : null;
+  const completedBy = isDone ? req.user!.id : null;
 
   if (!title) {
     res.status(400).json({ error: 'Task title is required.' });
@@ -262,13 +291,8 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   if (!finalWorkspaceId) finalWorkspaceId = project.workspace_id;
   if (!finalGithubRepo) finalGithubRepo = project.github_repo_name || project.name;
 
-  // Get next task number scoped to this project (starts from 1: TASK-01, TASK-02, etc.)
-  const maxRow = await queryOne(
-    'SELECT COALESCE(MAX(task_number), 0) as max_num FROM tasks WHERE project_id = ? OR (github_repo = ? AND github_repo IS NOT NULL)',
-    [finalProjectId, finalGithubRepo]
-  );
-  const nextNum = Number(maxRow?.max_num || 0) + 1;
-  const taskCode = `TASK-${String(nextNum).padStart(2, '0')}`;
+  // Get next task number scoped to this project (starts from 1: TASK-001, TASK-002, etc.)
+  const { nextNum, taskCode } = await getNextTaskNumber(finalProjectId, finalGithubRepo);
   const taskId = uuidv4();
 
   const rawAssignee = req.body.assigneeId || req.body.assignee_id || req.body.assignee;
@@ -276,23 +300,38 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
   const nowIso = new Date().toISOString();
   const initialAssignmentStatus = (targetAssigneeId && targetAssigneeId !== req.user!.id) ? 'ASSIGNED' : 'ACCEPTED';
 
+  // Automatically determine developer branch from assignee (feature/<github-username>)
+  const effectiveAssigneeId = targetAssigneeId || req.user!.id;
+  let finalBranch = githubBranch;
+  if (!finalBranch || finalBranch === 'main') {
+    const assigneeUser = await queryOne('SELECT github_username, username FROM users WHERE id = ?', [effectiveAssigneeId]);
+    if (assigneeUser && (assigneeUser.github_username || assigneeUser.username)) {
+      finalBranch = `feature/${assigneeUser.github_username || assigneeUser.username}`;
+    } else {
+      finalBranch = project.default_branch || 'main';
+    }
+  }
+
   await runQuery(`
     INSERT INTO tasks (
       id, task_number, task_code, project_id, workspace_id, title, description,
       status, priority, user_status, assignee_id, created_by, due_date, due_at,
       reminder_at, recurrence_rule, tags, github_repo, github_branch, github_ci_status,
-      is_archived, is_deleted, assignment_status, created_at, updated_at
+      is_archived, is_deleted, assignment_status, completed_at, completion_source,
+      completed_by, auto_completed, created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, 'TODO', ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, 'UNKNOWN',
-      0, 0, ?, datetime('now'), datetime('now')
+      0, 0, ?, ?, ?,
+      ?, 0, datetime('now'), datetime('now')
     )
   `, [
     taskId, nextNum, taskCode, finalProjectId, finalWorkspaceId, title, description || '',
-    status, priority, targetAssigneeId || req.user!.id, req.user!.id, dueDate || 'Tomorrow',
+    status, priority, userStatus, targetAssigneeId || req.user!.id, req.user!.id, dueDate || 'Tomorrow',
     due_at || null, reminder_at || null, recurrence_rule || null, tags || null,
-    finalGithubRepo || null, githubBranch || null, initialAssignmentStatus
+    finalGithubRepo || null, finalBranch || null, initialAssignmentStatus,
+    completedAt, completionSource, completedBy
   ]);
 
   const createdTask: any = {
@@ -305,7 +344,7 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     description: description || '',
     status,
     priority,
-    user_status: 'TODO',
+    user_status: userStatus,
     assignee_id: targetAssigneeId || req.user!.id,
     created_by: req.user!.id,
     due_date: dueDate || 'Tomorrow',
@@ -314,11 +353,15 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     recurrence_rule: recurrence_rule || null,
     tags: tags || null,
     github_repo: finalGithubRepo || null,
-    github_branch: githubBranch || null,
+    github_branch: finalBranch || null,
     github_ci_status: 'UNKNOWN',
     is_archived: 0,
     is_deleted: 0,
     assignment_status: initialAssignmentStatus,
+    completed_at: completedAt,
+    completion_source: completionSource,
+    completed_by: completedBy,
+    auto_completed: 0,
     created_at: nowIso,
     updated_at: nowIso
   };
@@ -334,7 +377,7 @@ tasksRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): P
     runQuery(`
       INSERT INTO global_activities (id, user_id, workspace_id, project_id, task_id, category, icon_symbol, title, meta_text, created_at)
       VALUES (?, ?, ?, ?, ?, 'TASK', '○', ?, ?, datetime('now'))
-    `, [uuidv4(), req.user!.id, finalWorkspaceId, projectId, taskId, `Task created: ${title}`, taskCode])
+    `, [uuidv4(), req.user!.id, finalWorkspaceId, finalProjectId, taskId, `Task created: ${title}`, taskCode])
   ];
 
   if (targetAssigneeId && targetAssigneeId !== req.user!.id) {
@@ -545,9 +588,29 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
   const { id } = req.params;
   const title = req.body.title;
   const description = req.body.description;
-  const status = req.body.status;
+  let rawStatus = req.body.status !== undefined ? String(req.body.status).toUpperCase().trim() : undefined;
+  let status: 'PENDING' | 'NEEDS_VERIFICATION' | 'DONE' | undefined = undefined;
+
+  if (rawStatus !== undefined) {
+    if (rawStatus === 'DONE' || rawStatus === 'COMPLETED') {
+      status = 'DONE';
+    } else if (rawStatus === 'NEEDS_VERIFICATION') {
+      status = 'NEEDS_VERIFICATION';
+    } else {
+      status = 'PENDING';
+    }
+  }
+
   const priority = req.body.priority;
-  const userStatus = req.body.userStatus || req.body.user_status || (status === 'DONE' ? 'COMPLETED' : (status ? 'IN_PROGRESS' : undefined));
+  let userStatus = req.body.userStatus || req.body.user_status;
+  if (userStatus) {
+    userStatus = userStatus.toUpperCase().trim();
+  } else if (status === 'DONE') {
+    userStatus = 'COMPLETED';
+  } else if (status === 'PENDING' || status === 'NEEDS_VERIFICATION') {
+    userStatus = 'PENDING';
+  }
+
   const rawAssignee = req.body.assigneeId || req.body.assignee_id || req.body.assignee;
   const assigneeId = typeof rawAssignee === 'object' ? rawAssignee?.id : (rawAssignee !== undefined ? rawAssignee : undefined);
   const dueDate = req.body.dueDate || req.body.due_date;
@@ -567,19 +630,22 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
     return;
   }
 
-  // Detect status change
-  if (status && status !== current.status) {
+  const isCurrentDone = current.status === 'DONE' || current.user_status === 'COMPLETED';
+  const isBecomingDone = status === 'DONE' || userStatus === 'COMPLETED';
+  const isBecomingReopened = isCurrentDone && (status === 'PENDING' || status === 'NEEDS_VERIFICATION' || (userStatus && userStatus !== 'COMPLETED'));
+
+  // Activity audit logging
+  if (isBecomingReopened) {
+    await runQuery(`
+      INSERT INTO task_activity (id, task_id, user_id, action_type, summary, details, created_at)
+      VALUES (?, ?, ?, 'REOPENED', ?, ?, datetime('now'))
+    `, [uuidv4(), id, req.user!.id, `Task reopened by ${req.user!.name}`, 'Status restored to PENDING']);
+  } else if (status && status !== current.status) {
     await runQuery(`
       INSERT INTO task_activity (id, task_id, user_id, action_type, summary, details, created_at)
       VALUES (?, ?, ?, 'STATUS_CHANGE', ?, ?, datetime('now'))
     `, [uuidv4(), id, req.user!.id, `Status changed from ${current.status} to ${status}`, `${req.user!.name} updated status`]);
   }
-
-  const isDone = status === 'DONE' || userStatus === 'COMPLETED' || req.body.user_status === 'COMPLETED';
-  const isReopened = (status && status !== 'DONE') || (userStatus && userStatus !== 'COMPLETED') || (req.body.user_status && req.body.user_status !== 'COMPLETED');
-  const completedAtValue = isDone
-    ? (current.completed_at || new Date().toISOString())
-    : (isReopened ? null : current.completed_at);
 
   const updateFields: string[] = [];
   const updateValues: any[] = [];
@@ -609,6 +675,14 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
     updateValues.push(assigneeId || null);
     if (assigneeId && assigneeId !== current.assignee_id) {
       updateFields.push("assignment_status = 'ASSIGNED'");
+      // Dynamically update developer branch for reassigned user if custom branch is not specified
+      if (githubBranch === undefined) {
+        const newAssigneeUser = await queryOne('SELECT github_username, username FROM users WHERE id = ?', [assigneeId]);
+        if (newAssigneeUser && (newAssigneeUser.github_username || newAssigneeUser.username)) {
+          updateFields.push('github_branch = ?');
+          updateValues.push(`feature/${newAssigneeUser.github_username || newAssigneeUser.username}`);
+        }
+      }
     } else if (!assigneeId) {
       updateFields.push("assignment_status = 'NONE'");
     }
@@ -654,10 +728,23 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
     updateValues.push(githubCiStatus || null);
   }
 
-  updateFields.push('completed_at = ?');
-  updateValues.push(completedAtValue);
-  updateFields.push("updated_at = datetime('now')");
+  if (isBecomingDone) {
+    updateFields.push("completed_at = COALESCE(completed_at, datetime('now'))");
+    updateFields.push("completion_source = COALESCE(completion_source, 'MANUAL')");
+    updateFields.push('completed_by = COALESCE(completed_by, ?)');
+    updateValues.push(req.user!.id);
+  } else if (isBecomingReopened) {
+    updateFields.push('completed_at = NULL');
+    updateFields.push('completed_by = NULL');
+    updateFields.push('completion_source = NULL');
+    updateFields.push('completion_commit_sha = NULL');
+    updateFields.push('completion_commit_url = NULL');
+    updateFields.push('completion_reason = NULL');
+    updateFields.push('dev_confidence_score = NULL');
+    updateFields.push('auto_completed = 0');
+  }
 
+  updateFields.push("updated_at = datetime('now')");
   updateValues.push(id);
 
   if (updateFields.length > 0) {
@@ -667,15 +754,13 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
   // Recurrence handling: When a recurring task is completed, generate the next occurrence
   const effectiveRecurrence = recurrence_rule !== undefined ? recurrence_rule : current.recurrence_rule;
   if (
-    (status === 'DONE' || userStatus === 'COMPLETED') &&
-    (current.status !== 'DONE' && current.user_status !== 'COMPLETED') &&
+    isBecomingDone &&
+    !isCurrentDone &&
     effectiveRecurrence
   ) {
     try {
       const nextDue = getNextRecurrenceDate(effectiveRecurrence, current.due_at || current.due_date);
-      const maxRow = await queryOne('SELECT MAX(task_number) as max_num FROM tasks WHERE project_id = ?', [current.project_id]);
-      const nextNum = Number(maxRow?.max_num || 0) + 1;
-      const nextTaskCode = `TASK-${String(nextNum).padStart(2, '0')}`;
+      const { nextNum, taskCode: nextTaskCode } = await getNextTaskNumber(current.project_id, current.github_repo);
       const nextTaskId = uuidv4();
 
       await runQuery(`
@@ -686,7 +771,7 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
           github_ci_status, is_archived, is_deleted, created_at, updated_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?,
-          'TODO', ?, 'PENDING', ?, ?, ?, ?,
+          'PENDING', ?, 'PENDING', ?, ?, ?, ?,
           NULL, ?, ?, ?, ?, ?,
           'UNKNOWN', 0, 0, datetime('now'), datetime('now')
         )
@@ -788,37 +873,7 @@ tasksRouter.post('/:id/restore', authMiddleware, async (req: AuthRequest, res: R
   res.json({ task: updated, message: 'Task restored' });
 });
 
-// Helper to dynamically re-sequence active project tasks so there are no numbering gaps
-export async function resequenceProjectTasks(projectId: string | null, githubRepo: string | null): Promise<void> {
-  if (!projectId && !githubRepo) return;
-  try {
-    const tasks = await queryAll(
-      `SELECT id, task_number, task_code FROM tasks 
-       WHERE (project_id = ? OR (github_repo = ? AND github_repo IS NOT NULL))
-         AND (is_deleted = 0 OR is_deleted IS NULL)
-       ORDER BY created_at ASC`,
-      [projectId, githubRepo]
-    );
-
-    if (tasks && tasks.length > 0) {
-      for (let i = 0; i < tasks.length; i++) {
-        const desiredNum = i + 1;
-        const desiredCode = `TASK-${String(desiredNum).padStart(2, '0')}`;
-        const t = tasks[i];
-        if (t.task_number !== desiredNum || t.task_code !== desiredCode) {
-          await runQuery(
-            'UPDATE tasks SET task_number = ?, task_code = ?, updated_at = datetime(\'now\') WHERE id = ?',
-            [desiredNum, desiredCode, t.id]
-          );
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[RESEQUENCE TASKS ERROR]', err);
-  }
-}
-
-// DELETE Task (Soft delete with undo support & automatic task re-sequencing)
+// DELETE Task (Soft delete preserving permanent historical task identity & GitHub evidence)
 tasksRouter.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
@@ -827,19 +882,17 @@ tasksRouter.delete('/:id', authMiddleware, async (req: AuthRequest, res: Respons
     return;
   }
 
+  // Soft delete preserves database UUID, TASK code, and historical GitHub evidence permanently
   await runQuery(`
     UPDATE tasks SET is_deleted = 1, deleted_at = datetime('now'), updated_at = datetime('now')
     WHERE id = ?
   `, [id]);
 
-  // Re-sequence remaining tasks in the project so there are no numbering gaps
-  await resequenceProjectTasks(current.project_id, current.github_repo);
-
   emitToWorkspace(current.workspace_id, 'task:deleted', { taskId: id });
   res.json({ success: true, message: 'Task deleted', taskId: id });
 });
 
-// POST Undo Delete Task
+// POST Undo Delete Task (Restores task without changing task number)
 tasksRouter.post('/:id/undo-delete', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
@@ -853,12 +906,88 @@ tasksRouter.post('/:id/undo-delete', authMiddleware, async (req: AuthRequest, re
     WHERE id = ?
   `, [id]);
 
-  // Re-sequence project tasks to include the restored task
-  await resequenceProjectTasks(current.project_id, current.github_repo);
-
   const restored = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
   emitToWorkspace(current.workspace_id, 'task:created', { task: restored });
   res.json({ task: restored, message: 'Task restored' });
+});
+
+// POST Confirm Verification (User confirms medium-confidence AI match -> DONE)
+tasksRouter.post('/:id/confirm-verification', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  if (!current) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  const completedAt = current.completed_at || new Date().toISOString();
+  await runQuery(`
+    UPDATE tasks SET
+      status = 'DONE',
+      user_status = 'COMPLETED',
+      auto_completed = 1,
+      completion_source = 'GITHUB_AI_MATCH',
+      completed_by = ?,
+      completed_at = ?,
+      updated_at = datetime('now')
+    WHERE id = ?
+  `, [req.user!.id, completedAt, id]);
+
+  await runQuery(`
+    INSERT INTO task_activity (id, task_id, user_id, action_type, summary, details, created_at)
+    VALUES (?, ?, ?, 'VERIFICATION_CONFIRMED', '✓ Verification confirmed by user', 'Status updated to DONE', datetime('now'))
+  `, [uuidv4(), id, req.user!.id]);
+
+  const evidence = await recalculateTaskEvidence(id);
+  const updated = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+
+  emitToTask(id, 'task:updated', { task: updated, evidence });
+  emitToWorkspace(current.workspace_id, 'todo:completed', { task: updated, evidence });
+  emitToWorkspace(current.workspace_id, 'task:updated', { task: updated, evidence });
+  emitToWorkspace(current.workspace_id, 'project:updated', { projectId: current.project_id });
+
+  res.json({ success: true, task: updated, evidence });
+});
+
+// POST Reject Verification (User rejects medium-confidence AI match -> restored to PENDING)
+tasksRouter.post('/:id/reject-verification', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  if (!current) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  // Clear current verification state, but preserve GitHub commits in history/evidence
+  await runQuery(`
+    UPDATE tasks SET
+      status = 'PENDING',
+      user_status = 'PENDING',
+      dev_confidence_score = NULL,
+      completed_at = NULL,
+      completion_source = NULL,
+      completion_commit_sha = NULL,
+      completion_commit_url = NULL,
+      completion_reason = NULL,
+      auto_completed = 0,
+      completed_by = NULL,
+      updated_at = datetime('now')
+    WHERE id = ?
+  `, [id]);
+
+  await runQuery(`
+    INSERT INTO task_activity (id, task_id, user_id, action_type, summary, details, created_at)
+    VALUES (?, ?, ?, 'VERIFICATION_REJECTED', 'Verification rejected by user', 'Status restored to PENDING', datetime('now'))
+  `, [uuidv4(), id, req.user!.id]);
+
+  const evidence = await recalculateTaskEvidence(id);
+  const updated = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+
+  emitToTask(id, 'task:updated', { task: updated, evidence });
+  emitToWorkspace(current.workspace_id, 'task:updated', { task: updated, evidence });
+  emitToWorkspace(current.workspace_id, 'project:updated', { projectId: current.project_id });
+
+  res.json({ success: true, task: updated, evidence });
 });
 
 // Subtask management
@@ -1000,12 +1129,12 @@ tasksRouter.post('/:id/accept', authMiddleware, async (req: AuthRequest, res: Re
     return;
   }
 
-  // Update status: ASSIGNED -> ACCEPTED, user_status -> IN_PROGRESS, status -> IN_PROGRESS
+  // Update status: ASSIGNED -> ACCEPTED, user_status -> IN_PROGRESS, status -> PENDING (canonical)
   await runQuery(`
     UPDATE tasks
     SET assignment_status = 'ACCEPTED',
         user_status = 'IN_PROGRESS',
-        status = 'IN_PROGRESS',
+        status = 'PENDING',
         completed_at = NULL,
         auto_completed = 0,
         updated_at = datetime('now')
@@ -1016,7 +1145,7 @@ tasksRouter.post('/:id/accept', authMiddleware, async (req: AuthRequest, res: Re
   await runQuery(`
     INSERT INTO task_activity (id, task_id, user_id, action_type, summary, created_at)
     VALUES (?, ?, ?, 'TASK_ACCEPTED', ?, datetime('now'))
-  `, [uuidv4(), id, userId, `Task accepted by ${req.user!.name} — status set to In Progress`]);
+  `, [uuidv4(), id, userId, `Task accepted by ${req.user!.name}`]);
 
   await runQuery(`
     INSERT INTO global_activities (id, user_id, workspace_id, project_id, task_id, category, icon_symbol, title, meta_text, created_at)
@@ -1130,7 +1259,7 @@ tasksRouter.post('/:id/reject', authMiddleware, async (req: AuthRequest, res: Re
     SET assignment_status = 'REJECTED',
         assignee_id = NULL,
         user_status = 'NOT_STARTED',
-        status = 'TODO',
+        status = 'PENDING',
         updated_at = datetime('now')
     WHERE id = ?
   `, [id]);

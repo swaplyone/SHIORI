@@ -3,7 +3,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, runQuery } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { emitToUser } from '../services/socket.service.js';
-import { resequenceProjectTasks } from './tasks.routes.js';
 
 export const projectsRouter = Router();
 
@@ -116,9 +115,6 @@ projectsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Respons
       })
       .catch(() => {});
   }
-
-  // Ensure project tasks are sequentially numbered with no gaps
-  await resequenceProjectTasks(project.id, project.github_repo_name);
 
   // Get project TODOs (excluding soft-deleted tasks)
   const todos = await queryAll(`

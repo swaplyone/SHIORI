@@ -79,7 +79,10 @@ export const JAPANESE_MATTE_PRESETS: JapaneseMattePreset[] = [
   },
 ];
 
-export type TaskStatus = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
+export type CanonicalTaskStatus = 'PENDING' | 'NEEDS_VERIFICATION' | 'DONE';
+export type TaskStatus = 'PENDING' | 'NEEDS_VERIFICATION' | 'DONE' | 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'REVIEW';
+export type TaskLifecycleStatus = 'PENDING' | 'NEEDS_VERIFICATION' | 'DUE_TODAY' | 'DUE_TOMORROW' | 'DUE_DATE' | 'OVERDUE' | 'COMPLETED_ON_TIME' | 'COMPLETED_LATE';
+export type CompletionSource = 'MANUAL' | 'GITHUB_COMMIT' | 'GITHUB_AI_MATCH' | 'SYSTEM';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 export type CIStatus = 'UNKNOWN' | 'RUNNING' | 'PASSED' | 'FAILED';
 
@@ -222,10 +225,13 @@ export interface Task {
   assignee_id?: string;
   assignee_name?: string;
   assignee_avatar?: string;
+  assignee_github_username?: string;
+  assignee_username?: string;
   created_by: string;
   creator_name?: string;
   due_date?: string;
   due_at?: string;
+  deadline?: string;
   reminder_at?: string;
   is_reminder_sent?: number | boolean;
   recurrence_rule?: string;
@@ -253,6 +259,11 @@ export interface Task {
   auto_completed?: number | boolean;
   auto_completed_reason?: string;
   completed_at?: string;
+  completed_by?: string;
+  completion_source?: 'MANUAL' | 'GITHUB_COMMIT' | 'GITHUB_AI_MATCH' | 'SYSTEM';
+  completion_commit_sha?: string;
+  completion_commit_url?: string;
+  completion_reason?: string;
   dev_evidence_commits_count?: number;
   dev_evidence_prs_count?: number;
   dev_evidence_files_changed?: number;

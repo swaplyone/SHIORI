@@ -11,10 +11,8 @@ interface KanbanBoardProps {
 }
 
 const COLUMNS: { key: TaskStatus; label: string; symbol: string }[] = [
-  { key: 'BACKLOG', label: 'BACKLOG', symbol: '·' },
-  { key: 'TODO', label: 'TODO', symbol: '○' },
-  { key: 'IN_PROGRESS', label: 'IN PROGRESS', symbol: '◐' },
-  { key: 'REVIEW', label: 'REVIEW', symbol: '→' },
+  { key: 'PENDING', label: 'PENDING', symbol: '○' },
+  { key: 'NEEDS_VERIFICATION', label: 'NEEDS VERIFICATION', symbol: '⚡' },
   { key: 'DONE', label: 'DONE', symbol: '✓' },
 ];
 
@@ -34,9 +32,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     }
   };
 
-  const getTasksByStatus = (status: TaskStatus) => {
+  const getTasksByStatus = (columnKey: TaskStatus) => {
     return tasks
-      .filter((t) => t.status === status)
+      .filter((t) => {
+        if (columnKey === 'DONE') {
+          return t.status === 'DONE' || t.user_status === 'COMPLETED';
+        }
+        if (columnKey === 'NEEDS_VERIFICATION') {
+          return t.status === 'NEEDS_VERIFICATION';
+        }
+        // PENDING column includes PENDING and any legacy/in-progress pending statuses
+        return t.status !== 'DONE' && t.status !== 'NEEDS_VERIFICATION' && t.user_status !== 'COMPLETED';
+      })
       .sort((a, b) => {
         const pDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
         if (pDiff !== 0) return pDiff;

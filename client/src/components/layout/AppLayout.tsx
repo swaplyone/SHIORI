@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, Link } from 'react-router-dom';
 import { CommandPalette } from './CommandPalette';
 import { EInkNoticeBanner } from '../common/EInkNoticeBanner';
 import { PwaInstallPrompt } from '../common/PwaInstallPrompt';
@@ -12,13 +12,18 @@ import { SparkFloatingBubble } from '../spark/SparkFloatingBubble';
 import { SparkMicrophonePromptModal } from '../spark/SparkMicrophonePromptModal';
 import { useNotifications } from '../../context/NotificationContext';
 import { useSpark } from '../../context/SparkContext';
+import { useAuth } from '../../context/AuthContext';
+import { fetchJson } from '../../utils/api';
 
 export const AppLayout: React.FC = () => {
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [ghNeedsAttention, setGhNeedsAttention] = useState(false);
+  const [isGhBannerDismissed, setIsGhBannerDismissed] = useState(false);
   const { isRefreshing } = useNotifications();
   const { openSpark, toggleSpark } = useSpark();
+  const { token, user } = useAuth();
 
   // Listen for global custom events from Dynamic Island & shortcuts
   useEffect(() => {
@@ -63,6 +68,26 @@ export const AppLayout: React.FC = () => {
     };
   }, [openSpark, toggleSpark]);
 
+  // Check GitHub connection health once on mount or when refreshed
+  useEffect(() => {
+    if (!token) return;
+    const checkGhHealth = async () => {
+      try {
+        const { ok, data } = await fetchJson('/api/github/status');
+        if (ok && data?.status === 'needs_attention') {
+          setGhNeedsAttention(true);
+        } else {
+          setGhNeedsAttention(false);
+        }
+      } catch {}
+    };
+
+    checkGhHealth();
+    const handleRefresh = () => checkGhHealth();
+    window.addEventListener('shiori-refresh', handleRefresh);
+    return () => window.removeEventListener('shiori-refresh', handleRefresh);
+  }, [token]);
+
   return (
     <div
       className={`min-h-screen bg-eink-bg text-eink-text flex flex-col eink-paper transition-colors ${
@@ -73,6 +98,34 @@ export const AppLayout: React.FC = () => {
 
       {/* Main Content Workspace Canvas */}
       <div className="flex-1 flex flex-col min-w-0 w-full min-h-screen pt-20 sm:pt-24 pb-16 overflow-x-hidden">
+        {/* In-app Lightweight GitHub Needs Attention Alert */}
+        {ghNeedsAttention && !isGhBannerDismissed && (
+          <aside aria-label="GitHub Connection Notice" className="w-full bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 font-sans text-xs select-none animate-fade-in">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 text-eink-text">
+                <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+                <span className="font-technical font-bold">GitHub connection needs attention.</span>
+                <span className="text-eink-textSecondary hidden sm:inline">Reconnect to continue Git verification and commit updates.</span>
+              </div>
+              <div className="flex items-center gap-2 self-end sm:self-center">
+                <Link
+                  to="/github"
+                  className="px-3 py-1 bg-eink-text text-eink-bg font-technical text-[11px] font-bold rounded-sm shadow-eink-sm hover:opacity-90"
+                >
+                  Reconnect GitHub
+                </Link>
+                <button
+                  onClick={() => setIsGhBannerDismissed(true)}
+                  className="px-1.5 py-0.5 text-eink-textMuted hover:text-eink-text text-xs"
+                  title="Dismiss notice"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </aside>
+        )}
+
         {/* Real-time E-Ink Development Notice Banner */}
         <EInkNoticeBanner onViewTask={(taskId) => setSelectedTaskId(taskId)} />
 

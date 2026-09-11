@@ -26,7 +26,9 @@ import {
   Play,
   Tag,
   Check,
-  Edit3
+  Edit3,
+  Copy,
+  AlertCircle
 } from 'lucide-react';
 import { Task, Subtask, Comment, TaskActivity, GitHubCommit, GitHubWorkflowRun, TaskPriority } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -40,6 +42,7 @@ import { TaskCommitHistory } from './TaskCommitHistory';
 import { FocusModeModal } from './FocusModeModal';
 import { triggerUndoToast } from '../ui/UndoToast';
 import { reminderManager } from '../../utils/reminderManager';
+import { getTodoLifecycleStatus } from '../../utils/taskLifecycle';
 
 interface TaskDetailModalProps {
   taskId: string | null;
@@ -53,6 +56,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
 
   const [loading, setLoading] = useState(true);
   const [task, setTask] = useState<Task | null>(null);
+  const [copiedCommitFormat, setCopiedCommitFormat] = useState(false);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [activity, setActivity] = useState<TaskActivity[]>([]);
@@ -426,6 +430,40 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
     }
   };
 
+  const handleConfirmVerification = async () => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/confirm-verification`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRejectVerification = async () => {
+    if (!task || !token) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/reject-verification`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        triggerEInkRefresh();
+        fetchTaskDetails();
+        if (onTaskUpdated) onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleToggleSubtask = async (subtaskId: string, currentCompleted: boolean | number) => {
     if (!task || !token) return;
     try {
@@ -498,6 +536,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
   if (!taskId) return null;
 
   const isDone = Boolean(task && (task.status === 'DONE' || task.user_status === 'COMPLETED'));
+  const lifecycle = task ? getTodoLifecycleStatus(task) : null;
 
   return (
     <div className="fixed inset-0 z-[10001] flex items-center justify-center p-2 sm:p-4 md:p-6 select-none font-sans">
@@ -627,6 +666,43 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           </div>
         ) : task ? (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            {/* Needs Verification Review Banner */}
+            {task.status === 'NEEDS_VERIFICATION' && (
+              <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-600 rounded-sm space-y-2 font-technical shadow-eink-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                    <span className="font-bold text-xs uppercase tracking-wider text-amber-900 dark:text-amber-200">
+                      GITHUB COMMIT VERIFICATION PENDING
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 font-mono">
+                    70–84% MATCH CONFIDENCE
+                  </span>
+                </div>
+                <p className="text-xs text-amber-900 dark:text-amber-200 font-sans">
+                  SHIORI detected a recent GitHub commit that might fulfill this task ({task.completion_reason || 'AI semantic match pending confirmation'}). Please verify if this completes the task.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleConfirmVerification}
+                    className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs shadow-eink-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>CONFIRM COMPLETION (DONE)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRejectVerification}
+                    className="px-3 py-1.5 border border-eink-border bg-eink-bg hover:bg-eink-surface rounded-sm text-xs font-bold text-eink-text cursor-pointer transition-colors"
+                  >
+                    REJECT & KEEP OPEN
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Task Assignment Accept / Reject Banner */}
             {task.assignee_id === user?.id && (task.assignment_status === 'ASSIGNED' || !task.assignment_status || task.assignment_status === 'NONE') && task.created_by !== user?.id && (
               <div className="p-3.5 bg-eink-surface border-2 border-eink-text rounded-sm space-y-2 font-technical shadow-eink-sm animate-fade-in">
@@ -820,6 +896,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                           <span className="w-3.5 h-3.5 rounded-full bg-eink-text text-eink-bg flex items-center justify-center text-[9px] font-bold">✓</span>
                           <span>COMPLETED</span>
                         </>
+                      ) : task.status === 'NEEDS_VERIFICATION' ? (
+                        <>
+                          <span className="w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] font-bold">?</span>
+                          <span className="text-amber-700 dark:text-amber-300">VERIFYING</span>
+                        </>
                       ) : task.status === 'IN_PROGRESS' ? (
                         <>
                           <span className="w-3.5 h-3.5 rounded-full border-2 border-eink-text border-t-transparent animate-spin inline-block" />
@@ -839,7 +920,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                     )}
                   </div>
                   <p className="text-[10px] text-eink-textMuted pt-1 leading-tight font-sans">
-                    {isDone ? 'Verified through GitHub development activity.' : `Auto-completes when a Git commit references ${task.task_code}.`}
+                    {isDone ? 'Verified through GitHub development activity.' : task.status === 'NEEDS_VERIFICATION' ? 'Commit detected. Awaiting manual confirmation.' : `Auto-completes when a Git commit references ${task.task_code}.`}
                   </p>
                 </div>
 
@@ -897,10 +978,20 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                 </div>
 
                 <div>
-                  <span className="text-[10px] text-eink-textMuted uppercase block font-bold">DUE DATE</span>
+                  <span className="text-[10px] text-eink-textMuted uppercase block font-bold">
+                    {isDone ? 'LIFECYCLE & DEADLINE' : 'DUE DATE'}
+                  </span>
                   {isDone ? (
                     <div className="mt-1 px-2.5 py-1.5 bg-eink-bg border border-eink-border rounded text-xs font-technical text-eink-text">
-                      <div className="font-bold">{task.due_date || 'No deadline'}</div>
+                      <div className="font-bold flex items-center gap-1.5">
+                        <span className="text-emerald-700 dark:text-emerald-400">✓</span>
+                        <span>{lifecycle?.label || 'Completed'}</span>
+                      </div>
+                      {task.due_date && (
+                        <div className="text-[10px] text-eink-textMuted font-mono pt-0.5">
+                          Original deadline: {task.due_date}
+                        </div>
+                      )}
                       {task.completed_at && (
                         <div className="text-[10px] text-eink-textMuted font-mono pt-0.5">
                           Finished: {new Date(task.completed_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -1012,6 +1103,62 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
               </div>
             </div>
 
+            {/* Suggested Commit Format snippet */}
+            <div className="p-3 bg-eink-surface border border-eink-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="min-w-0">
+                <span className="text-[10px] text-eink-textMuted uppercase font-bold block font-technical">SUGGESTED COMMIT MESSAGE</span>
+                <code className="font-mono text-xs text-eink-text font-bold select-all bg-eink-bg px-2 py-1 rounded border border-eink-border inline-block mt-1 truncate max-w-full">
+                  [{task.task_code}] {task.title}
+                </code>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(`[${task.task_code}] ${task.title}`);
+                  setCopiedCommitFormat(true);
+                  setTimeout(() => setCopiedCommitFormat(false), 2000);
+                }}
+                className="px-2.5 py-1.5 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded text-xs font-technical font-bold text-eink-text flex items-center gap-1.5 shrink-0 cursor-pointer shadow-eink-sm transition-colors"
+              >
+                {copiedCommitFormat ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedCommitFormat ? 'COPIED FORMAT!' : 'COPY COMMIT FORMAT'}</span>
+              </button>
+            </div>
+
+            {/* Completion Evidence & Reason Block */}
+            {(isDone || task.completion_source) && (
+              <div className="p-3.5 bg-eink-surface border-2 border-eink-text rounded-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-technical text-xs font-bold uppercase text-eink-text flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-eink-text" />
+                    <span>COMPLETION EVIDENCE & AUDIT</span>
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-eink-bg border border-eink-border px-1.5 py-0.5 rounded">
+                    SOURCE: {task.completion_source || (task.auto_completed ? 'GITHUB_COMMIT' : 'MANUAL')}
+                  </span>
+                </div>
+                <div className="text-xs space-y-1 font-sans text-eink-textSecondary">
+                  <p><strong>Reason:</strong> {task.completion_reason || (task.auto_completed ? 'Auto-verified through GitHub commit.' : 'Marked completed manually.')}</p>
+                  {task.completion_commit_sha && (
+                    <p className="font-mono text-[11px] flex items-center gap-1.5 flex-wrap pt-0.5">
+                      <strong>Commit SHA:</strong>
+                      <code className="bg-eink-bg px-1.5 py-0.5 rounded border border-eink-border">{task.completion_commit_sha.substring(0, 7)}</code>
+                      {task.completion_commit_url && (
+                        <a href={task.completion_commit_url} target="_blank" rel="noreferrer" className="text-eink-text underline hover:opacity-80 flex items-center gap-0.5">
+                          View commit on GitHub <ExternalLink className="w-3 h-3 inline" />
+                        </a>
+                      )}
+                    </p>
+                  )}
+                  {task.completed_at && (
+                    <p className="text-[10px] text-eink-textMuted font-mono pt-0.5">
+                      Completed timestamp: {new Date(task.completed_at).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Development & GitHub Linking Section */}
             <div className="space-y-4 pb-6 border-b border-eink-border">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1117,7 +1264,13 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
               )}
 
               {/* Task Commit History Section */}
-              <TaskCommitHistory taskId={task.id} taskCode={task.task_code} />
+              <TaskCommitHistory
+                taskId={task.id}
+                taskCode={task.task_code}
+                taskAssigneeName={task.assignee_name}
+                taskAssigneeGithub={task.assignee_github_username}
+                expectedBranch={task.github_branch}
+              />
 
               {/* CI Workflow Logs toggle */}
               {workflowRuns.length > 0 && (

@@ -78,129 +78,41 @@ export async function processPushEvent(payload: any) {
     reason: `Git push: ${repoName} (${branchName})`
   });
 
-  // 3. Relevance Analysis for Automatic To-Do Completion
-  const pendingTasks = await queryAll(`
-    SELECT * FROM tasks 
-    WHERE status != 'DONE' AND user_status != 'COMPLETED'
-  `);
+  // 3. Unified Commit Verification Pipeline
+  const { verifyAndProcessCommits } = await import('./commitVerification.service.js');
+  const incomingCommits = commits.map((c: any) => ({
+    sha: c.id || c.hash || primarySha,
+    message: c.message || '',
+    authorName: c.author?.name || sender,
+    authorUsername: c.author?.username || sender,
+    authorAvatar: c.author?.avatar_url || null,
+    branch: branchName,
+    filesChanged: (c.added?.length || 0) + (c.modified?.length || 0) + (c.removed?.length || 0) || 1,
+    addedFiles: c.added || [],
+    modifiedFiles: c.modified || [],
+    removedFiles: c.removed || [],
+    url: c.url,
+    timestamp: c.timestamp
+  }));
 
-  let autoCompletedTasks: any[] = [];
+  const verificationRes = await verifyAndProcessCommits(incomingCommits, {
+    repoName,
+    branchName,
+    sender,
+    source: 'WEBHOOK',
+    userId
+  });
 
-  for (const task of pendingTasks) {
-    let confidence = 0;
-    let matchReason = '';
-
-    // Check A: Explicit task code in commit message (e.g. TASK-039 or #39)
-    const taskCodeRegex = new RegExp(`\\b(${task.task_code}|#${task.task_number})\\b`, 'i');
-    if (taskCodeRegex.test(commitMessage)) {
-      const isCompletionVerb = /\b(fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved|finish|finished|complete|completed|done)\b/i.test(commitMessage);
-      if (isCompletionVerb) {
-        confidence = 0.95;
-        matchReason = `Commit explicitly resolves ${task.task_code}: "${commitMessage}"`;
-      } else {
-        confidence = 0.70;
-        matchReason = `Commit references ${task.task_code}`;
-      }
-    }
-
-    // Check B: Repository and specific branch match with implementation verbs
-    if (confidence === 0 && task.github_repo && repoName.toLowerCase().includes(task.github_repo.toLowerCase())) {
-      const isFeatureBranch = task.github_branch && task.github_branch.toLowerCase() === branchName.toLowerCase() && branchName.toLowerCase() !== 'main';
-      const actionVerbRegex = /\b(fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved|finish|finished|complete|completed|done)\b/i;
-      
-      if (isFeatureBranch && actionVerbRegex.test(commitMessage)) {
-        confidence = 0.90;
-        matchReason = `Resolving commit on feature branch ${branchName}: "${commitMessage}"`;
-      } else if (isFeatureBranch) {
-        confidence = 0.65;
-        matchReason = `Work in progress on feature branch ${branchName}`;
-      } else {
-        // Check C: Title keyword overlap without explicit task reference -> MEDIUM CONFIDENCE (0.65)
-        const keywords = getTaskKeywords(task.title);
-        const msgLower = commitMessage.toLowerCase();
-        const matchedKeywords = keywords.filter((kw) => msgLower.includes(kw));
-        
-        if (matchedKeywords.length >= 2 || (matchedKeywords.length === 1 && keywords.length === 1)) {
-          confidence = 0.65;
-          matchReason = `Related commits matching task keywords: [${matchedKeywords.join(', ')}]`;
-        }
-      }
-    }
-
-    // HIGH CONFIDENCE -> Automatically complete task
-    if (confidence >= 0.85) {
-      // Record commit on task
-      await runQuery(`
-        INSERT INTO github_commits (id, task_id, repo_name, branch_name, commit_hash, message, author_name, files_changed, pushed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `, [uuidv4(), task.id, repoName, branchName, primarySha, commitMessage, sender, filesChanged]);
-
-      // Automatically complete task
-      await runQuery(`
-        UPDATE tasks SET 
-          status = 'DONE',
-          user_status = 'COMPLETED',
-          auto_completed = 1,
-          auto_completed_reason = ?,
-          dev_confidence_score = ?,
-          github_last_commit_hash = ?,
-          github_last_commit_msg = ?,
-          github_last_commit_author = ?,
-          github_last_commit_time = 'Just now',
-          completed_at = datetime('now'),
-          updated_at = datetime('now')
-        WHERE id = ?
-      `, [matchReason, confidence, primarySha, commitMessage, sender, task.id]);
-
-      // Log task activity
-      await runQuery(`
-        INSERT INTO task_activity (id, task_id, action_type, summary, details, created_at)
-        VALUES (?, ?, 'AUTO_COMPLETED', ?, ?, datetime('now'))
-      `, [uuidv4(), task.id, `Task automatically completed`, matchReason]);
-
-      // Award +25 Bonus Points for automatically completed task!
-      await runQuery(`UPDATE users SET points = points + 25 WHERE id = ?`, [userId]);
-      const userAfterBonus = await queryOne('SELECT points FROM users WHERE id = ?', [userId]);
-
-      emitToUser(userId, 'points:updated', {
-        points: userAfterBonus?.points || 155,
-        added: 25,
-        reason: `Auto-completed ${task.task_code}: ${task.title}`
-      });
-
-      emitToTask(task.id, 'task:auto_completed', {
-        taskId: task.id,
-        taskCode: task.task_code,
-        title: task.title,
-        reason: matchReason,
-        commitHash: primarySha,
-        commitMessage,
-        author: sender
-      });
-
-      autoCompletedTasks.push({ ...task, matchReason, commitHash: primarySha });
-    } else if (confidence >= 0.50) {
-      // MEDIUM CONFIDENCE -> Log evidence & activity, but DO NOT automatically complete
-      await runQuery(`
-        INSERT INTO github_commits (id, task_id, repo_name, branch_name, commit_hash, message, author_name, files_changed, pushed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `, [uuidv4(), task.id, repoName, branchName, primarySha, commitMessage, sender, filesChanged]);
-
-      await runQuery(`
-        UPDATE tasks SET 
-          dev_confidence_score = ?,
-          dev_evidence_commits_count = dev_evidence_commits_count + 1,
-          github_last_commit_hash = ?,
-          github_last_commit_msg = ?,
-          github_last_commit_author = ?,
-          github_last_commit_time = 'Just now',
-          updated_at = datetime('now')
-        WHERE id = ?
-      `, [confidence, primarySha, commitMessage, sender, task.id]);
-
-      await recalculateTaskEvidence(task.id);
-      emitToWorkspace(task.workspace_id, 'task:updated', { taskId: task.id });
-    }
+  // Bonus points for automatically completed tasks
+  if (verificationRes.completedTasks.length > 0) {
+    const bonus = verificationRes.completedTasks.length * 25;
+    await runQuery(`UPDATE users SET points = points + ? WHERE id = ?`, [bonus, userId]);
+    const userAfterBonus = await queryOne('SELECT points FROM users WHERE id = ?', [userId]);
+    emitToUser(userId, 'points:updated', {
+      points: userAfterBonus?.points || 155,
+      added: bonus,
+      reason: `Auto-completed ${verificationRes.completedTasks.map((t) => t.task_code).join(', ')}`
+    });
   }
 
   // Global activity audit
@@ -214,12 +126,14 @@ export async function processPushEvent(payload: any) {
     repoName,
     branchName,
     commitsCount: commits.length,
-    autoCompleted: autoCompletedTasks
+    autoCompleted: verificationRes.completedTasks,
+    needsVerification: verificationRes.needsVerificationTasks
   });
 
   return {
-    pointsAwarded: 10 + (autoCompletedTasks.length * 25),
-    autoCompletedTasks
+    pointsAwarded: 10 + (verificationRes.completedTasks.length * 25),
+    autoCompletedTasks: verificationRes.completedTasks,
+    needsVerificationTasks: verificationRes.needsVerificationTasks
   };
 }
 

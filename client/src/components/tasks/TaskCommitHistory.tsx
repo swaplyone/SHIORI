@@ -20,12 +20,18 @@ interface TaskCommitHistoryProps {
   taskId: string;
   taskCode: string;
   initialCommits?: TaskCommit[];
+  taskAssigneeName?: string;
+  taskAssigneeGithub?: string;
+  expectedBranch?: string;
 }
 
 export const TaskCommitHistory: React.FC<TaskCommitHistoryProps> = ({
   taskId,
   taskCode,
-  initialCommits
+  initialCommits,
+  taskAssigneeName,
+  taskAssigneeGithub,
+  expectedBranch
 }) => {
   const { token } = useAuth();
   const [commits, setCommits] = useState<TaskCommit[]>(initialCommits || []);
@@ -200,6 +206,21 @@ export const TaskCommitHistory: React.FC<TaskCommitHistoryProps> = ({
                       )}
                     </div>
                   </div>
+
+                  {/* Assignment Mismatch Warning Notice */}
+                  {taskAssigneeGithub && commit.author && commit.author.toLowerCase() !== taskAssigneeGithub.toLowerCase() && (
+                    <div className="p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded text-[11px] text-amber-900 dark:text-amber-200 font-sans space-y-0.5">
+                      <div className="flex items-center gap-1.5 font-bold font-technical text-amber-800 dark:text-amber-300">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>⚠ Task assignment mismatch</span>
+                      </div>
+                      <p>
+                        {taskCode} is assigned to <strong>{taskAssigneeName || 'developer'}</strong> (@{taskAssigneeGithub}),
+                        but this commit was created by <strong>@{commit.author}</strong>.
+                        SHIORI did not automatically complete the task.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Expanded Details Drawer */}
                   {isExpanded && (
