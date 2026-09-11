@@ -43,6 +43,7 @@ import { FocusModeModal } from './FocusModeModal';
 import { triggerUndoToast } from '../ui/UndoToast';
 import { reminderManager } from '../../utils/reminderManager';
 import { getTodoLifecycleStatus } from '../../utils/taskLifecycle';
+import { TaskActivityTimeline } from './TaskActivityTimeline';
 
 interface TaskDetailModalProps {
   taskId: string | null;
@@ -1410,23 +1411,13 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                 </form>
               </div>
 
-              {/* Activity Audit Log */}
+              {/* Task Activity & Lifecycle Timeline */}
               <div className="space-y-3">
-                <h3 className="font-technical font-bold text-xs uppercase tracking-wider text-eink-text">
-                  AUDIT TIMELINE
-                </h3>
-
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {activity.map((act) => (
-                    <div key={act.id} className="p-2 border-l-2 border-eink-border pl-2.5 text-xs font-technical space-y-0.5">
-                      <div className="flex items-center justify-between text-[10px] text-eink-textMuted">
-                        <span>{act.action_type}</span>
-                        <span>{act.created_at}</span>
-                      </div>
-                      <p className="text-eink-text font-medium">{act.summary}</p>
-                    </div>
-                  ))}
-                </div>
+                <TaskActivityTimeline
+                  task={task}
+                  activity={activity}
+                  commits={commits}
+                />
               </div>
             </div>
           </div>

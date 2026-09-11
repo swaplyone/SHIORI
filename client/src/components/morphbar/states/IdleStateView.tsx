@@ -20,7 +20,8 @@ import {
   ArrowRight,
   RefreshCw,
   Home,
-  ShieldCheck
+  ShieldCheck,
+  BarChart3
 } from 'lucide-react';
 import { useMorphBar } from '../../../context/MorphBarContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -48,10 +49,9 @@ export const IdleCollapsedView: React.FC = () => {
         return { label: 'CONNECTIONS', icon: Users };
       case '/github':
         return { label: 'GITHUB HUB', icon: Github };
-      case '/journal':
-        return { label: 'DAILY JOURNAL', icon: BookOpen };
-      case '/activity':
-        return { label: 'ACTIVITY AUDIT', icon: Activity };
+      case '/weekly-report':
+      case '/reports':
+        return { label: 'WEEKLY REPORT', icon: BarChart3 };
       case '/notifications':
         return { label: 'NOTIFICATIONS', icon: Bell };
       case '/settings':
@@ -142,11 +142,10 @@ export const NavigationExpandedView: React.FC<{ onClose: () => void }> = ({ onCl
   const navItems = [
     { to: '/home', label: 'SHIORI HOME', desc: 'Overview & today activity', icon: BookOpen },
     { to: '/todos', label: 'MY TODOS', desc: 'To-do tasks & GitHub evidence', icon: CheckSquare },
-    { to: '/repositories', label: 'REPOSITORIES', desc: 'GitHub repos as projects', icon: FolderGit2 },
-    { to: '/connections', label: 'CONNECTIONS', desc: 'SHIORI ID & two-sided OTP', icon: Users },
+    { to: '/repositories', label: 'PROJECTS', desc: 'GitHub repos as projects', icon: FolderGit2 },
+    { to: '/weekly-report', label: 'WEEKLY REPORT', desc: 'Engineering week at a glance', icon: BarChart3 },
     { to: '/github', label: 'GITHUB HUB', desc: 'Webhook logs & CI pipeline', icon: Github },
-    { to: '/journal', label: 'DAILY JOURNAL', desc: 'Time audit & velocity', icon: BookOpen },
-    { to: '/activity', label: 'ACTIVITY AUDIT', desc: 'Real-time dev stream', icon: Activity },
+    { to: '/connections', label: 'CONNECTIONS', desc: 'SHIORI ID & two-sided OTP', icon: Users },
     { to: '/notifications', label: 'NOTIFICATIONS', desc: 'Alerts & task verification', icon: Bell, badge: unreadCount },
     { to: '/settings', label: 'SETTINGS', desc: 'E-Ink theme & preferences', icon: Settings },
   ];

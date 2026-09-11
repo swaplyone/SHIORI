@@ -185,7 +185,13 @@ tasksRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Response):
     ORDER BY c.created_at ASC
   `, [task.id]);
 
-  const activity = await queryAll('SELECT * FROM task_activity WHERE task_id = ? ORDER BY created_at DESC', [task.id]);
+  const activity = await queryAll(`
+    SELECT ta.*, u.name as user_name, u.username, u.github_username, u.avatar_url as user_avatar
+    FROM task_activity ta
+    LEFT JOIN users u ON ta.user_id = u.id
+    WHERE ta.task_id = ?
+    ORDER BY ta.created_at ASC
+  `, [task.id]);
   const commits = await queryAll('SELECT * FROM github_commits WHERE task_id = ? ORDER BY pushed_at DESC', [task.id]);
   const workflowRuns = await queryAll('SELECT * FROM github_workflow_runs WHERE task_id = ? ORDER BY started_at DESC', [task.id]);
 

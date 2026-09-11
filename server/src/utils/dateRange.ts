@@ -12,44 +12,54 @@ export interface DateRange {
 }
 
 /**
- * Normalizes any date value (Date instance, ISO string, SQL timestamp string) to an ISO string or empty string.
+/**
+ * Normalizes any timestamp value (Date, string, number, null, undefined) safely.
+ * Returns a valid Date object or null. Never throws or assumes .split() is a function.
  */
-export function normalizeDate(val: any): string {
-  if (!val) return '';
+export function normalizeTimestamp(val: any): Date | null {
+  if (val === null || val === undefined || val === '') return null;
   if (val instanceof Date) {
-    return isNaN(val.getTime()) ? '' : val.toISOString();
+    return isNaN(val.getTime()) ? null : val;
   }
   if (typeof val === 'number') {
     const d = new Date(val);
-    return isNaN(d.getTime()) ? '' : d.toISOString();
+    return isNaN(d.getTime()) ? null : d;
   }
   if (typeof val === 'string') {
     const trimmed = val.trim();
-    if (!trimmed) return '';
+    if (!trimmed) return null;
     const d = new Date(trimmed);
-    if (!isNaN(d.getTime())) {
-      return d.toISOString();
-    }
-    return trimmed;
+    return isNaN(d.getTime()) ? null : d;
   }
-  return String(val);
+  if (typeof val === 'object' && typeof val.toISOString === 'function') {
+    try {
+      const d = new Date(val.toISOString());
+      return isNaN(d.getTime()) ? null : d;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Normalizes any date value (Date instance, ISO string, SQL timestamp string) to an ISO string or empty string.
+ */
+export function normalizeDate(val: any): string {
+  const d = normalizeTimestamp(val);
+  return d ? d.toISOString() : '';
 }
 
 /**
  * Extracts YYYY-MM-DD from any date representation safely.
  */
 export function extractDayString(val: any): string {
-  if (!val) return '';
-  if (val instanceof Date) {
-    if (isNaN(val.getTime())) return '';
-    const y = val.getUTCFullYear();
-    const m = String(val.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(val.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-  const iso = normalizeDate(val);
-  if (!iso) return '';
-  return iso.split('T')[0].split(' ')[0];
+  const d = normalizeTimestamp(val);
+  if (!d) return '';
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 

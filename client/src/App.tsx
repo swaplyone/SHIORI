@@ -20,8 +20,7 @@ import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { WorkspacesPage } from './pages/WorkspacesPage';
 import { ConnectionsPage } from './pages/ConnectionsPage';
 import { GitHubHubPage } from './pages/GitHubHubPage';
-import { ActivityPage } from './pages/ActivityPage';
-import { JournalPage } from './pages/JournalPage';
+import { WeeklyReportPage } from './pages/WeeklyReportPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { InstallPage } from './pages/InstallPage';
@@ -174,9 +173,11 @@ export const App: React.FC = () => {
                   <Route path="/connections" element={<ConnectionsPage />} />
                   <Route path="/friends" element={<Navigate to="/connections" replace />} />
                   <Route path="/github" element={<GitHubHubPage />} />
-                  <Route path="/activity" element={<ActivityPage />} />
-                  <Route path="/reports" element={<ActivityPage />} />
-                  <Route path="/journal" element={<JournalPage />} />
+                  <Route path="/weekly-report" element={<WeeklyReportPage />} />
+                  <Route path="/reports" element={<WeeklyReportPage />} />
+                  <Route path="/activity" element={<Navigate to="/weekly-report" replace />} />
+                  <Route path="/journal" element={<Navigate to="/weekly-report" replace />} />
+                  <Route path="/daily-journal" element={<Navigate to="/weekly-report" replace />} />
                   <Route path="/notifications" element={<NotificationsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                 </Route>

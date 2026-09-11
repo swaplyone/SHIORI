@@ -1,14 +1,9 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard,
-  CheckSquare,
   FolderGit2,
-  Building2,
-  Users,
+  BarChart3,
   Github,
-  Activity,
-  BookOpen,
   Settings,
   Bell,
   Search,
@@ -27,13 +22,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSimulator, onOpenCommand
   const location = useLocation();
 
   const mainNav = [
-    { to: '/home', label: 'Home & Overview', icon: LayoutDashboard, badge: null },
-    { to: '/todos', label: 'To-Do & Tasks', icon: CheckSquare, badge: '3' },
-    { to: '/repositories', label: 'Repositories (Projects)', icon: FolderGit2, badge: null },
-    { to: '/connections', label: 'Connections (ID)', icon: Users, badge: null },
-    { to: '/github', label: 'GitHub & Webhooks', icon: Github, badge: user?.github_connected ? 'Connected' : 'Connect' },
-    { to: '/journal', label: 'Daily Journal', icon: BookOpen, badge: null },
-    { to: '/activity', label: 'Activity & Reports', icon: Activity, badge: null },
+    { to: '/repositories', label: 'Projects', icon: FolderGit2, badge: null },
+    { to: '/weekly-report', label: 'Weekly Report', icon: BarChart3, badge: null },
+    { to: '/github', label: 'GitHub', icon: Github, badge: user?.github_connected ? 'Connected' : 'Connect' },
     { to: '/settings', label: 'Settings', icon: Settings, badge: null },
   ];
 

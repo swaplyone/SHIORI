@@ -122,3 +122,31 @@ reportsRouter.get('/burndown', authMiddleware, async (req: AuthRequest, res: Res
     res.status(500).json({ error: 'Failed to generate burndown chart', details: err.message });
   }
 });
+
+// GET /api/reports/weekly — Engineering Weekly Report (Account-Isolated, Project & Repo Scoped)
+reportsRouter.get('/weekly', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const {
+      weekOffset,
+      startDate,
+      endDate,
+      projectId,
+      repository
+    } = req.query;
+
+    const report = await taskReportService.getEngineeringWeeklyReport(userId, {
+      weekOffset: weekOffset !== undefined ? parseInt(weekOffset as string, 10) : 0,
+      startDate: startDate as string,
+      endDate: endDate as string,
+      projectId: projectId as string,
+      repository: repository as string
+    });
+
+    res.json(report);
+  } catch (err: any) {
+    console.error('[WEEKLY REPORT API ERROR]', err);
+    res.status(500).json({ error: 'Failed to generate weekly engineering report', details: err.message });
+  }
+});
+

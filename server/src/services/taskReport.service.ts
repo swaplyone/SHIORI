@@ -5,7 +5,7 @@
  */
 
 import { queryOne, queryAll } from '../db/index.js';
-import { DateRange, getUserDayRange, getUserWeekRange, getUserMonthRange, extractDayString, normalizeDate } from '../utils/dateRange.js';
+import { DateRange, getUserDayRange, getUserWeekRange, getUserMonthRange, extractDayString, normalizeDate, normalizeTimestamp } from '../utils/dateRange.js';
 
 
 export interface TaskFilterOptions {
@@ -423,6 +423,416 @@ export class TaskReportService {
     }
 
     return points;
+  }
+
+  /**
+   * Generates the high-fidelity, account-isolated Engineering Weekly Report.
+   * Strictly verifies project authorization, isolates repositories, and calculates accurate metrics.
+   */
+  public async getEngineeringWeeklyReport(
+    userId: string,
+    options: {
+      weekOffset?: number;
+      startDate?: string;
+      endDate?: string;
+      projectId?: string;
+      repository?: string;
+    } = {}
+  ): Promise<any> {
+    // 1. Fetch authorized projects for the authenticated user
+    const authorizedProjects = await queryAll(`
+      SELECT DISTINCT p.id, p.name, p.slug, p.github_repo_name, p.working_mode, p.default_branch, p.workspace_id
+      FROM projects p
+      LEFT JOIN project_members pm ON pm.project_id = p.id
+      LEFT JOIN workspace_members wm ON wm.workspace_id = p.workspace_id
+      WHERE p.created_by = ?
+         OR pm.user_id = ?
+         OR wm.user_id = ?
+      ORDER BY p.name ASC
+    `, [userId, userId, userId]);
+
+    if (!authorizedProjects || authorizedProjects.length === 0) {
+      return this.getEmptyWeeklyReportStructure(options);
+    }
+
+    // 2. Validate and filter project scope
+    let scopedProjects = [...authorizedProjects];
+    if (options.projectId && options.projectId !== 'all') {
+      scopedProjects = authorizedProjects.filter((p: any) => p.id === options.projectId);
+      if (scopedProjects.length === 0) {
+        // User requested an unauthorized project -> return empty safe report
+        return this.getEmptyWeeklyReportStructure(options, authorizedProjects);
+      }
+    }
+
+    const scopedProjectIds = scopedProjects.map((p: any) => p.id);
+    let scopedRepoNames = Array.from(
+      new Set(scopedProjects.map((p: any) => p.github_repo_name).filter(Boolean))
+    );
+
+    if (options.repository && options.repository !== 'all') {
+      const selectedLower = options.repository.toLowerCase();
+      scopedRepoNames = scopedRepoNames.filter(
+        (r: string) => r.toLowerCase() === selectedLower
+      );
+      if (scopedRepoNames.length === 0) {
+        return this.getEmptyWeeklyReportStructure(options, authorizedProjects);
+      }
+    }
+
+    // 3. Resolve date range (Monday -> Sunday)
+    let weekRange: DateRange;
+    if (options.startDate && options.endDate) {
+      const sDay = extractDayString(options.startDate) || String(options.startDate).slice(0, 10);
+      const eDay = extractDayString(options.endDate) || String(options.endDate).slice(0, 10);
+      weekRange = {
+        start: `${sDay} 00:00:00`,
+        end: `${eDay} 23:59:59`,
+        startDateStr: sDay,
+        endDateStr: eDay,
+        label: `${sDay} — ${eDay}`
+      };
+    } else {
+      const offset = typeof options.weekOffset === 'number' ? options.weekOffset : 0;
+      weekRange = getUserWeekRange(offset);
+    }
+
+    // Determine week number
+    const startD = new Date(weekRange.startDateStr);
+    const oneJan = new Date(startD.getUTCFullYear(), 0, 1);
+    const numberOfDays = Math.floor((startD.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000));
+    const weekNumber = Math.ceil((startD.getDay() + 1 + numberOfDays) / 7);
+
+    // 4. Query tasks scoped strictly to authorized projects
+    const placeholders = scopedProjectIds.map(() => '?').join(',');
+    const taskParams: any[] = [...scopedProjectIds];
+
+    let repoClause = '';
+    if (scopedRepoNames.length > 0) {
+      const repoPlaceholders = scopedRepoNames.map(() => '?').join(',');
+      repoClause = ` AND (
+        t.github_repo IS NULL 
+        OR LOWER(t.github_repo) IN (${repoPlaceholders})
+        OR LOWER(p.github_repo_name) IN (${repoPlaceholders})
+      )`;
+      taskParams.push(
+        ...scopedRepoNames.map((r) => r.toLowerCase()),
+        ...scopedRepoNames.map((r) => r.toLowerCase())
+      );
+    }
+
+    const allScopedTasks = await queryAll(`
+      SELECT t.id, t.task_number, t.task_code, t.title, t.description, t.status, t.priority,
+             t.deadline, t.due_date, t.completed_at, t.created_at, t.updated_at,
+             t.project_id, t.assignee_id, t.github_repo, t.github_branch,
+             p.name as project_name, p.github_repo_name, p.working_mode,
+             u.name as assignee_name, u.username as assignee_username, u.github_username as assignee_github_username
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id
+      LEFT JOIN users u ON t.assignee_id = u.id
+      WHERE (t.is_deleted = 0 OR t.is_deleted IS NULL)
+        AND t.project_id IN (${placeholders})
+        ${repoClause}
+      ORDER BY t.task_number ASC
+    `, taskParams);
+
+    // 5. Tasks completed strictly within this period (USING completed_at ONLY)
+    const completedInPeriod = (allScopedTasks || []).filter((t: any) => {
+      if (t.status !== 'DONE') return false;
+      const compDateStr = extractDayString(t.completed_at);
+      if (!compDateStr) return false;
+      return compDateStr >= weekRange.startDateStr && compDateStr <= weekRange.endDateStr;
+    });
+
+    // 6. Build Daily Completion Bar Chart (Monday to Sunday)
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const dayShorts = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dailyCompletion: { day: string; date: string; completed: number; tasks: any[] }[] = [];
+    const completionTrend: { day: string; date: string; cumulative: number }[] = [];
+
+    let runningCumulative = 0;
+    const monDate = new Date(weekRange.startDateStr);
+
+    for (let i = 0; i < 7; i++) {
+      const current = new Date(monDate);
+      current.setUTCDate(monDate.getUTCDate() + i);
+      const dateStr = current.toISOString().split('T')[0];
+
+      const tasksCompletedOnDay = completedInPeriod.filter((t: any) => {
+        return extractDayString(t.completed_at) === dateStr;
+      });
+
+      const count = tasksCompletedOnDay.length;
+      runningCumulative += count;
+
+      dailyCompletion.push({
+        day: dayShorts[i],
+        date: dateStr,
+        completed: count,
+        tasks: tasksCompletedOnDay.map((t: any) => ({
+          id: t.id,
+          task_code: t.task_code,
+          title: t.title,
+          completed_at: t.completed_at
+        }))
+      });
+
+      completionTrend.push({
+        day: dayShorts[i],
+        date: dateStr,
+        cumulative: runningCumulative
+      });
+    }
+
+    // 7. Deadline Performance (Derived Lifecycle States)
+    let onTimeCount = 0;
+    let lateCount = 0;
+    let overdueCount = 0;
+    let dueSoonCount = 0;
+    let pendingCount = 0;
+    const nowMs = Date.now();
+    const threeDaysMs = nowMs + (3 * 24 * 60 * 60 * 1000);
+
+    for (const t of (allScopedTasks || [])) {
+      const deadlineDate = normalizeTimestamp(t.deadline || t.due_date);
+
+      if (t.status === 'DONE') {
+        const completedDate = normalizeTimestamp(t.completed_at);
+        if (completedDate && deadlineDate) {
+          if (completedDate.getTime() <= deadlineDate.getTime()) {
+            onTimeCount++;
+          } else {
+            lateCount++;
+          }
+        } else if (completedDate) {
+          onTimeCount++;
+        }
+      } else if (t.status === 'PENDING' || ['IN_PROGRESS', 'IN PROGRESS', 'DOING'].includes(t.status)) {
+        if (deadlineDate && deadlineDate.getTime() < nowMs) {
+          overdueCount++;
+        } else if (deadlineDate && deadlineDate.getTime() <= threeDaysMs) {
+          dueSoonCount++;
+        } else {
+          pendingCount++;
+        }
+      }
+    }
+
+    // 8. Task Status Distribution
+    const statusDistribution = {
+      done: (allScopedTasks || []).filter((t: any) => t.status === 'DONE').length,
+      pending: (allScopedTasks || []).filter((t: any) => t.status === 'PENDING' || ['IN_PROGRESS', 'IN PROGRESS', 'DOING'].includes(t.status)).length,
+      needsVerification: (allScopedTasks || []).filter((t: any) => t.status === 'NEEDS_VERIFICATION').length
+    };
+
+    // 9. GitHub Activity (Strictly authorized repositories)
+    let commits: any[] = [];
+    if (scopedRepoNames.length > 0) {
+      const repoQ = scopedRepoNames.map(() => '?').join(',');
+      const params = [...scopedRepoNames, weekRange.start, weekRange.end];
+      commits = await queryAll(`
+        SELECT id, repo_name, branch_name, commit_hash, message, author_name, author_username, task_id, pushed_at
+        FROM github_commits
+        WHERE repo_name IN (${repoQ})
+          AND pushed_at >= ? AND pushed_at <= ?
+        ORDER BY pushed_at DESC
+      `, params);
+    }
+
+    const totalCommitsCount = (commits || []).length;
+    const verifiedCommitsCount = (commits || []).filter((c: any) => Boolean(c.task_id)).length;
+    const unlinkedCommitsCount = totalCommitsCount - verifiedCommitsCount;
+    const activeBranchesSet = new Set<string>();
+    for (const c of commits) {
+      if (c.branch_name) activeBranchesSet.add(c.branch_name);
+    }
+    for (const p of scopedProjects) {
+      if (p.default_branch) activeBranchesSet.add(p.default_branch);
+    }
+
+    // Pull requests from task evidence or project
+    const prCount = (allScopedTasks || []).filter((t: any) => Boolean(t.github_pr_number)).length;
+
+    // 10. Commit Verification Rate
+    const verificationRate = totalCommitsCount > 0
+      ? Math.round((verifiedCommitsCount / totalCommitsCount) * 100)
+      : 0;
+
+    // 11. Team Contribution / Your Contribution
+    const isSolo = scopedProjects.length === 1 && scopedProjects[0].working_mode === 'SOLO';
+    const memberMap = new Map<string, { developer: string; username: string; githubUsername: string; tasks: number; commits: number; completed: number }>();
+
+    // Fetch team members for scoped projects
+    const members = await queryAll(`
+      SELECT pm.project_id, pm.user_id, pm.github_username, u.name, u.username
+      FROM project_members pm
+      JOIN users u ON pm.user_id = u.id
+      WHERE pm.project_id IN (${placeholders})
+    `, scopedProjectIds);
+
+    for (const m of (members || [])) {
+      memberMap.set(m.user_id, {
+        developer: m.name || m.username || 'Developer',
+        username: m.username,
+        githubUsername: m.github_username || '',
+        tasks: 0,
+        commits: 0,
+        completed: 0
+      });
+    }
+
+    // Aggregate tasks assigned & completed per member
+    for (const t of (allScopedTasks || [])) {
+      if (t.assignee_id && memberMap.has(t.assignee_id)) {
+        const entry = memberMap.get(t.assignee_id)!;
+        entry.tasks++;
+        if (t.status === 'DONE') {
+          entry.completed++;
+        }
+      }
+    }
+
+    // Aggregate commits per member
+    for (const c of (commits || [])) {
+      const author = (c.author_username || c.author_name || '').toLowerCase();
+      for (const entry of memberMap.values()) {
+        if (
+          (entry.githubUsername && entry.githubUsername.toLowerCase() === author) ||
+          (entry.username && entry.username.toLowerCase() === author) ||
+          (entry.developer && entry.developer.toLowerCase() === author)
+        ) {
+          entry.commits++;
+          break;
+        }
+      }
+    }
+
+    const teamContribution = Array.from(memberMap.values());
+
+    // 12. Completion Rate Calculation (completed tasks in period / tasks active or due in period)
+    const totalActiveOrDue = completedInPeriod.length + statusDistribution.pending + statusDistribution.needsVerification;
+    const completionRate = totalActiveOrDue > 0
+      ? Math.round((completedInPeriod.length / totalActiveOrDue) * 100)
+      : 0;
+
+    return {
+      success: true,
+      weekNumber,
+      dateRange: {
+        start: weekRange.startDateStr,
+        end: weekRange.endDateStr,
+        label: `${new Date(weekRange.startDateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()} — ${new Date(weekRange.endDateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}`
+      },
+      summary: {
+        tasksCompleted: completedInPeriod.length,
+        commits: totalCommitsCount,
+        pullRequests: prCount,
+        completionRate
+      },
+      dailyCompletion,
+      deadlinePerformance: {
+        onTime: onTimeCount,
+        late: lateCount,
+        overdue: overdueCount,
+        dueSoon: dueSoonCount,
+        pending: pendingCount
+      },
+      taskStatus: statusDistribution,
+      completionTrend,
+      github: {
+        commits: totalCommitsCount,
+        verifiedCommits: verifiedCommitsCount,
+        unlinkedCommits: unlinkedCommitsCount,
+        pullRequests: prCount,
+        activeBranches: activeBranchesSet.size
+      },
+      commitVerification: {
+        verified: verifiedCommitsCount,
+        needsReview: statusDistribution.needsVerification,
+        unmatched: unlinkedCommitsCount,
+        verificationRate
+      },
+      isSolo,
+      teamContribution,
+      authorizedProjects: authorizedProjects.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        repoName: p.github_repo_name,
+        workingMode: p.working_mode
+      }))
+    };
+  }
+
+  /**
+   * Helper to return clean, typed empty weekly report structure
+   */
+  private getEmptyWeeklyReportStructure(options: any, authorizedProjects: any[] = []): any {
+    const offset = typeof options.weekOffset === 'number' ? options.weekOffset : 0;
+    const weekRange = getUserWeekRange(offset);
+    const dayShorts = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const monDate = new Date(weekRange.startDateStr);
+
+    const dailyCompletion = dayShorts.map((d, i) => {
+      const current = new Date(monDate);
+      current.setUTCDate(monDate.getUTCDate() + i);
+      return {
+        day: d,
+        date: current.toISOString().split('T')[0],
+        completed: 0,
+        tasks: []
+      };
+    });
+
+    return {
+      success: true,
+      weekNumber: 1,
+      dateRange: {
+        start: weekRange.startDateStr,
+        end: weekRange.endDateStr,
+        label: `${weekRange.startDateStr} — ${weekRange.endDateStr}`
+      },
+      summary: {
+        tasksCompleted: 0,
+        commits: 0,
+        pullRequests: 0,
+        completionRate: 0
+      },
+      dailyCompletion,
+      deadlinePerformance: {
+        onTime: 0,
+        late: 0,
+        overdue: 0,
+        dueSoon: 0,
+        pending: 0
+      },
+      taskStatus: {
+        pending: 0,
+        needsVerification: 0,
+        done: 0
+      },
+      completionTrend: dailyCompletion.map((dc) => ({ day: dc.day, date: dc.date, cumulative: 0 })),
+      github: {
+        commits: 0,
+        verifiedCommits: 0,
+        unlinkedCommits: 0,
+        pullRequests: 0,
+        activeBranches: 0
+      },
+      commitVerification: {
+        verified: 0,
+        needsReview: 0,
+        unmatched: 0,
+        verificationRate: 0
+      },
+      isSolo: true,
+      teamContribution: [],
+      authorizedProjects: (authorizedProjects || []).map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        repoName: p.github_repo_name,
+        workingMode: p.working_mode
+      }))
+    };
   }
 }
 
