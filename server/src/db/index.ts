@@ -97,6 +97,7 @@ async function initPgSchema(pool: pg.Pool) {
       slug TEXT NOT NULL,
       description TEXT,
       status TEXT DEFAULT 'ACTIVE',
+      working_mode TEXT DEFAULT 'SOLO',
       github_repo_name TEXT,
       github_repo_url TEXT,
       default_branch TEXT DEFAULT 'main',
@@ -110,6 +111,10 @@ async function initPgSchema(pool: pg.Pool) {
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       role TEXT DEFAULT 'member',
+      github_username TEXT,
+      branch_name TEXT,
+      branch_status TEXT DEFAULT 'PENDING_VERIFICATION',
+      last_branch_verified_at TIMESTAMPTZ,
       joined_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (project_id, user_id)
     );
@@ -197,7 +202,7 @@ async function initPgSchema(pool: pg.Pool) {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       patch_version TEXT NOT NULL,
-      seen_at TEXT DEFAULT (datetime('now')),
+      seen_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (user_id, patch_version)
     );
 
@@ -518,9 +523,14 @@ async function initPgSchema(pool: pg.Pool) {
       `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS privacy_github TEXT DEFAULT 'workspace';`,
       `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS privacy_stats TEXT DEFAULT 'private';`,
       `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notify_build_failed INTEGER DEFAULT 1;`,
-      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notify_build_passed INTEGER DEFAULT 1;`,
-      `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notify_pr_review INTEGER DEFAULT 1;`,
       `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notify_task_assigned INTEGER DEFAULT 1;`,
+      `ALTER TABLE projects ADD COLUMN IF NOT EXISTS working_mode TEXT DEFAULT 'SOLO';`,
+      `ALTER TABLE projects ADD COLUMN IF NOT EXISTS default_branch TEXT DEFAULT 'main';`,
+      `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS github_username TEXT;`,
+      `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS branch_name TEXT;`,
+      `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS branch_status TEXT DEFAULT 'PENDING_VERIFICATION';`,
+      `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS last_branch_verified_at TIMESTAMPTZ;`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS github_branch TEXT;`,
       `CREATE TABLE IF NOT EXISTS daily_notes (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

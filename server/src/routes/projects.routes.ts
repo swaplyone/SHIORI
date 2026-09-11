@@ -137,6 +137,153 @@ projectsRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Respons
   });
 });
 
+// POST Set project working mode (SOLO vs TEAM)
+projectsRouter.post('/:id/working-mode', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { mode, defaultBranch } = req.body;
+  const userId = req.user!.id;
+  const validMode = (mode || '').toUpperCase() === 'TEAM' ? 'TEAM' : 'SOLO';
+
+  const project = await queryOne(`
+    SELECT id, created_by, default_branch FROM projects 
+    WHERE id = ? AND (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?))
+  `, [id, userId, userId]);
+
+  if (!project) {
+    res.status(404).json({ error: 'Project not found or not authorized' });
+    return;
+  }
+
+  const nextDefaultBranch = defaultBranch ? defaultBranch.trim() : (project.default_branch || 'main');
+
+  await runQuery(`
+    UPDATE projects SET working_mode = ?, default_branch = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `, [validMode, nextDefaultBranch, id]);
+
+  // If switching to TEAM mode, ensure creator has a member entry and branch mapping
+  if (validMode === 'TEAM') {
+    const existingMember = await queryOne('SELECT id, branch_name FROM project_members WHERE project_id = ? AND user_id = ?', [id, userId]);
+    const user = await queryOne('SELECT username, github_username FROM users WHERE id = ?', [userId]);
+    const ghUser = user?.github_username || user?.username || 'developer';
+    const defaultBranchName = `feature/${ghUser.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`;
+
+    if (!existingMember) {
+      await runQuery(`
+        INSERT INTO project_members (id, project_id, user_id, role, github_username, branch_name, branch_status, joined_at)
+        VALUES (?, ?, ?, 'owner', ?, ?, 'PENDING_VERIFICATION', datetime('now'))
+      `, [uuidv4(), id, userId, ghUser, defaultBranchName]);
+    } else if (!existingMember.branch_name) {
+      await runQuery(`
+        UPDATE project_members SET branch_name = ?, github_username = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `, [defaultBranchName, ghUser, existingMember.id]);
+    }
+  }
+
+  const updated = await queryOne('SELECT * FROM projects WHERE id = ?', [id]);
+  res.json({ success: true, project: updated });
+});
+
+// GET Project Branch Workspace & Team Member Branch Mappings
+projectsRouter.get('/:id/branch-workspace', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+
+  const project = await queryOne(`
+    SELECT p.*,
+           (SELECT COUNT(*) FROM tasks WHERE project_id = p.id AND (is_deleted = 0 OR is_deleted IS NULL)) as total_tasks
+    FROM projects p
+    WHERE p.id = ? AND (p.created_by = ? OR p.id IN (SELECT project_id FROM project_members WHERE user_id = ?))
+  `, [id, userId, userId]);
+
+  if (!project) {
+    res.status(404).json({ error: 'Project not found or not authorized' });
+    return;
+  }
+
+  const members = await queryAll(`
+    SELECT pm.id as member_id, pm.project_id, pm.user_id, pm.role,
+           pm.github_username, pm.branch_name, pm.branch_status, pm.last_branch_verified_at,
+           u.name, u.email, u.username, u.avatar_url, u.github_username as user_github_username
+    FROM project_members pm
+    JOIN users u ON pm.user_id = u.id
+    WHERE pm.project_id = ?
+    ORDER BY (CASE WHEN pm.role = 'owner' THEN 0 ELSE 1 END), u.name ASC
+  `, [id]);
+
+  res.json({
+    project,
+    workingMode: project.working_mode || 'SOLO',
+    defaultBranch: project.default_branch || 'main',
+    repository: project.github_repo_name,
+    members
+  });
+});
+
+// POST Assign / Update Member Developer Branch with Collision Protection
+projectsRouter.post('/:id/members/:memberId/branch', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id, memberId } = req.params;
+  const { branchName, githubUsername } = req.body;
+  const userId = req.user!.id;
+
+  const project = await queryOne(`
+    SELECT id FROM projects 
+    WHERE id = ? AND (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?))
+  `, [id, userId, userId]);
+
+  if (!project) {
+    res.status(404).json({ error: 'Project not found or not authorized' });
+    return;
+  }
+
+  const member = await queryOne('SELECT * FROM project_members WHERE (id = ? OR user_id = ?) AND project_id = ?', [memberId, memberId, id]);
+  if (!member) {
+    res.status(404).json({ error: 'Project member not found' });
+    return;
+  }
+
+  const cleanBranch = (branchName || '').trim();
+  if (!cleanBranch) {
+    res.status(400).json({ error: 'Branch name is required' });
+    return;
+  }
+
+  // Branch Collision Protection: Prevent assigning the same branch to multiple developers
+  const collision = await queryOne(`
+    SELECT pm.id, u.name, u.username 
+    FROM project_members pm
+    JOIN users u ON pm.user_id = u.id
+    WHERE pm.project_id = ? AND LOWER(pm.branch_name) = LOWER(?) AND pm.id != ?
+  `, [id, cleanBranch, member.id]);
+
+  if (collision) {
+    res.status(409).json({
+      error: 'Branch collision detected',
+      message: `Branch "${cleanBranch}" is already assigned to ${collision.name || collision.username}. Choose a unique branch.`,
+      assignedTo: collision.name || collision.username
+    });
+    return;
+  }
+
+  await runQuery(`
+    UPDATE project_members SET
+      branch_name = ?,
+      github_username = COALESCE(?, github_username),
+      branch_status = 'PENDING_VERIFICATION'
+    WHERE id = ?
+  `, [cleanBranch, githubUsername || null, member.id]);
+
+  const updatedMember = await queryOne(`
+    SELECT pm.*, u.name, u.email, u.username, u.avatar_url 
+    FROM project_members pm
+    JOIN users u ON pm.user_id = u.id
+    WHERE pm.id = ?
+  `, [member.id]);
+
+  res.json({ success: true, member: updatedMember });
+});
+
 // POST Create project from a GitHub repository
 projectsRouter.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { repositoryName, repositoryFullName, description, defaultBranch = 'main' } = req.body;

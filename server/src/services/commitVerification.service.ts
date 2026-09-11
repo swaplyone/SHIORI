@@ -250,8 +250,153 @@ export async function verifyAndProcessCommits(
     // --- PHASE 1: DETERMINISTIC EXPLICIT MATCHING ---
     if (explicitIds.length > 0) {
       // RULE 3 & 7: If a commit contains multiple task IDs (e.g. [TASK-005] [TASK-006]),
-      // do NOT automatically complete. Route to NEEDS_VERIFICATION for safe review.
+      // do NOT automatically complete. Route all referenced pending tasks to NEEDS_VERIFICATION for safe review.
       const hasMultipleExplicitTasks = explicitIds.length > 1;
+
+      if (hasMultipleExplicitTasks) {
+        const multiTasks: any[] = [];
+        const seenTaskIds = new Set<string>();
+
+        for (const idInfo of explicitIds) {
+          const codePadded = idInfo.taskCode; // TASK-001
+          const codeShort = `TASK-${String(idInfo.taskNumber || 0).padStart(2, '0')}`;
+          const codeRaw = `TASK-${idInfo.taskNumber || 0}`;
+
+          let tasksForId: any[] = [];
+          if (projectIds.length > 0 || cleanRepo) {
+            const params: any[] = [
+              codePadded, codeShort, codeRaw, idInfo.taskNumber || -1, idInfo.rawMatch,
+              cleanRepo, shortRepoName, cleanRepo, shortRepoName
+            ];
+            let projClause = '';
+            if (projectIds.length > 0) {
+              const placeholders = projectIds.map(() => '?').join(',');
+              projClause = ` OR t.project_id IN (${placeholders})`;
+              params.push(...projectIds);
+            }
+
+            tasksForId = await queryAll(`
+              SELECT t.*, p.workspace_id as proj_workspace_id, p.name as proj_name,
+                     p.working_mode, p.default_branch as proj_default_branch,
+                     u.github_username as assignee_github_username, u.username as assignee_username,
+                     pm.branch_name as member_branch_name
+              FROM tasks t
+              LEFT JOIN projects p ON t.project_id = p.id
+              LEFT JOIN users u ON t.assignee_id = u.id
+              LEFT JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = t.assignee_id
+              WHERE (t.is_deleted = 0 OR t.is_deleted IS NULL)
+                AND (
+                  t.task_code = ? 
+                  OR t.task_code = ?
+                  OR t.task_code = ?
+                  OR t.task_number = ?
+                  OR t.id = ?
+                )
+                AND (
+                  LOWER(t.github_repo) = LOWER(?)
+                  OR LOWER(t.github_repo) = LOWER(?)
+                  OR LOWER(p.github_repo_name) = LOWER(?)
+                  OR LOWER(p.github_repo_name) = LOWER(?)
+                  ${projClause}
+                )
+              ORDER BY (CASE WHEN t.status != 'DONE' THEN 0 ELSE 1 END) ASC, t.created_at DESC
+            `, params);
+          }
+
+          if (tasksForId.length === 0) {
+            tasksForId = await queryAll(`
+              SELECT t.*, p.workspace_id as proj_workspace_id, p.name as proj_name,
+                     p.working_mode, p.default_branch as proj_default_branch,
+                     u.github_username as assignee_github_username, u.username as assignee_username,
+                     pm.branch_name as member_branch_name
+              FROM tasks t
+              LEFT JOIN projects p ON t.project_id = p.id
+              LEFT JOIN users u ON t.assignee_id = u.id
+              LEFT JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = t.assignee_id
+              WHERE (t.is_deleted = 0 OR t.is_deleted IS NULL)
+                AND (
+                  t.task_code = ? 
+                  OR t.task_code = ?
+                  OR t.task_code = ?
+                  OR t.task_number = ?
+                  OR t.id = ?
+                )
+              ORDER BY (CASE WHEN t.status != 'DONE' THEN 0 ELSE 1 END) ASC, t.created_at DESC
+            `, [codePadded, codeShort, codeRaw, idInfo.taskNumber || -1, idInfo.rawMatch]);
+          }
+
+          for (const t of tasksForId) {
+            if (!seenTaskIds.has(t.id)) {
+              seenTaskIds.add(t.id);
+              multiTasks.push(t);
+            }
+          }
+        }
+
+        const multiReason = `MULTIPLE_TASK_REFERENCES: Multiple task IDs referenced in commit (${explicitIds.map((e) => e.taskCode).join(', ')}). Manual verification required.`;
+
+        // Process all matched tasks into NEEDS_VERIFICATION if not DONE
+        for (const targetTask of multiTasks) {
+          // Link commit to task
+          await runQuery('UPDATE github_commits SET task_id = ? WHERE commit_hash = ?', [targetTask.id, rawSha]);
+
+          if (targetTask.status !== 'DONE' && targetTask.user_status !== 'COMPLETED') {
+            await runQuery(`
+              UPDATE tasks SET
+                status = 'NEEDS_VERIFICATION',
+                dev_confidence_score = 75,
+                completion_commit_sha = ?,
+                completion_commit_url = ?,
+                completion_reason = ?,
+                completed_at = NULL,
+                completion_source = NULL,
+                github_last_commit_hash = ?,
+                github_last_commit_msg = ?,
+                github_last_commit_author = ?,
+                github_last_commit_time = 'Just now',
+                dev_evidence_commits_count = COALESCE(dev_evidence_commits_count, 0) + 1,
+                dev_evidence_files_changed = COALESCE(dev_evidence_files_changed, 0) + ?,
+                updated_at = datetime('now')
+              WHERE id = ?
+            `, [
+              shortSha,
+              commitUrl,
+              multiReason,
+              shortSha,
+              commitMsg,
+              authorName,
+              filesChanged,
+              targetTask.id
+            ]);
+
+            await runQuery(`
+              INSERT INTO task_activity (id, task_id, user_id, action_type, summary, details, created_at)
+              VALUES (?, ?, ?, 'NEEDS_VERIFICATION', ?, ?, datetime('now'))
+            `, [
+              uuidv4(),
+              targetTask.id,
+              matchedUser?.id || null,
+              `🟡 GitHub verification needed (75% match - multiple tasks referenced)`,
+              `Commit "${commitMsg}" (${shortSha}) referenced multiple tasks.`
+            ]);
+
+            const evidence = await recalculateTaskEvidence(targetTask.id);
+            const updatedTask = await queryOne('SELECT * FROM tasks WHERE id = ?', [targetTask.id]);
+            const wsId = targetTask.workspace_id || targetTask.proj_workspace_id;
+
+            if (wsId) {
+              emitToWorkspace(wsId, 'task:updated', { task: updatedTask, evidence });
+              emitToWorkspace(wsId, 'project:updated', { projectId: targetTask.project_id });
+            }
+            emitToTask(targetTask.id, 'task:updated', { task: updatedTask, evidence });
+
+            result.needsVerificationTasks.push(updatedTask);
+          }
+        }
+
+        // Continue to next commit
+        continue;
+      }
 
       for (const idInfo of explicitIds) {
         const codePadded = idInfo.taskCode; // TASK-001
@@ -274,10 +419,13 @@ export async function verifyAndProcessCommits(
 
           task = await queryOne(`
             SELECT t.*, p.workspace_id as proj_workspace_id, p.name as proj_name,
-                   u.github_username as assignee_github_username, u.username as assignee_username
+                   p.working_mode, p.default_branch as proj_default_branch,
+                   u.github_username as assignee_github_username, u.username as assignee_username,
+                   pm.branch_name as member_branch_name
             FROM tasks t
             LEFT JOIN projects p ON t.project_id = p.id
             LEFT JOIN users u ON t.assignee_id = u.id
+            LEFT JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = t.assignee_id
             WHERE (t.is_deleted = 0 OR t.is_deleted IS NULL)
               AND (
                 t.task_code = ? 
@@ -302,10 +450,13 @@ export async function verifyAndProcessCommits(
         if (!task) {
           task = await queryOne(`
             SELECT t.*, p.workspace_id as proj_workspace_id, p.name as proj_name,
-                   u.github_username as assignee_github_username, u.username as assignee_username
+                   p.working_mode, p.default_branch as proj_default_branch,
+                   u.github_username as assignee_github_username, u.username as assignee_username,
+                   pm.branch_name as member_branch_name
             FROM tasks t
             LEFT JOIN projects p ON t.project_id = p.id
             LEFT JOIN users u ON t.assignee_id = u.id
+            LEFT JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = t.assignee_id
             WHERE (t.is_deleted = 0 OR t.is_deleted IS NULL)
               AND (
                 t.task_code = ? 
@@ -325,28 +476,43 @@ export async function verifyAndProcessCommits(
           // Validate Author & Branch alignment
           const expectedAssigneeGithub = (task.assignee_github_username || task.assignee_username || '').toLowerCase();
           const commitAuthor = (authorUsername || authorName || '').toLowerCase();
-          const isAuthorMismatch = expectedAssigneeGithub && commitAuthor && commitAuthor !== expectedAssigneeGithub;
+          const isAuthorMismatch = Boolean(expectedAssigneeGithub && commitAuthor && commitAuthor !== expectedAssigneeGithub);
           
-          const expectedBranch = (task.github_branch || '').toLowerCase();
-          const commitBranch = (branchName || '').toLowerCase();
-          const isBranchMismatch = expectedBranch && commitBranch && commitBranch !== expectedBranch && expectedBranch !== 'main';
+          const isTeamMode = task.working_mode === 'TEAM';
+          const defaultBranch = (task.proj_default_branch || 'main').toLowerCase();
+          
+          let expectedBranch = (task.github_branch || task.member_branch_name || (expectedAssigneeGithub ? `feature/${expectedAssigneeGithub}` : defaultBranch)).toLowerCase();
+          if (!isTeamMode && !task.github_branch) {
+            expectedBranch = defaultBranch;
+          }
 
-          if (hasMultipleExplicitTasks) {
+          const commitBranch = (branchName || '').toLowerCase();
+          let isBranchMismatch = false;
+          if (isTeamMode) {
+            // In TEAM mode, commits must be on the developer's assigned branch. Pushing to main or another developer's branch fails auto-complete.
+            isBranchMismatch = Boolean(expectedBranch && commitBranch && commitBranch !== expectedBranch);
+          } else {
+            // In SOLO mode, default branch or configured branch is accepted
+            isBranchMismatch = Boolean(expectedBranch && commitBranch && commitBranch !== expectedBranch && commitBranch !== defaultBranch && commitBranch !== 'main');
+          }
+
+          if (isAuthorMismatch) {
             matchType = 'AI_MEDIUM';
-            confidenceScore = 75;
-            matchReason = `Multiple task IDs referenced in commit (${explicitIds.map((e) => e.taskCode).join(', ')}). Manual verification required.`;
-          } else if (isAuthorMismatch || isBranchMismatch) {
+            confidenceScore = 70;
+            matchReason = `AUTHOR_MISMATCH: Task assigned to @${expectedAssigneeGithub}, but commit author was @${commitAuthor}. Verification required.`;
+          } else if (isBranchMismatch) {
             matchType = 'AI_MEDIUM';
-            confidenceScore = 72;
-            matchReason = isAuthorMismatch
-              ? `Task assigned to @${expectedAssigneeGithub}, but commit came from @${commitAuthor}. Verification required.`
-              : `Expected branch ${expectedBranch}, but commit was on ${commitBranch}. Verification required.`;
+            confidenceScore = 70;
+            matchReason = `WRONG_BRANCH: Expected branch "${expectedBranch}", but commit was pushed to "${commitBranch}". Verification required.`;
           } else {
             matchType = 'EXPLICIT';
             confidenceScore = 100;
             matchReason = `Verified commit explicitly references ${task.task_code}: "${commitMsg}"`;
           }
-          break;
+
+          if (task.status !== 'DONE') {
+            break;
+          }
         }
       }
     }
@@ -446,7 +612,7 @@ export async function verifyAndProcessCommits(
             github_last_commit_author = ?,
             github_last_commit_time = 'Just now',
             dev_evidence_commits_count = COALESCE(dev_evidence_commits_count, 0) + 1,
-            dev_evidence_files_changed = GREATEST(COALESCE(dev_evidence_files_changed, 0), ?),
+            dev_evidence_files_changed = COALESCE(dev_evidence_files_changed, 0) + ?,
             updated_at = datetime('now')
           WHERE id = ?
         `, [
@@ -524,7 +690,7 @@ export async function verifyAndProcessCommits(
             github_last_commit_author = ?,
             github_last_commit_time = 'Just now',
             dev_evidence_commits_count = COALESCE(dev_evidence_commits_count, 0) + 1,
-            dev_evidence_files_changed = GREATEST(COALESCE(dev_evidence_files_changed, 0), ?),
+            dev_evidence_files_changed = COALESCE(dev_evidence_files_changed, 0) + ?,
             updated_at = datetime('now')
           WHERE id = ?
         `, [
@@ -571,7 +737,7 @@ export async function verifyAndProcessCommits(
             github_last_commit_author = ?,
             github_last_commit_time = 'Just now',
             dev_evidence_commits_count = COALESCE(dev_evidence_commits_count, 0) + 1,
-            dev_evidence_files_changed = GREATEST(COALESCE(dev_evidence_files_changed, 0), ?),
+            dev_evidence_files_changed = COALESCE(dev_evidence_files_changed, 0) + ?,
             updated_at = datetime('now')
           WHERE id = ?
         `, [shortSha, commitMsg, authorName, filesChanged, matchedTask.id]);

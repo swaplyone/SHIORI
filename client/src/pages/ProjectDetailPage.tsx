@@ -857,66 +857,124 @@ export const ProjectDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {/* WORKFLOW MODE & DEVELOPER BRANCHES */}
-          <div className="border border-eink-border rounded-sm bg-eink-surface p-4 space-y-4">
-            <div className="border-b border-eink-border pb-3">
-              <div className="flex items-center gap-2">
-                <GitBranch className="w-4 h-4 text-eink-text" />
-                <h3 className="font-bold text-sm uppercase text-eink-text">
-                  GIT WORKFLOW & DEVELOPER BRANCHES
-                </h3>
+          {/* BRANCH & TEAM WORKSPACE */}
+          <div className="border border-eink-border rounded-sm bg-eink-surface p-4 sm:p-5 space-y-5 shadow-eink-sm">
+            <div className="border-b border-eink-border pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <GitBranch className="w-4 h-4 text-eink-text" />
+                  <h3 className="font-bold text-sm uppercase text-eink-text font-technical">
+                    BRANCH & TEAM WORKSPACE
+                  </h3>
+                </div>
+                <p className="text-xs text-eink-textSecondary">
+                  Repository: <strong className="text-eink-text font-mono">{project.github_repo_name || 'SHIORI'}</strong> · Default branch: <strong className="text-eink-text font-mono">{project.default_branch || 'main'}</strong>
+                </p>
               </div>
-              <p className="text-xs text-eink-textSecondary pt-1">
-                Repository: <strong className="text-eink-text font-mono">{project.github_repo_name || 'SHIORI'}</strong> · Default branch: <strong className="text-eink-text font-mono">{project.default_branch || 'main'}</strong>
-              </p>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/github/projects/${project.id}/branches/verify`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}` }
+                      });
+                      if (res.ok) {
+                        triggerEInkRefresh();
+                        await fetchProjectData(true);
+                      }
+                    } catch (err) {
+                      console.error('Failed to verify branches:', err);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded text-xs font-technical font-bold text-eink-text flex items-center gap-1.5 shadow-eink-sm cursor-pointer transition-colors"
+                  title="Verify team branches against GitHub"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-eink-text" />
+                  <span>VERIFY BRANCHES</span>
+                </button>
+              </div>
             </div>
 
-            {/* Work Mode Selection */}
+            {/* Working Mode Selection */}
             <div className="space-y-2">
               <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider block">
-                HOW ARE YOU WORKING ON THIS REPOSITORY?
+                WORKING MODE
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div
-                  className={`p-3 border rounded-sm transition-all cursor-pointer ${
-                    (project.members?.length || 1) <= 1
-                      ? 'bg-eink-bg border-eink-text shadow-eink-sm'
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await fetch(`/api/projects/${project.id}/working-mode`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ mode: 'SOLO' })
+                      });
+                      triggerEInkRefresh();
+                      fetchProjectData(true);
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }}
+                  className={`p-3.5 border rounded-sm transition-all text-left cursor-pointer ${
+                    (project.working_mode || 'SOLO') === 'SOLO'
+                      ? 'bg-eink-bg border-2 border-eink-text shadow-eink-sm'
                       : 'bg-eink-surface border-eink-border hover:bg-eink-surfaceHover'
                   }`}
-                  onClick={() => {}}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs uppercase text-eink-text">
-                      {(project.members?.length || 1) <= 1 ? '●' : '○'} WORKING ALONE
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs uppercase text-eink-text font-technical">
+                      {(project.working_mode || 'SOLO') === 'SOLO' ? '●' : '○'} WORKING ALONE (SOLO)
                     </span>
-                  </div>
-                  <p className="text-[11px] text-eink-textSecondary pt-1">
-                    You are the only developer working on this repository. Pushes use the default branch (<strong>{project.default_branch || 'main'}</strong>).
-                  </p>
-                </div>
-
-                <div
-                  className={`p-3 border rounded-sm transition-all cursor-pointer ${
-                    (project.members?.length || 1) > 1
-                      ? 'bg-eink-bg border-eink-text shadow-eink-sm'
-                      : 'bg-eink-surface border-eink-border hover:bg-eink-surfaceHover'
-                  }`}
-                  onClick={() => setIsAddMemberOpen(true)}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs uppercase text-eink-text">
-                      {(project.members?.length || 1) > 1 ? '●' : '○'} WORKING AS A TEAM
-                    </span>
-                    {(project.members?.length || 1) <= 1 && (
-                      <span className="text-[10px] bg-eink-text text-eink-bg px-1.5 py-0.2 rounded font-bold">
-                        + ADD MEMBERS
+                    {(project.working_mode || 'SOLO') === 'SOLO' && (
+                      <span className="text-[9px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded">
+                        ACTIVE
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-eink-textSecondary pt-1">
-                    Multiple developers will work on this repository. SHIORI organizes tasks and isolated developer branches (<code className="bg-eink-surface px-1 py-0.2 rounded">feature/&lt;username&gt;</code>) for each developer.
+                  <p className="text-[11px] text-eink-textSecondary pt-1.5 font-sans leading-normal">
+                    You work directly on the repository's detected default branch (<strong>{project.default_branch || 'main'}</strong>). AI prompts use this verified branch.
                   </p>
-                </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await fetch(`/api/projects/${project.id}/working-mode`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ mode: 'TEAM' })
+                      });
+                      triggerEInkRefresh();
+                      fetchProjectData(true);
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }}
+                  className={`p-3.5 border rounded-sm transition-all text-left cursor-pointer ${
+                    project.working_mode === 'TEAM'
+                      ? 'bg-eink-bg border-2 border-eink-text shadow-eink-sm'
+                      : 'bg-eink-surface border-eink-border hover:bg-eink-surfaceHover'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs uppercase text-eink-text font-technical">
+                      {project.working_mode === 'TEAM' ? '●' : '○'} WORKING AS A TEAM (TEAM)
+                    </span>
+                    {project.working_mode === 'TEAM' && (
+                      <span className="text-[9px] font-mono font-bold bg-eink-text text-eink-bg px-1.5 py-0.2 rounded">
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-eink-textSecondary pt-1.5 font-sans leading-normal">
+                    Each team member gets an authoritative, verified branch (<code className="font-mono bg-eink-surface px-1 py-0.2 rounded">feature/&lt;username&gt;</code>). AI prompts will never default to main.
+                  </p>
+                </button>
               </div>
             </div>
 
@@ -924,22 +982,23 @@ export const ProjectDetailPage: React.FC = () => {
             <div className="space-y-3 pt-2">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-eink-textMuted uppercase font-bold tracking-wider">
-                  DEVELOPER BRANCHES ({project.members?.length || 1})
+                  TEAM MEMBERS & BRANCH STATUS ({project.members?.length || 1})
                 </span>
                 <button
                   type="button"
                   onClick={() => setIsAddMemberOpen(true)}
-                  className="text-xs text-eink-text font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                  className="text-xs text-eink-text font-bold hover:underline flex items-center gap-1 cursor-pointer font-technical"
                 >
                   <UserPlus className="w-3 h-3" />
-                  <span>+ ADD DEVELOPER</span>
+                  <span>+ ADD TEAM MEMBER</span>
                 </button>
               </div>
 
               <div className="divide-y divide-eink-border border border-eink-border rounded-sm bg-eink-bg">
                 {(project.members && project.members.length > 0 ? project.members : [user]).map((m: any) => {
-                  const githubUsername = m?.github_username || m?.username || (m?.name ? m.name.toLowerCase().replace(/\s+/g, '-') : 'developer');
-                  const branchName = `feature/${githubUsername}`;
+                  const githubUsername = m?.github_username || m?.user_github_username || m?.username || (m?.name ? m.name.toLowerCase().replace(/\s+/g, '-') : 'developer');
+                  const branchName = m?.branch_name || `feature/${githubUsername}`;
+                  const isVerified = m?.branch_status === 'VERIFIED';
                   const defaultBranch = project.default_branch || 'main';
                   const setupCommand = `git fetch origin\ngit switch -c ${branchName} origin/${defaultBranch}\ngit push -u origin ${branchName}`;
                   const checkoutCommand = `git fetch origin\ngit switch ${branchName}\ngit pull origin ${branchName}`;
@@ -948,17 +1007,23 @@ export const ProjectDetailPage: React.FC = () => {
                     <div key={m?.id || 'dev-1'} className="p-3.5 space-y-2">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="font-bold text-xs uppercase text-eink-text">{m?.name || 'Developer'}</span>
                             <span className="text-[10px] font-mono bg-eink-surface border border-eink-border px-1.5 py-0.2 rounded text-eink-textSecondary">
                               @{githubUsername}
                             </span>
-                            <span className="text-[10px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.2 rounded">
-                              ✓ {branchName}
-                            </span>
+                            {isVerified ? (
+                              <span className="text-[10px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.2 rounded">
+                                ✓ {branchName} (VERIFIED)
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 px-1.5 py-0.2 rounded">
+                                ⚠ {branchName} (NOT CREATED)
+                              </span>
+                            )}
                           </div>
                           <p className="text-[10px] text-eink-textMuted font-mono">
-                            Assigned branch: <strong>{branchName}</strong> (Origin: {defaultBranch})
+                            Assigned branch: <strong>{branchName}</strong> (Base: {defaultBranch})
                           </p>
                         </div>
 
@@ -971,7 +1036,7 @@ export const ProjectDetailPage: React.FC = () => {
                               setTimeout(() => setCopiedTaskId(null), 2000);
                             }}
                             className="px-2.5 py-1 bg-eink-surface hover:bg-eink-surfaceHover border border-eink-border rounded text-xs font-mono font-bold text-eink-text flex items-center gap-1 cursor-pointer transition-colors shadow-eink-sm"
-                            title="Copy branch creation command"
+                            title="Copy branch setup command"
                           >
                             <Copy className="w-3 h-3" />
                             <span>{copiedTaskId === (m?.id || 'dev-1') ? 'COPIED SETUP COMMANDS!' : 'COPY SETUP COMMANDS'}</span>

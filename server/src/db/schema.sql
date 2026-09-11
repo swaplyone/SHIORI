@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS projects (
   slug TEXT NOT NULL,
   description TEXT,
   status TEXT DEFAULT 'ACTIVE',
+  working_mode TEXT DEFAULT 'SOLO', -- 'SOLO' | 'TEAM'
   github_repo_name TEXT,
   github_repo_url TEXT,
   default_branch TEXT DEFAULT 'main',
@@ -177,6 +178,10 @@ CREATE TABLE IF NOT EXISTS project_members (
   project_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   role TEXT DEFAULT 'member',
+  github_username TEXT,
+  branch_name TEXT,
+  branch_status TEXT DEFAULT 'PENDING_VERIFICATION', -- 'VERIFIED', 'NOT_CREATED', 'PENDING_VERIFICATION', 'CONFLICT'
+  last_branch_verified_at TEXT,
   joined_at TEXT DEFAULT (datetime('now')),
   UNIQUE (project_id, user_id),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,

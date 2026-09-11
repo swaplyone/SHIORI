@@ -639,6 +639,239 @@ githubRouter.delete('/user-repositories/:repoName', authMiddleware, async (req: 
   res.json({ success: true, message: `Repository ${repoName} archived from active view.` });
 });
 
+// GET Project Branches & Verification Overview
+githubRouter.get('/projects/:projectId/branches', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { projectId } = req.params;
+  const userId = req.user!.id;
+
+  const project = await queryOne(`
+    SELECT p.* 
+    FROM projects p
+    WHERE p.id = ? AND (p.created_by = ? OR p.id IN (SELECT project_id FROM project_members WHERE user_id = ?))
+  `, [projectId, userId, userId]);
+
+  if (!project) {
+    res.status(404).json({ error: 'Project not found or not authorized' });
+    return;
+  }
+
+  const repoName = (project.github_repo_name || project.name || '').trim();
+  const cleanShort = repoName.replace(/^.*\//, '');
+
+  // Get project members
+  const members = await queryAll(`
+    SELECT pm.id as member_id, pm.user_id, pm.role, pm.github_username, pm.branch_name, pm.branch_status, pm.last_branch_verified_at,
+           u.name, u.username, u.avatar_url, u.github_username as user_github_username
+    FROM project_members pm
+    JOIN users u ON pm.user_id = u.id
+    WHERE pm.project_id = ?
+  `, [projectId]);
+
+  // Fetch token for user or creator
+  const userAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
+  const creatorAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [project.created_by]);
+  const token = userAccount?.access_token || creatorAccount?.access_token || null;
+
+  const candidateNames = [
+    repoName.includes('/') ? repoName : null,
+    userAccount?.username ? `${userAccount.username}/${cleanShort}` : null,
+    creatorAccount?.username ? `${creatorAccount.username}/${cleanShort}` : null,
+    `Swaply-one/${cleanShort}`,
+    `swaplyone/${cleanShort}`,
+    cleanShort
+  ].filter(Boolean) as string[];
+
+  let githubBranches: any[] = [];
+  let detectedDefaultBranch = project.default_branch || 'main';
+
+  const headers: Record<string, string> = {
+    'User-Agent': 'SHIORI-App',
+    Accept: 'application/vnd.github.v3+json'
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  for (const cand of candidateNames) {
+    try {
+      // 1. Get repo details for real default branch
+      const repoRes = await fetch(`https://api.github.com/repos/${cand}`, { headers });
+      if (repoRes.ok) {
+        const repoData = (await repoRes.json()) as any;
+        if (repoData.default_branch) {
+          detectedDefaultBranch = repoData.default_branch;
+          await runQuery('UPDATE projects SET default_branch = ? WHERE id = ?', [detectedDefaultBranch, projectId]);
+        }
+      }
+
+      // 2. Get branches
+      const branchRes = await fetch(`https://api.github.com/repos/${cand}/branches?per_page=100`, { headers });
+      if (branchRes.ok) {
+        const bList = (await branchRes.json()) as any[];
+        if (Array.isArray(bList)) {
+          githubBranches = bList;
+          break;
+        }
+      }
+    } catch {}
+  }
+
+  const liveBranchNames = new Set(githubBranches.map((b) => b.name?.toLowerCase()));
+
+  // Correlate with members and update branch statuses in DB
+  const enrichedMembers = await Promise.all(
+    members.map(async (m) => {
+      const bName = m.branch_name || `feature/${(m.github_username || m.user_github_username || m.username || 'dev').toLowerCase().replace(/[^a-z0-9-]/g, '-')}`;
+      const existsOnGh = liveBranchNames.has(bName.toLowerCase());
+      const newStatus = existsOnGh ? 'VERIFIED' : 'NOT_CREATED';
+
+      if (m.branch_status !== newStatus || !m.branch_name) {
+        await runQuery(`
+          UPDATE project_members SET
+            branch_name = ?,
+            branch_status = ?,
+            last_branch_verified_at = datetime('now')
+          WHERE id = ?
+        `, [bName, newStatus, m.member_id]);
+      }
+
+      return {
+        ...m,
+        branch_name: bName,
+        branch_status: newStatus,
+        existsOnGithub: existsOnGh
+      };
+    })
+  );
+
+  // Format branches list
+  const memberBranchNames = new Set(enrichedMembers.map((m) => m.branch_name.toLowerCase()));
+  const formattedBranches = githubBranches.map((b) => {
+    const isDefault = b.name === detectedDefaultBranch;
+    const assignedMember = enrichedMembers.find((m) => m.branch_name.toLowerCase() === b.name.toLowerCase());
+
+    return {
+      name: b.name,
+      isDefault,
+      commitSha: b.commit?.sha?.substring(0, 7) || '',
+      assignedUserId: assignedMember?.user_id || null,
+      assignedGithubUsername: assignedMember?.github_username || assignedMember?.user_github_username || null,
+      verificationStatus: assignedMember ? 'VERIFIED' : (isDefault ? 'DEFAULT_BRANCH' : 'UNASSIGNED')
+    };
+  });
+
+  res.json({
+    projectId,
+    repository: repoName,
+    workingMode: project.working_mode || 'SOLO',
+    defaultBranch: detectedDefaultBranch,
+    branches: formattedBranches,
+    members: enrichedMembers
+  });
+});
+
+// POST Verify Project Branches Against Live GitHub
+githubRouter.post('/projects/:projectId/branches/verify', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { projectId } = req.params;
+  const userId = req.user!.id;
+
+  const project = await queryOne(`
+    SELECT p.* 
+    FROM projects p
+    WHERE p.id = ? AND (p.created_by = ? OR p.id IN (SELECT project_id FROM project_members WHERE user_id = ?))
+  `, [projectId, userId, userId]);
+
+  if (!project) {
+    res.status(404).json({ error: 'Project not found or not authorized' });
+    return;
+  }
+
+  // Trigger discovery and verification
+  const userAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
+  const creatorAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [project.created_by]);
+  const token = userAccount?.access_token || creatorAccount?.access_token || null;
+
+  const repoName = (project.github_repo_name || project.name || '').trim();
+  const cleanShort = repoName.replace(/^.*\//, '');
+
+  const candidateNames = [
+    repoName.includes('/') ? repoName : null,
+    userAccount?.username ? `${userAccount.username}/${cleanShort}` : null,
+    creatorAccount?.username ? `${creatorAccount.username}/${cleanShort}` : null,
+    `Swaply-one/${cleanShort}`,
+    `swaplyone/${cleanShort}`,
+    cleanShort
+  ].filter(Boolean) as string[];
+
+  let githubBranches: any[] = [];
+  let detectedDefaultBranch = project.default_branch || 'main';
+
+  const headers: Record<string, string> = {
+    'User-Agent': 'SHIORI-App',
+    Accept: 'application/vnd.github.v3+json'
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  for (const cand of candidateNames) {
+    try {
+      const repoRes = await fetch(`https://api.github.com/repos/${cand}`, { headers });
+      if (repoRes.ok) {
+        const repoData = (await repoRes.json()) as any;
+        if (repoData.default_branch) {
+          detectedDefaultBranch = repoData.default_branch;
+          await runQuery('UPDATE projects SET default_branch = ? WHERE id = ?', [detectedDefaultBranch, projectId]);
+        }
+      }
+
+      const branchRes = await fetch(`https://api.github.com/repos/${cand}/branches?per_page=100`, { headers });
+      if (branchRes.ok) {
+        const bList = (await branchRes.json()) as any[];
+        if (Array.isArray(bList)) {
+          githubBranches = bList;
+          break;
+        }
+      }
+    } catch {}
+  }
+
+  const liveBranchNames = new Set(githubBranches.map((b) => b.name?.toLowerCase()));
+
+  const members = await queryAll(`
+    SELECT pm.id as member_id, pm.user_id, pm.role, pm.github_username, pm.branch_name,
+           u.name, u.username, u.avatar_url, u.github_username as user_github_username
+    FROM project_members pm
+    JOIN users u ON pm.user_id = u.id
+    WHERE pm.project_id = ?
+  `, [projectId]);
+
+  const verifiedMembers = await Promise.all(
+    members.map(async (m) => {
+      const bName = m.branch_name || `feature/${(m.github_username || m.user_github_username || m.username || 'dev').toLowerCase().replace(/[^a-z0-9-]/g, '-')}`;
+      const existsOnGh = liveBranchNames.has(bName.toLowerCase());
+      const status = existsOnGh ? 'VERIFIED' : 'NOT_CREATED';
+
+      await runQuery(`
+        UPDATE project_members SET
+          branch_name = ?,
+          branch_status = ?,
+          last_branch_verified_at = datetime('now')
+        WHERE id = ?
+      `, [bName, status, m.member_id]);
+
+      return {
+        ...m,
+        branch_name: bName,
+        branch_status: status,
+        existsOnGithub: existsOnGh
+      };
+    })
+  );
+
+  res.json({
+    success: true,
+    defaultBranch: detectedDefaultBranch,
+    members: verifiedMembers
+  });
+});
+
 // List Repositories (Legacy alias redirecting to user-repositories)
 githubRouter.get('/repositories', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const userRepos = await queryAll(`

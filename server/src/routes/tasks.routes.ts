@@ -1355,21 +1355,327 @@ tasksRouter.post('/:id/reject', authMiddleware, async (req: AuthRequest, res: Re
   res.json({ task: updatedTask, message: 'Task assignment rejected.' });
 });
 
-// GET /api/tasks/pending/assignments - Fetch all tasks assigned to current user pending accept/reject
-tasksRouter.get('/pending/assignments', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
-  const userId = req.user!.id;
-  const pending = await queryAll(`
-    SELECT t.*, p.name as project_name, p.slug as project_slug, creator.name as creator_name, creator.shiori_id as creator_shiori_id
-    FROM tasks t
-    LEFT JOIN projects p ON t.project_id = p.id
-    LEFT JOIN users creator ON t.created_by = creator.id
-    WHERE t.assignee_id = ? 
-      AND t.created_by != ? 
-      AND (t.assignment_status = 'ASSIGNED' OR t.assignment_status IS NULL OR t.assignment_status = 'NONE')
-      AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
-    ORDER BY t.created_at DESC
-  `, [userId, userId]);
+// GET /api/tasks/:id/ai-prompt - Generate task-aware AI coding prompt with verified Git branch
+tasksRouter.get('/:id/ai-prompt', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
 
-  res.json({ tasks: pending });
+    // 1. Fetch task details
+    const task = await queryOne(`
+      SELECT t.*, 
+             p.id as proj_id, p.name as proj_name, p.slug as proj_slug, p.github_repo_name,
+             p.working_mode, p.default_branch, p.created_by as proj_owner_id,
+             u.id as assignee_user_id, u.name as assignee_name, u.username as assignee_username,
+             u.github_username as assignee_github_username, u.github_connected as assignee_github_connected,
+             creator.name as creator_name, creator.github_username as creator_github_username
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id
+      LEFT JOIN users u ON t.assignee_id = u.id
+      LEFT JOIN users creator ON t.created_by = creator.id
+      WHERE t.id = ? OR t.task_code = ?
+    `, [id, id.toUpperCase()]);
+
+    if (!task) {
+      res.status(404).json({ ready: false, error: 'Task not found' });
+      return;
+    }
+
+    // 2. Authorization check: must be creator, assignee, project member, or workspace member
+    const isAuthorized =
+      task.created_by === userId ||
+      task.assignee_id === userId ||
+      (task.project_id && (await queryOne(`
+        SELECT id FROM projects 
+        WHERE id = ? AND (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?))
+      `, [task.project_id, userId, userId]))) ||
+      (task.workspace_id && (await queryOne(`
+        SELECT workspace_id FROM workspace_members WHERE workspace_id = ? AND user_id = ?
+      `, [task.workspace_id, userId])));
+
+    if (!isAuthorized) {
+      res.status(403).json({ ready: false, error: 'Not authorized to access this task AI prompt' });
+      return;
+    }
+
+    const workingMode: 'SOLO' | 'TEAM' = task.working_mode === 'TEAM' ? 'TEAM' : 'SOLO';
+    const defaultBranch: string = task.default_branch || 'main';
+    const projectName: string = task.proj_name || task.github_repo || 'Project';
+    const repoName: string = task.github_repo_name || task.github_repo || projectName;
+
+    // --- SOLO MODE WORKFLOW ---
+    if (workingMode === 'SOLO') {
+      const requiredBranch = defaultBranch;
+      const developerName = req.user!.name || task.assignee_name || 'Developer';
+      const githubUser = (req.user as any)?.github_username || task.assignee_github_username || req.user!.username || 'developer';
+
+      const prompt = `You are working on ${task.task_code}.
+
+Assigned developer:
+${developerName}
+
+GitHub:
+@${githubUser}
+
+Project:
+${projectName}
+
+Working mode:
+SOLO
+
+Required branch:
+${requiredBranch}
+
+Branch status:
+✓ VERIFIED
+
+Task:
+${task.title}${task.description ? `\n\nDescription:\n${task.description}` : ''}
+
+Before making changes:
+
+git switch ${requiredBranch}
+git pull origin ${requiredBranch}
+
+Requirements:
+
+- Implement the requested task according to requirements.
+- Follow the existing codebase architecture and conventions.
+- Keep modifications focused on ${task.task_code}.
+- Do not modify unrelated functionality.
+- Run tests and verify the build before committing.
+
+After completing the task:
+
+git add .
+git commit -m "[${task.task_code}] ${task.title}"
+git push origin ${requiredBranch}
+
+Expected commit format:
+
+[${task.task_code}] ${task.title}`;
+
+      res.json({
+        ready: true,
+        workingMode: 'SOLO',
+        branchStatus: 'VERIFIED',
+        requiredBranch,
+        defaultBranch,
+        developer: {
+          name: developerName,
+          githubUsername: githubUser
+        },
+        task: {
+          id: task.id,
+          taskCode: task.task_code,
+          title: task.title,
+          description: task.description
+        },
+        prompt
+      });
+      return;
+    }
+
+    // --- TEAM MODE WORKFLOW ---
+    // In TEAM mode, resolve assigned developer
+    const effectiveAssigneeId = task.assignee_id || task.created_by || userId;
+    const assigneeUser = await queryOne(
+      'SELECT id, name, username, github_username, github_connected FROM users WHERE id = ?',
+      [effectiveAssigneeId]
+    );
+
+    const developerName = assigneeUser?.name || 'Assigned Developer';
+    const githubUsername = (assigneeUser?.github_username || assigneeUser?.username || '').trim();
+
+    if (!githubUsername) {
+      res.json({
+        ready: false,
+        reason: 'GITHUB_IDENTITY_NOT_VERIFIED',
+        workingMode: 'TEAM',
+        branchStatus: 'PENDING_VERIFICATION',
+        message: 'Developer has not connected their GitHub account or verified their GitHub username.',
+        requiredBranch: null,
+        defaultBranch,
+        task: {
+          id: task.id,
+          taskCode: task.task_code,
+          title: task.title
+        }
+      });
+      return;
+    }
+
+    // Check project member configuration
+    const member = await queryOne(
+      'SELECT id, branch_name, branch_status FROM project_members WHERE project_id = ? AND user_id = ?',
+      [task.project_id, effectiveAssigneeId]
+    );
+
+    const cleanGh = githubUsername.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    const assignedBranch = member?.branch_name || `feature/${cleanGh}`;
+
+    // Branch collision check in same project
+    const duplicateMember = await queryOne(`
+      SELECT pm.id, u.name, u.github_username
+      FROM project_members pm
+      JOIN users u ON pm.user_id = u.id
+      WHERE pm.project_id = ? AND pm.user_id != ? AND LOWER(pm.branch_name) = LOWER(?)
+    `, [task.project_id, effectiveAssigneeId, assignedBranch]);
+
+    if (duplicateMember) {
+      res.json({
+        ready: false,
+        reason: 'BRANCH_NOT_VERIFIED',
+        workingMode: 'TEAM',
+        branchStatus: 'CONFLICT',
+        message: `Branch "${assignedBranch}" is already assigned to @${duplicateMember.github_username || duplicateMember.name}. Duplicate branch assignments are not permitted.`,
+        requiredBranch: assignedBranch,
+        defaultBranch,
+        task: {
+          id: task.id,
+          taskCode: task.task_code,
+          title: task.title
+        }
+      });
+      return;
+    }
+
+    // Branch existence check against GitHub
+    let isBranchVerified = member?.branch_status === 'VERIFIED';
+    if (!isBranchVerified) {
+      // Check live GitHub branches if possible
+      const ghAccount = await queryOne(
+        'SELECT access_token FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1',
+        [userId]
+      );
+      if (ghAccount?.access_token) {
+        try {
+          const cleanShort = repoName.replace(/^.*\//, '');
+          const candidateNames = [
+            repoName.includes('/') ? repoName : null,
+            `${githubUsername}/${cleanShort}`,
+            `Swaply-one/${cleanShort}`,
+            `swaplyone/${cleanShort}`,
+            cleanShort
+          ].filter(Boolean);
+
+          for (const cand of candidateNames) {
+            const checkRes = await fetch(`https://api.github.com/repos/${cand}/branches/${assignedBranch}`, {
+              headers: {
+                Authorization: `Bearer ${ghAccount.access_token}`,
+                'User-Agent': 'SHIORI-App',
+                Accept: 'application/vnd.github.v3+json'
+              }
+            });
+            if (checkRes.ok) {
+              isBranchVerified = true;
+              if (member) {
+                await runQuery(
+                  "UPDATE project_members SET branch_status = 'VERIFIED', last_branch_verified_at = datetime('now') WHERE id = ?",
+                  [member.id]
+                );
+              }
+              break;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    if (!isBranchVerified) {
+      const setupCommands = `git fetch origin\ngit switch -c ${assignedBranch} origin/${defaultBranch}\ngit push -u origin ${assignedBranch}`;
+
+      res.json({
+        ready: false,
+        reason: 'BRANCH_NOT_CREATED',
+        workingMode: 'TEAM',
+        branchStatus: 'NOT_CREATED',
+        requiredBranch: assignedBranch,
+        defaultBranch,
+        setupCommands,
+        developer: {
+          name: developerName,
+          githubUsername
+        },
+        message: `Branch "${assignedBranch}" has not been created or verified on GitHub yet.`,
+        task: {
+          id: task.id,
+          taskCode: task.task_code,
+          title: task.title
+        }
+      });
+      return;
+    }
+
+    // If verified, generate the complete AI developer prompt
+    const prompt = `You are working on ${task.task_code}.
+
+Assigned developer:
+${developerName}
+
+GitHub:
+@${githubUsername}
+
+Project:
+${projectName}
+
+Working mode:
+TEAM
+
+Required branch:
+${assignedBranch}
+
+Branch status:
+✓ VERIFIED
+
+Task:
+${task.title}${task.description ? `\n\nDescription:\n${task.description}` : ''}
+
+Before making changes:
+
+git switch ${assignedBranch}
+git pull origin ${assignedBranch}
+
+Requirements:
+
+- Implement the requested task according to requirements.
+- Follow the existing codebase architecture and conventions.
+- Keep modifications focused on ${task.task_code}.
+- Do not modify unrelated functionality.
+- Run tests and verify the build before committing.
+
+After completing the task:
+
+git add .
+git commit -m "[${task.task_code}] ${task.title}"
+git push origin ${assignedBranch}
+
+Expected commit format:
+
+[${task.task_code}] ${task.title}`;
+
+    res.json({
+      ready: true,
+      workingMode: 'TEAM',
+      branchStatus: 'VERIFIED',
+      requiredBranch: assignedBranch,
+      defaultBranch,
+      developer: {
+        name: developerName,
+        githubUsername
+      },
+      task: {
+        id: task.id,
+        taskCode: task.task_code,
+        title: task.title,
+        description: task.description
+      },
+      prompt
+    });
+  } catch (err: any) {
+    console.error('[TASK AI PROMPT ERROR]', err);
+    res.status(500).json({ ready: false, error: 'Failed to generate task AI prompt' });
+  }
 });
+
 
