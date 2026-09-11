@@ -193,6 +193,14 @@ async function initPgSchema(pool: pg.Pool) {
       UNIQUE (user_id, repo_name)
     );
 
+    CREATE TABLE IF NOT EXISTS user_patch_notes (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      patch_version TEXT NOT NULL,
+      seen_at TEXT DEFAULT (datetime('now')),
+      UNIQUE (user_id, patch_version)
+    );
+
     CREATE TABLE IF NOT EXISTS github_accounts (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -566,6 +574,13 @@ async function initPgSchema(pool: pg.Pool) {
         attempts INTEGER DEFAULT 0,
         expires_at TIMESTAMPTZ NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
+      );`,
+      `CREATE TABLE IF NOT EXISTS user_patch_notes (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        patch_version TEXT NOT NULL,
+        seen_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (user_id, patch_version)
       );`
     ];
 
@@ -673,6 +688,11 @@ function translateSqlForPostgres(sql: string, params: any[]): { sql: string; par
     translatedSql = translatedSql.replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
     if (!translatedSql.toLowerCase().includes('on conflict')) {
       translatedSql += ` ON CONFLICT (user_id) DO NOTHING`;
+    }
+  } else if (/INSERT OR REPLACE INTO user_patch_notes/i.test(sql)) {
+    translatedSql = translatedSql.replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
+    if (!translatedSql.toLowerCase().includes('on conflict')) {
+      translatedSql += ` ON CONFLICT (user_id, patch_version) DO UPDATE SET seen_at = NOW()`;
     }
   } else if (/INSERT OR IGNORE INTO/i.test(sql)) {
     translatedSql = translatedSql.replace(/INSERT OR IGNORE INTO/gi, 'INSERT INTO');

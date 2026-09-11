@@ -12,6 +12,48 @@ export interface DateRange {
 }
 
 /**
+ * Normalizes any date value (Date instance, ISO string, SQL timestamp string) to an ISO string or empty string.
+ */
+export function normalizeDate(val: any): string {
+  if (!val) return '';
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? '' : val.toISOString();
+  }
+  if (typeof val === 'number') {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? '' : d.toISOString();
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return '';
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) {
+      return d.toISOString();
+    }
+    return trimmed;
+  }
+  return String(val);
+}
+
+/**
+ * Extracts YYYY-MM-DD from any date representation safely.
+ */
+export function extractDayString(val: any): string {
+  if (!val) return '';
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    const y = val.getUTCFullYear();
+    const m = String(val.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(val.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const iso = normalizeDate(val);
+  if (!iso) return '';
+  return iso.split('T')[0].split(' ')[0];
+}
+
+
+/**
  * Get day range (00:00:00.000 to 23:59:59.999) for a given date in local/specified timezone.
  */
 export function getUserDayRange(targetDate?: string | Date, timezoneOffsetHours: number = 0): DateRange {

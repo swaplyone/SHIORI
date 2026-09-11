@@ -57,6 +57,8 @@ app.use('/api/connections', connectionsRouter);
 app.use('/api/friends', friendsRouter);
 app.use('/api/github', githubRouter);
 app.use('/api/webhooks', githubRouter);
+import { patchNotesRouter } from './routes/patchNotes.routes.js';
+
 app.use('/api/activity', activityRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/journal', journalRouter);
@@ -65,6 +67,7 @@ app.use('/api/simulator', simulatorRouter);
 app.use('/api/recovery', recoveryRouter);
 app.use('/api/focus', focusRouter);
 app.use('/api/spark', sparkRouter);
+app.use('/api/patch-notes', patchNotesRouter);
 
 // Health check endpoints for UptimeRobot & Keep-Alive Monitoring
 app.get(['/', '/health', '/api/health', '/ping', '/api/ping'], (_req, res) => {

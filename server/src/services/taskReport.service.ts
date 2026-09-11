@@ -5,7 +5,8 @@
  */
 
 import { queryOne, queryAll } from '../db/index.js';
-import { DateRange, getUserDayRange, getUserWeekRange, getUserMonthRange } from '../utils/dateRange.js';
+import { DateRange, getUserDayRange, getUserWeekRange, getUserMonthRange, extractDayString, normalizeDate } from '../utils/dateRange.js';
+
 
 export interface TaskFilterOptions {
   projectId?: string;
@@ -220,7 +221,7 @@ export class TaskReportService {
       ORDER BY COALESCE(t.deadline, t.due_date) ASC
     `;
 
-    return (await queryAll(query, [...params, dateRange.start, dateRange.end, dateRange.start.split(' ')[0], dateRange.end.split(' ')[0]])) || [];
+    return (await queryAll(query, [...params, dateRange.start, dateRange.end, extractDayString(dateRange.start), extractDayString(dateRange.end)])) || [];
   }
 
   /**
@@ -247,7 +248,7 @@ export class TaskReportService {
       const dateStr = current.toISOString().split('T')[0];
 
       const tasksForDay = completed.filter(t => {
-        const compDate = (t.completed_at || t.updated_at || '').split('T')[0].split(' ')[0];
+        const compDate = extractDayString(t.completed_at || t.updated_at);
         return compDate === dateStr;
       });
 
@@ -388,8 +389,8 @@ export class TaskReportService {
       // Completed on or before this day
       const completedSoFar = (allTasks || []).filter(t => {
         if (t.status !== 'DONE') return false;
-        const comp = t.completed_at || t.updated_at;
-        return comp && comp <= endOfDay;
+        const comp = normalizeDate(t.completed_at || t.updated_at);
+        return !!comp && comp <= endOfDay;
       }).length;
 
       const remaining = Math.max(0, totalScope - completedSoFar);

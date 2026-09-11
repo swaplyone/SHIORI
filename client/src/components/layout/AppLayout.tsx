@@ -10,6 +10,7 @@ import { SparkCompanionModal } from '../spark/SparkCompanionModal';
 import { SparkGreetingBanner } from '../spark/SparkGreetingBanner';
 import { SparkFloatingBubble } from '../spark/SparkFloatingBubble';
 import { SparkMicrophonePromptModal } from '../spark/SparkMicrophonePromptModal';
+import { PatchNotesModal } from '../ui/PatchNotesModal';
 import { useNotifications } from '../../context/NotificationContext';
 import { useSpark } from '../../context/SparkContext';
 import { useAuth } from '../../context/AuthContext';
@@ -201,6 +202,9 @@ export const AppLayout: React.FC = () => {
 
       {/* Notification Permission Prompt for First-Time Entry */}
       <NotificationPermissionPrompt />
+
+      {/* One-Time Release Patch Notes Modal */}
+      <PatchNotesModal />
     </div>
   );
 };
