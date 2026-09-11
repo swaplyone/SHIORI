@@ -598,9 +598,17 @@ function translateSqlForPostgres(sql: string, params: any[]): { sql: string; par
   let translatedSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
 
   translatedSql = translatedSql
+    // 1. Specific text column date/deadline comparisons
+    .replace(/date\((t\.)?deadline\)\s*=\s*date\('now'\)/gi, "NULLIF($1deadline, '')::date = CURRENT_DATE")
+    .replace(/(t\.)?deadline\s*([<>=!]+)\s*datetime\('now'\)/gi, "NULLIF($1deadline, '')::timestamptz $2 NOW()")
+    .replace(/(t\.)?due_date\s*([<>=!]+)\s*date\('now'\)/gi, "NULLIF($1due_date, '')::date $2 CURRENT_DATE")
+    .replace(/date\(updated_at\)\s*=\s*date\('now'\)/gi, "updated_at::date = CURRENT_DATE")
+    .replace(/entry_date\s*=\s*date\('now'\)/gi, "entry_date = CURRENT_DATE::text")
+    .replace(/note_date\s*=\s*date\('now'\)/gi, "note_date = CURRENT_DATE::text")
+    // 2. Generic SQLite time expressions
+    .replace(/datetime\('now',\s*'\+7 days'\)/gi, "(NOW() + INTERVAL '7 days')")
     .replace(/datetime\('now'\)/gi, 'NOW()')
-    .replace(/date\('now'\)/gi, 'CURRENT_DATE')
-    .replace(/datetime\('now',\s*'\+7 days'\)/gi, "(NOW() + INTERVAL '7 days')");
+    .replace(/date\('now'\)/gi, 'CURRENT_DATE');
 
   // Handle specific INSERT OR REPLACE / IGNORE queries for PostgreSQL
   if (/INSERT OR REPLACE INTO registration_otps/i.test(sql)) {
