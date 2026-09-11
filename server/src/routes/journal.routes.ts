@@ -8,47 +8,155 @@ export const journalRouter = Router();
 journalRouter.get('/today', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.id;
 
-  const totalTasks = await queryOne('SELECT COUNT(*) as count FROM tasks WHERE (assignee_id = ? OR created_by = ?) AND is_deleted = 0', [userId, userId]);
-  const completedTasks = await queryOne("SELECT COUNT(*) as count FROM tasks WHERE (assignee_id = ? OR created_by = ?) AND is_deleted = 0 AND (status = 'DONE' OR user_status = 'COMPLETED')", [userId, userId]);
-  const attentionTasks = await queryOne("SELECT COUNT(*) as count FROM tasks WHERE (assignee_id = ? OR created_by = ?) AND is_deleted = 0 AND (has_ci_discrepancy = 1 OR github_ci_status = 'FAILED')", [userId, userId]);
+  const totalTasks = await queryOne(`
+    SELECT COUNT(*) as count 
+    FROM tasks 
+    WHERE (is_deleted = 0 OR is_deleted IS NULL)
+      AND (
+        created_by = ? 
+        OR assignee_id = ? 
+        OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+  `, [userId, userId, userId, userId]);
+
+  const completedTasks = await queryOne(`
+    SELECT COUNT(*) as count 
+    FROM tasks 
+    WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+      AND (status = 'DONE' OR user_status = 'COMPLETED')
+      AND (
+        created_by = ? 
+        OR assignee_id = ? 
+        OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+  `, [userId, userId, userId, userId]);
+
+  const attentionTasks = await queryOne(`
+    SELECT COUNT(*) as count 
+    FROM tasks 
+    WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+      AND (has_ci_discrepancy = 1 OR github_ci_status = 'FAILED')
+      AND (
+        created_by = ? 
+        OR assignee_id = ? 
+        OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+  `, [userId, userId, userId, userId]);
   
   const remainingCount = Math.max(0, (totalTasks?.count || 0) - (completedTasks?.count || 0));
 
-  const commitsCount = await queryOne('SELECT COUNT(*) as count FROM github_commits');
-  const prsCount = await queryOne('SELECT COUNT(DISTINCT github_pr_number) as count FROM tasks WHERE github_pr_number IS NOT NULL AND is_deleted = 0');
-  const checksPassed = await queryOne("SELECT SUM(tests_passed) as count FROM github_workflow_runs");
-  const checksFailed = await queryOne("SELECT SUM(tests_failed) as count FROM github_workflow_runs");
+  // Commits count scoped to user's authorized projects / repos / tasks
+  const commitsCount = await queryOne(`
+    SELECT COUNT(*) as count 
+    FROM github_commits gc
+    WHERE (
+      LOWER(gc.repo_name) IN (
+        SELECT DISTINCT LOWER(github_repo_name) 
+        FROM projects 
+        WHERE (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?)) 
+          AND github_repo_name IS NOT NULL AND github_repo_name != ''
+      )
+      OR LOWER(gc.repo_name) IN (
+        SELECT DISTINCT LOWER(repo_name) 
+        FROM user_repositories 
+        WHERE user_id = ? AND is_active = 1
+      )
+      OR gc.task_id IN (
+        SELECT id FROM tasks 
+        WHERE created_by = ? 
+           OR assignee_id = ? 
+           OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+    )
+  `, [userId, userId, userId, userId, userId, userId, userId]);
+
+  // PRs count scoped to authorized tasks
+  const prsCount = await queryOne(`
+    SELECT COUNT(DISTINCT github_pr_number) as count 
+    FROM tasks 
+    WHERE github_pr_number IS NOT NULL 
+      AND (is_deleted = 0 OR is_deleted IS NULL)
+      AND (
+        created_by = ? 
+        OR assignee_id = ? 
+        OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+  `, [userId, userId, userId, userId]);
+
+  // Workflow tests scoped to authorized repos / tasks
+  const checksStats = await queryOne(`
+    SELECT SUM(tests_passed) as passed, SUM(tests_failed) as failed 
+    FROM github_workflow_runs gwr
+    WHERE (
+      LOWER(gwr.repo_name) IN (
+        SELECT DISTINCT LOWER(github_repo_name) 
+        FROM projects 
+        WHERE (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?)) 
+          AND github_repo_name IS NOT NULL AND github_repo_name != ''
+      )
+      OR LOWER(gwr.repo_name) IN (
+        SELECT DISTINCT LOWER(repo_name) 
+        FROM user_repositories 
+        WHERE user_id = ? AND is_active = 1
+      )
+      OR gwr.task_id IN (
+        SELECT id FROM tasks 
+        WHERE created_by = ? 
+           OR assignee_id = ? 
+           OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+    )
+  `, [userId, userId, userId, userId, userId, userId, userId]);
+
+  const checksPassed = checksStats?.passed || 0;
+  const checksFailed = checksStats?.failed || 0;
 
   const todayTasks = await queryAll(`
     SELECT t.*, p.name as project_name, p.slug as project_slug
     FROM tasks t
     LEFT JOIN projects p ON t.project_id = p.id
-    WHERE (t.assignee_id = ? OR t.created_by = ?) AND t.is_deleted = 0
+    WHERE (t.is_deleted = 0 OR t.is_deleted IS NULL)
+      AND (
+        t.created_by = ? 
+        OR t.assignee_id = ? 
+        OR t.project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
     ORDER BY t.has_ci_discrepancy DESC, t.updated_at DESC
-  `, [userId, userId]);
+  `, [userId, userId, userId, userId]);
 
-  // Fetch recent commits for dynamic activity feed
+  // Fetch recent commits for dynamic activity feed (strictly scoped)
   const recentCommits = await queryAll(`
-    SELECT message, commit_hash, author_name, pushed_at
-    FROM github_commits
-    ORDER BY pushed_at DESC
+    SELECT gc.message, gc.commit_hash, gc.author_name, gc.pushed_at
+    FROM github_commits gc
+    WHERE (
+      LOWER(gc.repo_name) IN (
+        SELECT DISTINCT LOWER(github_repo_name) 
+        FROM projects 
+        WHERE (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?)) 
+          AND github_repo_name IS NOT NULL AND github_repo_name != ''
+      )
+      OR LOWER(gc.repo_name) IN (
+        SELECT DISTINCT LOWER(repo_name) 
+        FROM user_repositories 
+        WHERE user_id = ? AND is_active = 1
+      )
+      OR gc.task_id IN (
+        SELECT id FROM tasks 
+        WHERE created_by = ? 
+           OR assignee_id = ? 
+           OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+    )
+    ORDER BY gc.pushed_at DESC
     LIMIT 6
-  `);
+  `, [userId, userId, userId, userId, userId, userId, userId]);
 
-  const lastActivity = recentCommits.length > 0
-    ? recentCommits.map((c: any) => ({
-        time: c.pushed_at ? new Date(c.pushed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '12:00',
-        label: c.message ? c.message.substring(0, 32) : 'commit pushed',
-        code: c.commit_hash ? c.commit_hash.substring(0, 7) : 'commit',
-        icon: '⎇'
-      }))
-    : [
-        { time: '09:42', label: 'commit pushed', code: 'a83f21c', icon: '⎇' },
-        { time: '10:13', label: 'tests passed', code: '12 passed', icon: '✓' },
-        { time: '11:08', label: 'PR opened', code: '#31', icon: '→' },
-        { time: '11:42', label: 'build verified', code: 'PASSED', icon: '✓' },
-        { time: '12:03', label: 'task completed', code: 'DONE', icon: '✓' }
-      ];
+  const lastActivity = recentCommits.map((c: any) => ({
+    time: c.pushed_at ? new Date(c.pushed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '12:00',
+    label: c.message ? c.message.substring(0, 32) : 'commit pushed',
+    code: c.commit_hash ? c.commit_hash.substring(0, 7) : 'commit',
+    icon: '⎇'
+  }));
 
   const now = new Date();
   const dateFormatted = now.toLocaleDateString('en-US', {
@@ -66,11 +174,11 @@ journalRouter.get('/today', authMiddleware, async (req: AuthRequest, res: Respon
       needsAttention: attentionTasks?.count || 0
     },
     development: {
-      commits: commitsCount?.count || 18,
-      pullRequests: prsCount?.count || 4,
-      checksTotal: (checksPassed?.count || 45) + (checksFailed?.count || 3),
-      checksPassed: checksPassed?.count || 45,
-      checksFailed: checksFailed?.count || 3
+      commits: commitsCount?.count || 0,
+      pullRequests: prsCount?.count || 0,
+      checksTotal: checksPassed + checksFailed,
+      checksPassed,
+      checksFailed
     },
     todayTasks,
     lastActivity
@@ -90,45 +198,124 @@ journalRouter.get('/weekly', authMiddleware, async (req: AuthRequest, res: Respo
   // Calculate week date range (Monday - Sunday)
   const dayOfWeek = now.getDay();
   const diffToMonday = now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
-  const monday = new Date(now.setDate(diffToMonday));
+  const monday = new Date(now);
+  monday.setDate(diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  const mondayIso = monday.toISOString();
+  const sundayIso = sunday.toISOString();
 
   const formatShort = (d: Date) => d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
   const dateRange = `${formatShort(monday)} - ${formatShort(sunday)} ${sunday.getFullYear()}`;
 
-  const completedTasks = await queryOne(
-    "SELECT COUNT(*) as count FROM tasks WHERE (assignee_id = ? OR created_by = ?) AND is_deleted = 0 AND (status = 'DONE' OR user_status = 'COMPLETED')",
-    [userId, userId]
-  );
-  const commitsCount = await queryOne('SELECT COUNT(*) as count FROM github_commits');
-  const prsCount = await queryOne('SELECT COUNT(DISTINCT github_pr_number) as count FROM tasks WHERE github_pr_number IS NOT NULL AND is_deleted = 0');
-  
-  const workflowStats = await queryOne(
-    "SELECT SUM(tests_passed) as passed, SUM(tests_failed) as failed FROM github_workflow_runs"
-  );
-  const passed = workflowStats?.passed || 42;
-  const failed = workflowStats?.failed || 3;
-  const total = passed + failed;
-  const buildSuccessRate = total > 0 ? Math.round((passed / total) * 100) : 94;
+  const completedTasks = await queryOne(`
+    SELECT COUNT(*) as count 
+    FROM tasks 
+    WHERE (is_deleted = 0 OR is_deleted IS NULL) 
+      AND (status = 'DONE' OR user_status = 'COMPLETED')
+      AND (
+        created_by = ? 
+        OR assignee_id = ? 
+        OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+      AND (
+        (completed_at IS NOT NULL AND completed_at >= ? AND completed_at <= ?)
+        OR (completed_at IS NULL AND updated_at >= ? AND updated_at <= ?)
+      )
+  `, [userId, userId, userId, userId, mondayIso, sundayIso, mondayIso, sundayIso]);
 
-  // Projects Distribution
+  // Scoped weekly commits count
+  const commitsCount = await queryOne(`
+    SELECT COUNT(*) as count 
+    FROM github_commits gc
+    WHERE (
+      LOWER(gc.repo_name) IN (
+        SELECT DISTINCT LOWER(github_repo_name) 
+        FROM projects 
+        WHERE (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?)) 
+          AND github_repo_name IS NOT NULL AND github_repo_name != ''
+      )
+      OR LOWER(gc.repo_name) IN (
+        SELECT DISTINCT LOWER(repo_name) 
+        FROM user_repositories 
+        WHERE user_id = ? AND is_active = 1
+      )
+      OR gc.task_id IN (
+        SELECT id FROM tasks 
+        WHERE created_by = ? 
+           OR assignee_id = ? 
+           OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+    )
+    AND gc.pushed_at >= ? AND gc.pushed_at <= ?
+  `, [userId, userId, userId, userId, userId, userId, userId, mondayIso, sundayIso]);
+
+  // Scoped weekly PRs count
+  const prsCount = await queryOne(`
+    SELECT COUNT(DISTINCT github_pr_number) as count 
+    FROM tasks 
+    WHERE github_pr_number IS NOT NULL 
+      AND (is_deleted = 0 OR is_deleted IS NULL)
+      AND (
+        created_by = ? 
+        OR assignee_id = ? 
+        OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+      AND updated_at >= ? AND updated_at <= ?
+  `, [userId, userId, userId, userId, mondayIso, sundayIso]);
+  
+  // Scoped workflow stats
+  const workflowStats = await queryOne(`
+    SELECT SUM(tests_passed) as passed, SUM(tests_failed) as failed 
+    FROM github_workflow_runs gwr
+    WHERE (
+      LOWER(gwr.repo_name) IN (
+        SELECT DISTINCT LOWER(github_repo_name) 
+        FROM projects 
+        WHERE (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?)) 
+          AND github_repo_name IS NOT NULL AND github_repo_name != ''
+      )
+      OR LOWER(gwr.repo_name) IN (
+        SELECT DISTINCT LOWER(repo_name) 
+        FROM user_repositories 
+        WHERE user_id = ? AND is_active = 1
+      )
+      OR gwr.task_id IN (
+        SELECT id FROM tasks 
+        WHERE created_by = ? 
+           OR assignee_id = ? 
+           OR project_id IN (SELECT id FROM projects WHERE created_by = ? UNION SELECT project_id FROM project_members WHERE user_id = ?)
+      )
+    )
+  `, [userId, userId, userId, userId, userId, userId, userId]);
+
+  const passed = workflowStats?.passed || 0;
+  const failed = workflowStats?.failed || 0;
+  const total = passed + failed;
+  const buildSuccessRate = total > 0 ? Math.round((passed / total) * 100) : 100;
+
+  // Projects Distribution (strictly scoped to user's authorized projects)
   const projects = await queryAll(`
-    SELECT p.name, COUNT(t.id) as task_count
+    SELECT p.id, p.name, COUNT(t.id) as task_count
     FROM projects p
-    LEFT JOIN tasks t ON t.project_id = p.id AND t.is_deleted = 0
+    LEFT JOIN tasks t ON t.project_id = p.id AND (t.is_deleted = 0 OR t.is_deleted IS NULL)
+    WHERE p.created_by = ? OR p.id IN (SELECT project_id FROM project_members WHERE user_id = ?)
     GROUP BY p.id, p.name
     ORDER BY task_count DESC
     LIMIT 4
-  `);
+  `, [userId, userId]);
 
-  const totalProjectTasks = projects.reduce((acc, p) => acc + (Number(p.task_count) || 0), 0) || 1;
-  const projectsDistribution = projects.map((p) => {
+  const totalProjectTasks = projects.reduce((acc: number, p: any) => acc + (Number(p.task_count) || 0), 0) || 1;
+  const projectsDistribution = projects.map((p: any) => {
     const count = Number(p.task_count) || 0;
-    const percentage = Math.round((count / totalProjectTasks) * 100) || 10;
+    const percentage = Math.round((count / totalProjectTasks) * 100);
     const blocksCount = Math.max(1, Math.round(percentage / 10));
     return {
-      name: p.name || 'General Workspace',
+      name: p.name || 'Workspace Project',
       commits: count,
       percentage,
       bar: '█'.repeat(blocksCount)
@@ -139,13 +326,10 @@ journalRouter.get('/weekly', authMiddleware, async (req: AuthRequest, res: Respo
     weekNumber,
     dateRange,
     tasksCompleted: completedTasks?.count || 0,
-    commitsCount: commitsCount?.count || 18,
-    pullRequestsCount: prsCount?.count || 4,
+    commitsCount: commitsCount?.count || 0,
+    pullRequestsCount: prsCount?.count || 0,
     buildSuccessRate,
-    projectsDistribution: projectsDistribution.length > 0 ? projectsDistribution : [
-      { name: 'Core Engine', commits: 12, percentage: 60, bar: '██████' },
-      { name: 'Developer Tools', commits: 8, percentage: 40, bar: '████' }
-    ]
+    projectsDistribution
   });
 });
 

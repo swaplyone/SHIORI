@@ -323,25 +323,25 @@ export const JournalPage: React.FC = () => {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
               <div className="p-3 bg-eink-bg border border-eink-border rounded-sm">
                 <span className="text-xl font-bold text-eink-text block">
-                  {String(dailyData?.development.commits || 18).padStart(2, '0')}
+                  {String(dailyData?.development?.commits ?? 0).padStart(2, '0')}
                 </span>
                 <span className="text-eink-textSecondary text-[11px]">commits pushed</span>
               </div>
               <div className="p-3 bg-eink-bg border border-eink-border rounded-sm">
                 <span className="text-xl font-bold text-eink-text block">
-                  {String(dailyData?.development.pullRequests || 4).padStart(2, '0')}
+                  {String(dailyData?.development?.pullRequests ?? 0).padStart(2, '0')}
                 </span>
                 <span className="text-eink-textSecondary text-[11px]">pull requests</span>
               </div>
               <div className="p-3 bg-eink-bg border border-eink-border rounded-sm">
                 <span className="text-xl font-bold text-eink-text block">
-                  {String(dailyData?.development.checksPassed || 14).padStart(2, '0')}
+                  {String(dailyData?.development?.checksPassed ?? 0).padStart(2, '0')}
                 </span>
                 <span className="text-eink-textSecondary text-[11px]">checks passed</span>
               </div>
               <div className="p-3 bg-eink-bg border border-eink-border rounded-sm">
                 <span className="text-xl font-bold text-eink-text block">
-                  {String(dailyData?.development.checksFailed || 2).padStart(2, '0')}
+                  {String(dailyData?.development?.checksFailed ?? 0).padStart(2, '0')}
                 </span>
                 <span className="text-eink-textSecondary text-[11px]">checks failed</span>
               </div>
@@ -354,12 +354,12 @@ export const JournalPage: React.FC = () => {
           <div className="border-b border-eink-border pb-4 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold uppercase tracking-widest text-eink-text">
-                WEEK {weeklyData?.weekNumber || 35} SUMMARY
+                WEEK {weeklyData?.weekNumber ?? 1} SUMMARY
               </h2>
-              <p className="text-xs text-eink-textMuted">{weeklyData?.dateRange || '24 Aug - 30 Aug 2026'}</p>
+              <p className="text-xs text-eink-textMuted">{weeklyData?.dateRange || 'This Week'}</p>
             </div>
             <span className="text-xs px-2.5 py-1 bg-eink-text text-eink-bg font-bold rounded-sm">
-              CI SUCCESS RATE: {weeklyData?.buildSuccessRate || 94}%
+              CI SUCCESS RATE: {weeklyData?.buildSuccessRate ?? 100}%
             </span>
           </div>
 
@@ -367,25 +367,25 @@ export const JournalPage: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
             <div className="p-3.5 bg-eink-bg border border-eink-border rounded-sm">
               <span className="text-2xl font-bold text-eink-text block">
-                {weeklyData?.tasksCompleted || 31}
+                {weeklyData?.tasksCompleted ?? 0}
               </span>
               <span className="text-eink-textSecondary text-[11px]">Tasks completed</span>
             </div>
             <div className="p-3.5 bg-eink-bg border border-eink-border rounded-sm">
               <span className="text-2xl font-bold text-eink-text block">
-                {weeklyData?.commitsCount || 74}
+                {weeklyData?.commitsCount ?? 0}
               </span>
               <span className="text-eink-textSecondary text-[11px]">Commits pushed</span>
             </div>
             <div className="p-3.5 bg-eink-bg border border-eink-border rounded-sm">
               <span className="text-2xl font-bold text-eink-text block">
-                {weeklyData?.pullRequestsCount || 12}
+                {weeklyData?.pullRequestsCount ?? 0}
               </span>
               <span className="text-eink-textSecondary text-[11px]">Pull requests</span>
             </div>
             <div className="p-3.5 bg-eink-bg border border-eink-border rounded-sm">
               <span className="text-2xl font-bold text-eink-text block">
-                {weeklyData?.buildSuccessRate || 94}%
+                {weeklyData?.buildSuccessRate ?? 100}%
               </span>
               <span className="text-eink-textSecondary text-[11px]">Build pass rate</span>
             </div>
@@ -397,23 +397,25 @@ export const JournalPage: React.FC = () => {
               PROJECT COMMIT DISTRIBUTION
             </h3>
 
-            <div className="space-y-3 text-xs">
-              {(weeklyData?.projectsDistribution || [
-                { name: 'SwaplyOne Compiler', commits: 42, percentage: 56, bar: '██████████' },
-                { name: 'Swaply Backend', commits: 22, percentage: 30, bar: '███████' },
-                { name: 'AI Artisan Marketplace', commits: 10, percentage: 14, bar: '████' }
-              ]).map((proj: any, idx: number) => (
-                <div key={idx} className="p-3 bg-eink-bg border border-eink-border rounded-sm space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-eink-text">{proj.name}</span>
-                    <span className="text-eink-textMuted">{proj.commits} commits ({proj.percentage}%)</span>
+            {(!weeklyData?.projectsDistribution || weeklyData.projectsDistribution.length === 0) ? (
+              <div className="p-4 bg-eink-bg border border-eink-border rounded-sm text-xs text-eink-textMuted text-center font-sans italic">
+                No active project tasks recorded for this week.
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs">
+                {weeklyData.projectsDistribution.map((proj: any, idx: number) => (
+                  <div key={idx} className="p-3 bg-eink-bg border border-eink-border rounded-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-eink-text">{proj.name}</span>
+                      <span className="text-eink-textMuted">{proj.commits} tasks ({proj.percentage}%)</span>
+                    </div>
+                    <div className="font-technical tracking-tighter text-sm text-eink-text select-all">
+                      {proj.bar}
+                    </div>
                   </div>
-                  <div className="font-technical tracking-tighter text-sm text-eink-text select-all">
-                    {proj.bar}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

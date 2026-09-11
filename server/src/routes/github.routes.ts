@@ -675,40 +675,28 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
     }
 
     // Check user_repositories table
-    const userRepos = await queryAll('SELECT full_name FROM user_repositories WHERE repo_name = ? OR full_name LIKE ?', [cleanShort, `%${cleanShort}%`]);
+    const userRepos = await queryAll('SELECT full_name FROM user_repositories WHERE user_id = ? AND (repo_name = ? OR full_name LIKE ?)', [userId, cleanShort, `%${cleanShort}%`]);
     for (const ur of (userRepos || [])) {
       if (ur.full_name && !candidateNames.includes(ur.full_name)) {
         candidateNames.push(ur.full_name);
       }
     }
 
-    // Check connected accounts
-    const allAccounts = await queryAll('SELECT user_id, access_token, username, auth_status FROM github_accounts ORDER BY connected_at DESC');
-    const userAccount = (allAccounts || []).find((a: any) => a.user_id === userId);
-    for (const acc of (allAccounts || [])) {
-      if (acc.username && !candidateNames.includes(`${acc.username}/${cleanShort}`)) {
-        candidateNames.push(`${acc.username}/${cleanShort}`);
-      }
+    // Check user's own connected GitHub account ONLY
+    const userAccount = await queryOne('SELECT user_id, access_token, username, auth_status FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
+    if (userAccount?.username && !candidateNames.includes(`${userAccount.username}/${cleanShort}`)) {
+      candidateNames.push(`${userAccount.username}/${cleanShort}`);
     }
 
-    // Add standard organization prefixes
-    if (!candidateNames.includes(`Swaply-one/${cleanShort}`)) candidateNames.push(`Swaply-one/${cleanShort}`);
-    if (!candidateNames.includes(`swaplyone/${cleanShort}`)) candidateNames.push(`swaplyone/${cleanShort}`);
-
-    // Candidate tokens to try (only healthy tokens, then unauthenticated public request)
+    // Candidate tokens to try (only the current user's healthy token, then unauthenticated public request)
     const tokenCandidates: (string | null)[] = [];
     if (userAccount?.access_token && userAccount.auth_status !== 'NEEDS_ATTENTION' && userAccount.auth_status !== 'DISCONNECTED') {
       tokenCandidates.push(userAccount.access_token);
     }
-    for (const acc of (allAccounts || [])) {
-      if (acc.access_token && acc.auth_status !== 'NEEDS_ATTENTION' && acc.auth_status !== 'DISCONNECTED' && !tokenCandidates.includes(acc.access_token)) {
-        tokenCandidates.push(acc.access_token);
-      }
-    }
     tokenCandidates.push(null); // Unauthenticated public fallback
 
     let commitsRes: any = null;
-    let workingFullName = candidateNames[0] || `Swaply-one/${cleanShort}`;
+    let workingFullName = candidateNames[0] || (userAccount?.username ? `${userAccount.username}/${cleanShort}` : cleanShort);
 
     outerLoop:
     for (const token of tokenCandidates) {

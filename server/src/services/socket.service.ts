@@ -17,6 +17,10 @@ export function initSocketServer(socketServer: SocketIOServer) {
     socket.on('join-task', (taskId: string) => {
       socket.join(`task:${taskId}`);
     });
+
+    socket.on('join-project', (projectId: string) => {
+      socket.join(`project:${projectId}`);
+    });
   });
 
   console.log('Socket.IO initialized for realtime development updates.');
@@ -35,6 +39,12 @@ export function emitToUser(userId: string, event: string, data: any) {
 export function emitToWorkspace(workspaceId: string, event: string, data: any) {
   if (io) {
     io.to(`workspace:${workspaceId}`).emit(event, data);
+  }
+}
+
+export function emitToProject(projectId: string, event: string, data: any) {
+  if (io) {
+    io.to(`project:${projectId}`).emit(event, data);
   }
 }
 

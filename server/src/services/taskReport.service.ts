@@ -60,6 +60,22 @@ export class TaskReportService {
     const conditions: string[] = ['(t.is_deleted = 0 OR t.is_deleted IS NULL)'];
     const params: any[] = [];
 
+    if (userId) {
+      conditions.push(`(
+        t.created_by = ? 
+        OR t.assignee_id = ? 
+        OR t.project_id IN (
+          SELECT id FROM projects WHERE created_by = ? 
+          UNION 
+          SELECT project_id FROM project_members WHERE user_id = ?
+        )
+        OR t.workspace_id IN (
+          SELECT workspace_id FROM workspace_members WHERE user_id = ?
+        )
+      )`);
+      params.push(userId, userId, userId, userId, userId);
+    }
+
     if (filters.projectId) {
       conditions.push('t.project_id = ?');
       params.push(filters.projectId);
@@ -368,11 +384,12 @@ export class TaskReportService {
    * Computes real-data burn-down curve across days.
    */
   public async getBurnDownData(userId: string, weekStart: string, weekEnd: string): Promise<BurnDownPoint[]> {
+    const { whereSql, params } = this.buildFilterSql(userId);
     const allTasks = await queryAll(
-      `SELECT id, created_at, completed_at, updated_at, status 
-       FROM tasks 
-       WHERE (is_deleted = 0 OR is_deleted IS NULL)`,
-      []
+      `SELECT t.id, t.created_at, t.completed_at, t.updated_at, t.status 
+       FROM tasks t
+       ${whereSql}`,
+      params
     );
 
     const monDate = new Date(weekStart);

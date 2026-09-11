@@ -13,24 +13,37 @@ activityRouter.get('/', authMiddleware, async (req: AuthRequest, res: Response):
     FROM global_activities a
     LEFT JOIN tasks t ON a.task_id = t.id
     LEFT JOIN projects p ON a.project_id = p.id
+    WHERE a.user_id = ? 
+       OR a.project_id IN (
+         SELECT id FROM projects WHERE created_by = ? 
+         UNION 
+         SELECT project_id FROM project_members WHERE user_id = ?
+       )
     ORDER BY a.created_at DESC
     LIMIT 100
-  `);
+  `, [userId, userId, userId]);
 
-  // Count by categories
+  // Count by categories (strictly authorized)
   const categoryStats = await queryAll(`
     SELECT category, COUNT(*) as count
-    FROM global_activities
+    FROM global_activities a
+    WHERE a.user_id = ? 
+       OR a.project_id IN (
+         SELECT id FROM projects WHERE created_by = ? 
+         UNION 
+         SELECT project_id FROM project_members WHERE user_id = ?
+       )
     GROUP BY category
     ORDER BY count DESC
-  `);
+  `, [userId, userId, userId]);
 
-  // User projects for burndown filter
+  // User projects for burndown filter (strictly authorized)
   const projects = await queryAll(`
     SELECT id, name, slug, created_at
     FROM projects
+    WHERE created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?)
     ORDER BY name ASC
-  `);
+  `, [userId, userId]);
 
   res.json({ activities, categoryStats, projects });
 });
@@ -48,8 +61,31 @@ activityRouter.get('/burndown', authMiddleware, async (req: AuthRequest, res: Re
   const queryParams: any[] = [];
 
   if (projectId && projectId !== 'ALL') {
+    // Verify user authorization for this project
+    const project = await queryOne(`
+      SELECT id FROM projects 
+      WHERE id = ? AND (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?))
+    `, [projectId, userId, userId]);
+
+    if (!project) {
+      res.status(403).json({ error: 'Not authorized to view burndown for this project' });
+      return;
+    }
+
     querySql += ' AND project_id = ?';
     queryParams.push(projectId);
+  } else {
+    // Scope to user's authorized projects and tasks
+    querySql += ` AND (
+      created_by = ? 
+      OR assignee_id = ? 
+      OR project_id IN (
+        SELECT id FROM projects WHERE created_by = ? 
+        UNION 
+        SELECT project_id FROM project_members WHERE user_id = ?
+      )
+    )`;
+    queryParams.push(userId, userId, userId, userId);
   }
 
   querySql += ' ORDER BY created_at ASC';

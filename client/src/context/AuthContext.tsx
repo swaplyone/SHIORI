@@ -233,6 +233,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('shiori_token');
     localStorage.removeItem('shiori_user');
     localStorage.removeItem('shiori_settings');
+    localStorage.removeItem('shiori_scheduled_reminders');
+    sessionStorage.clear();
     setToken(null);
     setUser(null);
     setSettings(null);

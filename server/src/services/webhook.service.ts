@@ -121,14 +121,16 @@ export async function processPushEvent(payload: any) {
     VALUES (?, ?, 'COMMIT', '⎇', ?, ?, datetime('now'))
   `, [uuidv4(), userId, `Push to ${repoName}: ${primarySha}`, `${commitMessage} (${branchName})`]);
 
-  broadcastEvent('activity:new', {
-    type: 'COMMIT',
-    repoName,
-    branchName,
-    commitsCount: commits.length,
-    autoCompleted: verificationRes.completedTasks,
-    needsVerification: verificationRes.needsVerificationTasks
-  });
+  if (userId) {
+    emitToUser(userId, 'activity:new', {
+      type: 'COMMIT',
+      repoName,
+      branchName,
+      commitsCount: commits.length,
+      autoCompleted: verificationRes.completedTasks,
+      needsVerification: verificationRes.needsVerificationTasks
+    });
+  }
 
   return {
     pointsAwarded: 10 + (verificationRes.completedTasks.length * 25),

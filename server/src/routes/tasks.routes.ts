@@ -157,6 +157,24 @@ tasksRouter.get('/:id', authMiddleware, async (req: AuthRequest, res: Response):
     return;
   }
 
+  // Check authorization: creator, assignee, project member, or workspace member
+  const currentUserId = req.user!.id;
+  const isAuthorized = 
+    task.created_by === currentUserId ||
+    task.assignee_id === currentUserId ||
+    (await queryOne(`
+      SELECT id FROM projects 
+      WHERE id = ? AND (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?))
+    `, [task.project_id, currentUserId, currentUserId])) ||
+    (task.workspace_id && (await queryOne(`
+      SELECT workspace_id FROM workspace_members WHERE workspace_id = ? AND user_id = ?
+    `, [task.workspace_id, currentUserId])));
+
+  if (!isAuthorized) {
+    res.status(403).json({ error: 'Not authorized to access this task' });
+    return;
+  }
+
   const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [task.id]);
   
   const comments = await queryAll(`
