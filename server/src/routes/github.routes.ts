@@ -281,7 +281,8 @@ const handleGetRepositories = async (req: AuthRequest, res: Response): Promise<v
 
     if (!ghRes.ok) {
       if (ghRes.status === 401) {
-        console.warn(`[GITHUB API] User ${userId} token expired or revoked.`);
+        console.warn(`[GITHUB API] User ${userId} token expired or revoked. Resetting token to allow clean fallback and prompt re-auth.`);
+        await runQuery('UPDATE github_accounts SET access_token = NULL WHERE user_id = ?', [userId]);
       }
       // Return workspace projects as graceful fallback
       const mappedProjects = (userProjects || []).map((p: any) => ({
@@ -303,6 +304,7 @@ const handleGetRepositories = async (req: AuthRequest, res: Response): Promise<v
 
       res.json({
         connected: isConnected,
+        tokenExpired: ghRes.status === 401,
         username,
         repositories: mappedProjects
       });
