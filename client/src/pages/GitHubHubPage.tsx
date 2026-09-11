@@ -234,6 +234,11 @@ export const GitHubHubPage: React.FC = () => {
                       <>
                         <CheckCircle2 className="w-4 h-4 text-eink-accent" />
                         <span>GitHub Connected @{ghStatus.username || 'user'}</span>
+                        {ghStatus?.hasLiveToken === false && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-eink-bg border border-eink-border text-eink-text font-bold rounded-xs">
+                            Token Expired — Re-Auth Recommended
+                          </span>
+                        )}
                       </>
                     ) : (
                       <>
@@ -243,7 +248,9 @@ export const GitHubHubPage: React.FC = () => {
                     )}
                   </h2>
                   <p className="text-xs text-eink-textSecondary font-sans mt-0.5">
-                    Sign in to the GitHub account you want to connect to SHIORI.
+                    {ghStatus?.hasLiveToken === false
+                      ? 'Your GitHub access token has expired or was reset. Click "RE-AUTHORIZE GITHUB" to refresh real-time git syncing.'
+                      : 'Sign in to the GitHub account you want to connect to SHIORI.'}
                   </p>
                 </div>
               </div>
@@ -252,16 +259,30 @@ export const GitHubHubPage: React.FC = () => {
                 {ghStatus?.connected ? (
                   <>
                     <button
+                      onClick={() => handleAuthorizeOAuth(ghStatus.username)}
+                      disabled={isConnecting}
+                      className="px-3.5 py-1.5 bg-eink-text text-eink-bg text-xs font-bold rounded-sm shadow-eink-sm hover:opacity-90 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Github className="w-3.5 h-3.5" />
+                      <span>{isConnecting ? 'CONNECTING...' : 'RE-AUTHORIZE GITHUB'}</span>
+                    </button>
+                    <button
                       onClick={handleSwitchGitHubAccount}
                       disabled={isConnecting}
-                      className="px-3.5 py-1.5 bg-eink-bg border border-eink-border hover:bg-eink-surface text-xs font-bold text-eink-text rounded-sm cursor-pointer flex items-center gap-1.5"
+                      className="px-3 py-1.5 bg-eink-bg border border-eink-border hover:bg-eink-surface text-xs font-bold text-eink-text rounded-sm cursor-pointer flex items-center gap-1.5"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
-                      <span>{isConnecting ? 'OPENING GITHUB...' : 'Change GitHub Account'}</span>
+                      <span>Switch Account</span>
+                    </button>
+                    <button
+                      onClick={() => setShowTokenInput(!showTokenInput)}
+                      className="px-3 py-1.5 border border-eink-border hover:bg-eink-bg text-xs font-bold text-eink-text rounded-sm cursor-pointer"
+                    >
+                      PAT Token
                     </button>
                     <button
                       onClick={handleDisconnect}
-                      className="px-3.5 py-1.5 border border-eink-border hover:bg-eink-bg text-xs font-bold text-eink-text rounded-sm cursor-pointer"
+                      className="px-3 py-1.5 border border-eink-border hover:bg-eink-bg text-xs font-bold text-eink-textMuted hover:text-eink-text rounded-sm cursor-pointer"
                     >
                       Disconnect
                     </button>

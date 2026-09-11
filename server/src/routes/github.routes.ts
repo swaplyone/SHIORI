@@ -161,8 +161,11 @@ githubRouter.get('/status', authMiddleware, async (req: AuthRequest, res: Respon
   const prsCount = await queryOne('SELECT COUNT(DISTINCT github_pr_number) as count FROM tasks WHERE github_pr_number IS NOT NULL');
   const userReposCount = await queryOne('SELECT COUNT(*) as count FROM user_repositories WHERE user_id = ? AND is_active = 1', [userId]);
 
+  const hasLiveToken = Boolean(ghAccount?.access_token);
+
   res.json({
     connected: true,
+    hasLiveToken,
     username,
     avatarUrl,
     repositoriesCount: userReposCount?.count || 0,
