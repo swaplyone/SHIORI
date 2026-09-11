@@ -659,16 +659,25 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
     updateValues.push(description);
   }
   if (status !== undefined) {
-    updateFields.push('status = ?');
-    updateValues.push(status);
+    if (status === 'DONE' && !isCurrentDone && !current.completion_commit_sha && !current.completion_source) {
+      // Manual task completion without verified GitHub evidence is prohibited
+      console.warn(`[TASK STATUS] Direct manual completion rejected for task ${current.task_code || id}. Tasks require verified work evidence.`);
+    } else {
+      updateFields.push('status = ?');
+      updateValues.push(status);
+    }
   }
   if (priority !== undefined) {
     updateFields.push('priority = ?');
     updateValues.push(priority);
   }
   if (userStatus !== undefined) {
-    updateFields.push('user_status = ?');
-    updateValues.push(userStatus);
+    if (userStatus === 'COMPLETED' && !isCurrentDone && !current.completion_commit_sha && !current.completion_source) {
+      // Prevent user_status bypass
+    } else {
+      updateFields.push('user_status = ?');
+      updateValues.push(userStatus);
+    }
   }
   if (rawAssignee !== undefined || req.body.assigneeId !== undefined || req.body.assignee_id !== undefined) {
     updateFields.push('assignee_id = ?');

@@ -146,45 +146,6 @@ export const TasksPage: React.FC = () => {
     }
   };
 
-  const handleToggleTaskStatus = async (task: Task, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newStatus = task.status === 'DONE' ? 'PENDING' : 'DONE';
-    const newUserStatus = newStatus === 'DONE' ? 'COMPLETED' : 'PENDING';
-    if (!token) return;
-
-    // 1. Instant optimistic update
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === task.id
-          ? {
-              ...t,
-              status: newStatus,
-              user_status: newUserStatus,
-              completed_at: newStatus === 'DONE' ? new Date().toISOString() : undefined
-            }
-          : t
-      )
-    );
-
-    try {
-      await fetch(`/api/tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          status: newStatus,
-          userStatus: newUserStatus,
-          user_status: newUserStatus
-        })
-      });
-      triggerEInkRefresh();
-    } catch (err) {
-      console.error(err);
-      fetchTasks(false);
-    }
-  };
 
   const handleQuickAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -323,15 +284,21 @@ export const TasksPage: React.FC = () => {
       <div
         key={task.id}
         onClick={() => openTaskModal(task.id)}
-        className={`p-3 sm:p-3.5 flex items-start sm:items-center justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
+        className={`p-3 sm:p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-eink-surfaceHover cursor-pointer transition-colors ${
           isDone ? 'opacity-85 bg-eink-bg/40' : isNeedsVerification ? 'bg-amber-50/40 dark:bg-amber-950/20 border-l-2 border-l-amber-500' : ''
         }`}
       >
         <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1">
+          {/* Status Indicator (Non-clickable for manual completion - verification required) */}
           <div
-            onClick={(e) => handleToggleTaskStatus(task, e)}
-            className="mt-0.5 p-0.5 shrink-0 flex items-center justify-center hover:opacity-80 transition-opacity cursor-pointer"
-            title={isDone ? 'Mark as In Progress' : 'Mark as Done'}
+            className="mt-0.5 p-0.5 shrink-0 flex items-center justify-center"
+            title={
+              isDone
+                ? 'Completed via verified GitHub work'
+                : isNeedsVerification
+                ? 'GitHub commit verification pending review'
+                : 'Waiting for verified GitHub commit'
+            }
           >
             {isDone ? (
               <span className="w-5 h-5 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-bold shadow-xs">
@@ -339,12 +306,14 @@ export const TasksPage: React.FC = () => {
               </span>
             ) : isNeedsVerification ? (
               <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-bold shadow-xs animate-pulse">
-                ?
+                ◐
               </span>
             ) : task.status === 'IN_PROGRESS' ? (
               <span className="w-5 h-5 rounded-full border-2 border-eink-text border-t-transparent animate-spin inline-block" />
             ) : (
-              <span className="w-5 h-5 rounded-full border border-eink-border bg-eink-bg inline-block hover:border-eink-text" />
+              <span className="w-5 h-5 rounded-full border border-eink-border bg-eink-bg text-eink-textMuted flex items-center justify-center text-[10px] font-mono">
+                ○
+              </span>
             )}
           </div>
 
@@ -425,11 +394,49 @@ export const TasksPage: React.FC = () => {
               <span className={`px-1.5 py-0.2 rounded font-bold ${lifecycle.badgeClass}`}>
                 {lifecycle.displayText}
               </span>
+
+              {/* Verification status label */}
+              {isNeedsVerification && (
+                <span className="px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-400 rounded font-bold">
+                  GitHub verification needed
+                </span>
+              )}
+              {!isDone && !isNeedsVerification && (
+                <span className="text-eink-textMuted font-sans">
+                  · Waiting for verified work
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="shrink-0 flex items-center pt-0.5">
+        <div className="shrink-0 flex items-center gap-2 pt-1 sm:pt-0 self-end sm:self-center">
+          {isNeedsVerification && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openTaskModal(task.id);
+              }}
+              className="px-2.5 py-1 bg-amber-600 text-white font-bold rounded-sm text-[11px] font-technical hover:bg-amber-700 shadow-xs transition-colors cursor-pointer"
+            >
+              [ Review ]
+            </button>
+          )}
+
+          {isDone && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openTaskModal(task.id);
+              }}
+              className="px-2.5 py-1 border border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text font-bold rounded-sm text-[10px] font-technical transition-colors cursor-pointer"
+            >
+              [ View walkthrough ]
+            </button>
+          )}
+
           <DevelopmentEvidenceBadge
             confidenceScore={task.dev_confidence_score}
             ciStatus={task.github_ci_status}
@@ -622,7 +629,6 @@ export const TasksPage: React.FC = () => {
         <TaskCalendarView
           tasks={filteredTasks}
           onSelectTask={(task: Task) => openTaskModal(task.id)}
-          onToggleStatus={handleToggleTaskStatus}
         />
       ) : viewMode === 'kanban' ? (
         <KanbanBoard

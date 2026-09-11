@@ -14,13 +14,11 @@ import { Task } from '../../types';
 interface TaskCalendarViewProps {
   tasks: Task[];
   onSelectTask: (task: Task) => void;
-  onToggleStatus: (task: Task, e: React.MouseEvent) => void;
 }
 
 export const TaskCalendarView: React.FC<TaskCalendarViewProps> = ({
   tasks,
   onSelectTask,
-  onToggleStatus,
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -293,12 +291,13 @@ export const TaskCalendarView: React.FC<TaskCalendarViewProps> = ({
                     className="p-2 bg-eink-bg border border-eink-border rounded-sm flex items-center justify-between gap-2 text-xs"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <button
-                        onClick={(e) => onToggleStatus(task, e)}
-                        className="p-0.5 text-eink-text shrink-0"
-                      >
-                        {isDone ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 text-eink-textMuted" />}
-                      </button>
+                      <span className="w-3.5 h-3.5 shrink-0 flex items-center justify-center font-bold text-[9px]">
+                        {isDone ? (
+                          <span className="w-3.5 h-3.5 rounded-full bg-emerald-700 text-white flex items-center justify-center">✓</span>
+                        ) : (
+                          <span className="w-3.5 h-3.5 rounded-full border border-eink-border text-eink-textMuted flex items-center justify-center font-mono">○</span>
+                        )}
+                      </span>
                       <span className="font-mono text-[10px] font-bold text-eink-textMuted">
                         {task.task_code}
                       </span>

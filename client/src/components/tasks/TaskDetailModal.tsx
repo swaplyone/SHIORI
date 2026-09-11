@@ -408,9 +408,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
     }
   };
 
-  const handleToggleUserStatus = async () => {
+  const handleReopenTask = async () => {
     if (!task || !token) return;
-    const nextStatus = task.user_status === 'COMPLETED' ? 'IN_PROGRESS' : 'COMPLETED';
     try {
       const res = await fetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
@@ -418,7 +417,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ userStatus: nextStatus })
+        body: JSON.stringify({ status: 'PENDING', userStatus: 'PENDING' })
       });
       if (res.ok) {
         triggerEInkRefresh();
@@ -922,6 +921,20 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                   <p className="text-[10px] text-eink-textMuted pt-1 leading-tight font-sans">
                     {isDone ? 'Verified through GitHub development activity.' : task.status === 'NEEDS_VERIFICATION' ? 'Commit detected. Awaiting manual confirmation.' : `Auto-completes when a Git commit references ${task.task_code}.`}
                   </p>
+
+                  {isDone && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleReopenTask}
+                        className="w-full py-1.5 px-2 bg-eink-bg hover:bg-eink-surface border border-eink-border rounded text-[11px] font-bold text-eink-text flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        title="Reopen task (will require verified work to complete again)"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>REOPEN TASK</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1446,10 +1459,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           isOpen={isFocusOpen}
           task={task}
           onClose={() => setIsFocusOpen(false)}
-          onTaskCompleted={(tid) => {
-            handleUpdateStatus('DONE');
-            setIsFocusOpen(false);
-          }}
         />
       </div>
     </div>

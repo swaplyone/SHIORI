@@ -90,31 +90,6 @@ export const JournalPage: React.FC = () => {
     return () => clearTimeout(timeout);
   }, [dailyNote, token, todayDateKey]);
 
-  const handleToggleTask = async (task: Task, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!token) return;
-    const newStatus = task.status === 'DONE' ? 'IN_PROGRESS' : 'DONE';
-    const newUserStatus = newStatus === 'DONE' ? 'COMPLETED' : 'IN_PROGRESS';
-
-    setAllTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, status: newStatus, user_status: newUserStatus } : t))
-    );
-
-    try {
-      await fetch(`/api/tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: newStatus, userStatus: newUserStatus }),
-      });
-      triggerEInkRefresh();
-      fetchJournalData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   // Group tasks for the Daily Page
   const now = new Date();
@@ -207,9 +182,9 @@ export const JournalPage: React.FC = () => {
                     className="p-2 bg-eink-surface border border-eink-border rounded-sm flex items-center justify-between gap-2 text-xs cursor-pointer hover:bg-eink-surfaceHover"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <button onClick={(e) => handleToggleTask(task, e)} className="p-0.5 text-eink-text shrink-0">
-                        <Square className="w-3.5 h-3.5 text-eink-textMuted" />
-                      </button>
+                      <span className="w-3.5 h-3.5 border border-eink-border rounded-full flex items-center justify-center text-[9px] font-mono text-eink-textMuted shrink-0">
+                        ○
+                      </span>
                       <span className="font-mono text-[10px] font-bold text-eink-textMuted">{task.task_code}</span>
                       <span className="truncate font-medium text-eink-text">{task.title}</span>
                     </div>
@@ -243,9 +218,9 @@ export const JournalPage: React.FC = () => {
                     className="p-2.5 bg-eink-bg border border-eink-border rounded-sm flex items-center justify-between gap-3 cursor-pointer hover:bg-eink-surface transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <button onClick={(e) => handleToggleTask(task, e)} className="p-0.5 text-eink-text shrink-0">
-                        <Square className="w-4 h-4 text-eink-textMuted" />
-                      </button>
+                      <span className="w-4 h-4 border border-eink-border rounded-full flex items-center justify-center text-[10px] font-mono text-eink-textMuted shrink-0">
+                        ○
+                      </span>
                       <span className="font-mono text-[10px] font-bold text-eink-textMuted px-1 py-0.2 border border-eink-border rounded">
                         {task.task_code}
                       </span>
@@ -282,13 +257,13 @@ export const JournalPage: React.FC = () => {
                     className="p-2 bg-eink-bg/50 border border-eink-border/70 rounded-sm flex items-center justify-between gap-2 cursor-pointer hover:bg-eink-surface"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <button onClick={(e) => handleToggleTask(task, e)} className="p-0.5 text-eink-text shrink-0">
-                        <CheckSquare className="w-3.5 h-3.5 text-eink-text" />
-                      </button>
+                      <span className="w-3.5 h-3.5 bg-emerald-700 text-white rounded-full flex items-center justify-center text-[9px] font-bold shrink-0">
+                        ✓
+                      </span>
                       <span className="font-mono text-[10px] text-eink-textMuted">{task.task_code}</span>
                       <span className="line-through text-eink-textMuted truncate">{task.title}</span>
                     </div>
-                    <span className="text-[10px] text-eink-textMuted font-mono">DONE</span>
+                    <span className="text-[10px] text-eink-textMuted font-mono">VERIFIED</span>
                   </div>
                 ))}
               </div>

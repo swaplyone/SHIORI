@@ -9,14 +9,12 @@ interface FocusModeModalProps {
   isOpen: boolean;
   task: Task | null;
   onClose: () => void;
-  onTaskCompleted: (taskId: string) => void;
 }
 
 export const FocusModeModal: React.FC<FocusModeModalProps> = ({
   isOpen,
   task,
   onClose,
-  onTaskCompleted,
 }) => {
   const { token } = useAuth();
   const [selectedMinutes, setSelectedMinutes] = useState<number>(25);
@@ -221,12 +219,15 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
     setShowPermissionPrompt(false);
   };
 
-  const handleCompleteTask = () => {
-    if (task) {
-      onTaskCompleted(task.id);
-      onClose();
-    }
+  const handleCopyPrompt = async () => {
+    if (!task) return;
+    const branch = task.github_branch || 'feature/main';
+    const text = `git switch ${branch}\ngit add .\ngit commit -m "[${task.task_code}] ${task.title}"\ngit push origin ${branch}`;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {}
   };
+
 
   const handleStartBreak = () => {
     handleSelectDuration(5);
@@ -378,18 +379,11 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleSelectDuration(selectedMinutes)}
-                  className="px-3.5 py-1.5 border border-eink-border rounded-sm text-xs font-bold text-eink-text hover:bg-eink-surface cursor-pointer"
-                >
-                  RESTART
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCompleteTask}
+                  onClick={onClose}
                   className="px-3.5 py-1.5 bg-eink-text text-eink-bg rounded-sm text-xs font-bold flex items-center gap-1.5 shadow-eink-sm hover:opacity-90 cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>DONE</span>
+                  <span>CLOSE</span>
                 </button>
               </div>
             </div>
@@ -494,11 +488,11 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
 
             <button
               type="button"
-              onClick={handleCompleteTask}
-              className="px-5 py-2.5 border border-eink-border bg-eink-surface text-eink-text font-bold rounded-sm flex items-center gap-2 text-xs hover:bg-eink-surfaceHover active:scale-95 transition-all cursor-pointer"
+              onClick={handleCopyPrompt}
+              className="px-4 py-2.5 border border-eink-border bg-eink-surface text-eink-text font-bold rounded-sm flex items-center gap-1.5 text-xs hover:bg-eink-surfaceHover transition-colors cursor-pointer"
+              title="Copy Git commit command to clipboard"
             >
-              <Check className="w-4 h-4" />
-              <span>COMPLETE TODO</span>
+              <span>COPY GIT COMMANDS</span>
             </button>
           </div>
         )}
