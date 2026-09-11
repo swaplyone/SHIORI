@@ -539,8 +539,6 @@ githubRouter.get('/repositories', authMiddleware, async (req: AuthRequest, res: 
 // Helper function to sync live GitHub repository data
 export async function syncRepoLiveFromGitHub(userId: string, repoName: string): Promise<any[]> {
   try {
-    const ghAccount = await queryOne('SELECT access_token, username FROM github_accounts WHERE user_id = ? ORDER BY connected_at DESC LIMIT 1', [userId]);
-
     const cleanShort = repoName.replace(/^.*\//, '').trim();
     const candidateNames: string[] = [];
 
@@ -549,74 +547,73 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
     }
 
     // Check project database for saved github_repo_url
-    const project = await queryOne('SELECT github_repo_name, github_repo_url FROM projects WHERE github_repo_name = ? OR name = ? OR slug = ?', [cleanShort, cleanShort, cleanShort]);
-    if (project?.github_repo_url && project.github_repo_url.includes('github.com/')) {
-      const urlPath = project.github_repo_url.split('github.com/')[1].replace(/\.git$/, '').trim();
-      if (urlPath && !candidateNames.includes(urlPath)) {
-        candidateNames.push(urlPath);
+    const projects = await queryAll('SELECT id, name, github_repo_name, github_repo_url FROM projects WHERE github_repo_name = ? OR name = ? OR slug = ? OR github_repo_name LIKE ?', [cleanShort, cleanShort, cleanShort, `%${cleanShort}%`]);
+    for (const proj of (projects || [])) {
+      if (proj.github_repo_url && proj.github_repo_url.includes('github.com/')) {
+        const urlPath = proj.github_repo_url.split('github.com/')[1].replace(/\.git$/, '').trim();
+        if (urlPath && !candidateNames.includes(urlPath)) {
+          candidateNames.push(urlPath);
+        }
+      }
+      if (proj.github_repo_name && proj.github_repo_name.includes('/') && !candidateNames.includes(proj.github_repo_name)) {
+        candidateNames.push(proj.github_repo_name.trim());
       }
     }
 
     // Check user_repositories table
-    const userRepo = await queryOne('SELECT full_name FROM user_repositories WHERE user_id = ? AND (repo_name = ? OR full_name LIKE ?)', [userId, cleanShort, `%${cleanShort}%`]);
-    if (userRepo?.full_name && !candidateNames.includes(userRepo.full_name)) {
-      candidateNames.push(userRepo.full_name);
+    const userRepos = await queryAll('SELECT full_name FROM user_repositories WHERE repo_name = ? OR full_name LIKE ?', [cleanShort, `%${cleanShort}%`]);
+    for (const ur of (userRepos || [])) {
+      if (ur.full_name && !candidateNames.includes(ur.full_name)) {
+        candidateNames.push(ur.full_name);
+      }
+    }
+
+    // Check connected accounts
+    const allAccounts = await queryAll('SELECT user_id, access_token, username FROM github_accounts ORDER BY connected_at DESC');
+    const userAccount = (allAccounts || []).find((a: any) => a.user_id === userId);
+    for (const acc of (allAccounts || [])) {
+      if (acc.username && !candidateNames.includes(`${acc.username}/${cleanShort}`)) {
+        candidateNames.push(`${acc.username}/${cleanShort}`);
+      }
     }
 
     // Add standard organization prefixes
     if (!candidateNames.includes(`Swaply-one/${cleanShort}`)) candidateNames.push(`Swaply-one/${cleanShort}`);
     if (!candidateNames.includes(`swaplyone/${cleanShort}`)) candidateNames.push(`swaplyone/${cleanShort}`);
-    if (ghAccount?.username && !candidateNames.includes(`${ghAccount.username}/${cleanShort}`)) {
-      candidateNames.push(`${ghAccount.username}/${cleanShort}`);
-    }
 
-    // Build headers
-    const headers: Record<string, string> = {
-      'User-Agent': 'SHIORI-App',
-      Accept: 'application/vnd.github.v3+json'
-    };
-    if (ghAccount?.access_token) {
-      headers.Authorization = `Bearer ${ghAccount.access_token}`;
+    // Candidate tokens to try (user's first, then others, then unauthenticated public request)
+    const tokenCandidates: (string | null)[] = [];
+    if (userAccount?.access_token) {
+      tokenCandidates.push(userAccount.access_token);
     }
+    for (const acc of (allAccounts || [])) {
+      if (acc.access_token && !tokenCandidates.includes(acc.access_token)) {
+        tokenCandidates.push(acc.access_token);
+      }
+    }
+    tokenCandidates.push(null); // Unauthenticated public fallback
 
     let commitsRes: any = null;
     let workingFullName = candidateNames[0] || `Swaply-one/${cleanShort}`;
 
-    for (const cand of candidateNames) {
-      try {
-        let res = await fetch(`https://api.github.com/repos/${cand}/commits?per_page=30`, { headers });
-        if (!res.ok && headers.Authorization) {
-          const publicRes = await fetch(`https://api.github.com/repos/${cand}/commits?per_page=30`, {
-            headers: { 'User-Agent': 'SHIORI-App', Accept: 'application/vnd.github.v3+json' }
-          });
-          if (publicRes.ok) {
-            res = publicRes;
-          }
-        }
-        if (res.ok) {
-          commitsRes = res;
-          workingFullName = cand;
-          break;
-        }
-      } catch {}
-    }
+    outerLoop:
+    for (const token of tokenCandidates) {
+      const headers: Record<string, string> = {
+        'User-Agent': 'SHIORI-App',
+        Accept: 'application/vnd.github.v3+json'
+      };
+      if (token) headers.Authorization = `Bearer ${token}`;
 
-    // If still not found and user has OAuth token, search user's accessible repos via API
-    if (!commitsRes && ghAccount?.access_token) {
-      try {
-        const userReposRes = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', { headers });
-        if (userReposRes.ok) {
-          const userReposList = (await userReposRes.json()) as any[];
-          const match = userReposList.find((r) => r.name?.toLowerCase() === cleanShort.toLowerCase());
-          if (match?.full_name) {
-            const res = await fetch(`https://api.github.com/repos/${match.full_name}/commits?per_page=30`, { headers });
-            if (res.ok) {
-              commitsRes = res;
-              workingFullName = match.full_name;
-            }
+      for (const cand of candidateNames) {
+        try {
+          const res = await fetch(`https://api.github.com/repos/${cand}/commits?per_page=30`, { headers });
+          if (res.ok) {
+            commitsRes = res;
+            workingFullName = cand;
+            break outerLoop;
           }
-        }
-      } catch {}
+        } catch {}
+      }
     }
 
     let liveCommits: any[] = [];
@@ -628,7 +625,7 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
           hash: c.sha?.substring(0, 7) || '',
           fullHash: c.sha || '',
           message: c.commit?.message || '',
-          author: c.commit?.author?.name || c.author?.login || ghAccount?.username || 'Developer',
+          author: c.commit?.author?.name || c.author?.login || userAccount?.username || 'Developer',
           authorUsername: c.author?.login || '',
           authorAvatar: c.author?.avatar_url || '',
           date: c.commit?.author?.date || new Date().toISOString(),
@@ -737,7 +734,13 @@ export async function syncRepoLiveFromGitHub(userId: string, repoName: string): 
 
     // Fetch real GitHub Actions CI workflow runs
     try {
-      const runsRes = await fetch(`https://api.github.com/repos/${workingFullName}/actions/runs?per_page=10`, { headers });
+      const activeHeaders: Record<string, string> = {
+        'User-Agent': 'SHIORI-App',
+        Accept: 'application/vnd.github.v3+json'
+      };
+      if (userAccount?.access_token) activeHeaders.Authorization = `Bearer ${userAccount.access_token}`;
+
+      const runsRes = await fetch(`https://api.github.com/repos/${workingFullName}/actions/runs?per_page=10`, { headers: activeHeaders });
       if (runsRes.ok) {
         const runsData = (await runsRes.json()) as any;
         const runs = runsData?.workflow_runs || [];

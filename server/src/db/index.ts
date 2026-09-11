@@ -634,6 +634,19 @@ function translateSqlForPostgres(sql: string, params: any[]): { sql: string; par
         expires_at = EXCLUDED.expires_at,
         created_at = NOW()`;
     }
+  } else if (/INSERT OR REPLACE INTO github_commits/i.test(sql)) {
+    translatedSql = translatedSql.replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
+    if (!translatedSql.toLowerCase().includes('on conflict')) {
+      translatedSql += ` ON CONFLICT (id) DO UPDATE SET 
+        repo_name = EXCLUDED.repo_name,
+        branch_name = EXCLUDED.branch_name,
+        commit_hash = EXCLUDED.commit_hash,
+        message = EXCLUDED.message,
+        author_name = EXCLUDED.author_name,
+        author_username = EXCLUDED.author_username,
+        author_avatar = EXCLUDED.author_avatar,
+        pushed_at = EXCLUDED.pushed_at`;
+    }
   } else if (/INSERT OR REPLACE INTO github_accounts/i.test(sql)) {
     translatedSql = translatedSql.replace(/INSERT OR REPLACE INTO/gi, 'INSERT INTO');
     if (!translatedSql.toLowerCase().includes('on conflict')) {
