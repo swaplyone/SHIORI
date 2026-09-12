@@ -406,3 +406,64 @@ CREATE TABLE IF NOT EXISTS password_reset_otps (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- WebAuthn / Passkey Platform Credentials (FIDO2)
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  credential_id TEXT UNIQUE NOT NULL,
+  public_key TEXT NOT NULL,
+  counter INTEGER DEFAULT 0,
+  device_name TEXT,
+  transports TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_user_id ON webauthn_credentials(user_id);
+CREATE INDEX IF NOT EXISTS idx_webauthn_cred_id ON webauthn_credentials(credential_id);
+
+-- Ephemeral WebAuthn Registration & Login Challenges
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  challenge TEXT NOT NULL,
+  purpose TEXT NOT NULL, -- 'REGISTER' | 'LOGIN'
+  expires_at TEXT NOT NULL,
+  consumed INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_challenge ON webauthn_challenges(challenge);
+
+-- Server-Managed Persistent / Session Storage with Remember-Me
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  session_token TEXT UNIQUE NOT NULL,
+  remember_me INTEGER DEFAULT 0,
+  user_agent TEXT,
+  ip_address TEXT,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  last_active_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+
+-- Explicit OAuth Account Identities (Google / GitHub) separate from repository integration
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  provider TEXT NOT NULL, -- 'google' | 'github'
+  provider_user_id TEXT NOT NULL,
+  email TEXT,
+  profile_data TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (provider, provider_user_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user ON oauth_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_accounts_provider ON oauth_accounts(provider, provider_user_id);
+
+

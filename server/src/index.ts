@@ -23,6 +23,7 @@ import { notificationsRouter } from './routes/notifications.routes.js';
 import { simulatorRouter } from './routes/simulator.routes.js';
 import { recoveryRouter } from './routes/recovery.routes.js';
 import { sparkRouter } from './routes/spark.routes.js';
+import cookieParser from 'cookie-parser';
 
 const app = express();
 const server = http.createServer(app);
@@ -30,7 +31,10 @@ const server = http.createServer(app);
 // Configure Socket.IO
 const io = new SocketIOServer(server, {
   cors: {
-    origin: '*',
+    origin: (reqOrigin, callback) => {
+      callback(null, reqOrigin || '*');
+    },
+    credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE']
   }
 });
@@ -38,11 +42,16 @@ initSocketServer(io);
 
 // Middleware
 app.use(cors({
-  origin: '*',
+  origin: (reqOrigin, callback) => {
+    // Dynamically reflect request origin to permit credentials
+    callback(null, reqOrigin || true);
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
 }));
 app.options('*', cors());
+app.use(cookieParser());
 app.use(express.json());
 
 import { focusRouter } from './routes/focus.routes.js';

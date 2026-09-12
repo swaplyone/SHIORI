@@ -593,7 +593,54 @@ async function initPgSchema(pool: pg.Pool) {
         UNIQUE (user_id, patch_version)
       );`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT;`,
-      `ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT DEFAULT 'local';`
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT DEFAULT 'local';`,
+      `CREATE TABLE IF NOT EXISTS webauthn_credentials (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        credential_id TEXT UNIQUE NOT NULL,
+        public_key TEXT NOT NULL,
+        counter BIGINT DEFAULT 0,
+        device_name TEXT,
+        transports TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        last_used_at TIMESTAMPTZ
+      );`,
+      `CREATE TABLE IF NOT EXISTS webauthn_challenges (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        challenge TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        consumed INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );`,
+      `CREATE TABLE IF NOT EXISTS user_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_token TEXT UNIQUE NOT NULL,
+        remember_me INTEGER DEFAULT 0,
+        user_agent TEXT,
+        ip_address TEXT,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        last_active_at TIMESTAMPTZ DEFAULT NOW()
+      );`,
+      `CREATE TABLE IF NOT EXISTS oauth_accounts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        provider_user_id TEXT NOT NULL,
+        email TEXT,
+        profile_data TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (provider, provider_user_id)
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_webauthn_user_id ON webauthn_credentials(user_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_webauthn_cred_id ON webauthn_credentials(credential_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_webauthn_challenge ON webauthn_challenges(challenge);`,
+      `CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);`,
+      `CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user ON oauth_accounts(user_id);`
     ];
 
     for (const migration of migrations) {

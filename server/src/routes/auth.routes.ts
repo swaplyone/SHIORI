@@ -2,14 +2,56 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { queryOne, runQuery } from '../db/index.js';
+import { queryOne, queryAll, runQuery } from '../db/index.js';
 import { config } from '../config.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { generateSecureOTP, hashOTP, verifyOTPHash } from '../services/otp.service.js';
 import { sendOtpEmail, sendUsernameEmail } from '../services/email.service.js';
 import { emitToUser, getIO } from '../services/socket.service.js';
+import {
+  createRegistrationOptions,
+  verifyAndSaveRegistration,
+  createLoginOptions,
+  verifyLoginResponse,
+} from '../services/webauthn.service.js';
 
 export const authRouter = Router();
+
+export async function createSessionAndSetCookie(
+  res: Response,
+  req: Request,
+  user: { id: string; email: string; username: string; name: string },
+  rememberMe: boolean = false
+): Promise<string> {
+  const sessionId = uuidv4();
+  const durationMs = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(Date.now() + durationMs).toISOString();
+
+  const token = jwt.sign(
+    { id: user.id, email: user.email, username: user.username, name: user.name, sessionId },
+    config.jwtSecret,
+    { expiresIn: rememberMe ? '30d' : '1d' }
+  );
+
+  const userAgent = (req.headers['user-agent'] as string) || 'Unknown';
+  const ipAddress = req.ip || req.socket.remoteAddress || 'Unknown';
+  await runQuery(
+    `INSERT INTO user_sessions (id, user_id, session_token, remember_me, user_agent, ip_address, expires_at, created_at, last_active_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+    [sessionId, user.id, token, rememberMe ? 1 : 0, userAgent, ipAddress, expiresAt]
+  );
+
+  const isProd = process.env.NODE_ENV === 'production';
+  res.cookie('shiori_session', token, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax',
+    maxAge: durationMs,
+    path: '/',
+  });
+
+  return token;
+}
 
 function generateToken(user: { id: string; email: string; username: string; name: string }) {
   return jwt.sign(
@@ -289,27 +331,39 @@ async function findOrCreateSocialUser(opts: {
   googleId?: string | null;
   githubId?: string | null;
   accessToken?: string | null;
+  res?: Response;
+  req?: Request;
 }): Promise<{ user: any; token: string }> {
   const cleanEmail = opts.email.trim().toLowerCase();
+  const providerUserId = opts.provider === 'github'
+    ? String(opts.githubId || opts.githubUsername || cleanEmail)
+    : String(opts.googleId || cleanEmail);
 
-  // 1. Check existing user by email, or by github_username / google_id
-  let existingUser = await queryOne(
-    'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
-    [cleanEmail]
+  // 1. Check oauth_accounts table first
+  let existingUser: any = null;
+  const oauthLink = await queryOne(
+    'SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?',
+    [opts.provider, providerUserId]
   );
-
-  if (!existingUser && opts.githubUsername) {
-    existingUser = await queryOne(
-      'SELECT * FROM users WHERE github_username = ? OR LOWER(username) = LOWER(?)',
-      [opts.githubUsername, opts.githubUsername]
-    );
+  if (oauthLink) {
+    existingUser = await queryOne('SELECT * FROM users WHERE id = ?', [oauthLink.user_id]);
   }
 
-  if (!existingUser && opts.googleId) {
+  // 2. If not found in oauth_accounts, match by verified email in users table
+  if (!existingUser) {
     existingUser = await queryOne(
-      'SELECT * FROM users WHERE google_id = ?',
-      [opts.googleId]
+      'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
+      [cleanEmail]
     );
+
+    if (existingUser) {
+      // Link OAuth identity to this existing account
+      await runQuery(
+        `INSERT OR REPLACE INTO oauth_accounts (id, user_id, provider, provider_user_id, email, profile_data, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        [uuidv4(), existingUser.id, opts.provider, providerUserId, cleanEmail, JSON.stringify({ name: opts.name, avatarUrl: opts.avatarUrl })]
+      );
+    }
   }
 
   if (existingUser) {
@@ -335,27 +389,23 @@ async function findOrCreateSocialUser(opts: {
       await runQuery(`UPDATE users SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`, params);
     }
 
-    if (opts.provider === 'github' && opts.githubUsername) {
-      await runQuery(`
-        INSERT OR REPLACE INTO github_accounts (
-          id, user_id, github_id, username, avatar_url, access_token, auth_status, last_verified_at, connected_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'CONNECTED', datetime('now'), datetime('now'))
-      `, [
-        uuidv4(),
-        existingUser.id,
-        opts.githubId || opts.githubUsername,
-        opts.githubUsername,
-        opts.avatarUrl || null,
-        opts.accessToken || null
-      ]);
-    }
+    // Update oauth_accounts timestamp
+    await runQuery(
+      `UPDATE oauth_accounts SET updated_at = datetime('now') WHERE provider = ? AND provider_user_id = ?`,
+      [opts.provider, providerUserId]
+    );
 
     const refreshedUser = await queryOne('SELECT * FROM users WHERE id = ?', [existingUser.id]);
-    const token = generateToken(refreshedUser);
+    let token = '';
+    if (opts.res && opts.req) {
+      token = await createSessionAndSetCookie(opts.res, opts.req, refreshedUser, true);
+    } else {
+      token = generateToken(refreshedUser);
+    }
     return { user: refreshedUser, token };
   }
 
-  // 2. New User Registration
+  // 3. New User Registration
   const id = uuidv4();
   const shioriId = generateShioriId();
   
@@ -393,6 +443,13 @@ async function findOrCreateSocialUser(opts: {
 
   await runQuery('INSERT INTO user_settings (user_id) VALUES (?)', [id]);
 
+  // Insert into oauth_accounts
+  await runQuery(
+    `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, email, profile_data, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+    [uuidv4(), id, opts.provider, providerUserId, cleanEmail, JSON.stringify({ name: opts.name, avatarUrl: opts.avatarUrl })]
+  );
+
   const workspaceId = uuidv4();
   await runQuery(`
     INSERT INTO workspaces (id, name, slug, description, creator_id)
@@ -404,23 +461,13 @@ async function findOrCreateSocialUser(opts: {
     VALUES (?, ?, ?, 'owner', datetime('now'))
   `, [uuidv4(), workspaceId, id]);
 
-  if (opts.provider === 'github' && opts.githubUsername) {
-    await runQuery(`
-      INSERT OR REPLACE INTO github_accounts (
-        id, user_id, github_id, username, avatar_url, access_token, auth_status, last_verified_at, connected_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'CONNECTED', datetime('now'), datetime('now'))
-    `, [
-      uuidv4(),
-      id,
-      opts.githubId || opts.githubUsername,
-      opts.githubUsername,
-      opts.avatarUrl || null,
-      opts.accessToken || null
-    ]);
-  }
-
   const newUser = await queryOne('SELECT * FROM users WHERE id = ?', [id]);
-  const token = generateToken(newUser);
+  let token = '';
+  if (opts.res && opts.req) {
+    token = await createSessionAndSetCookie(opts.res, opts.req, newUser, true);
+  } else {
+    token = generateToken(newUser);
+  }
   return { user: newUser, token };
 }
 
@@ -511,7 +558,9 @@ authRouter.get('/github/callback', async (req: Request, res: Response): Promise<
       avatarUrl: ghUser.avatar_url,
       githubUsername: ghUser.login,
       githubId: String(ghUser.id),
-      accessToken
+      accessToken,
+      res,
+      req
     });
 
     res.redirect(`${clientOrigin}/login?token=${token}`);
@@ -603,7 +652,9 @@ authRouter.get('/google/callback', async (req: Request, res: Response): Promise<
       email: googleUser.email,
       name: googleUser.name || googleUser.email.split('@')[0],
       avatarUrl: googleUser.picture,
-      googleId: googleUser.id
+      googleId: googleUser.id,
+      res,
+      req
     });
 
     res.redirect(`${clientOrigin}/login?token=${token}`);
@@ -638,7 +689,9 @@ authRouter.post('/google/verify-credential', async (req: Request, res: Response)
       email: payload.email,
       name: payload.name || payload.email.split('@')[0],
       avatarUrl: payload.picture,
-      googleId: payload.sub
+      googleId: payload.sub,
+      res,
+      req
     });
 
     res.json({ token, user });
@@ -648,9 +701,9 @@ authRouter.post('/google/verify-credential', async (req: Request, res: Response)
   }
 });
 
-// 4. Real Login
+// 4. Real Login with Remember Me & Secure HttpOnly Cookie
 authRouter.post('/login', async (req: Request, res: Response): Promise<void> => {
-  const { email, password } = req.body;
+  const { email, password, rememberMe } = req.body;
 
   if (!email || !password) {
     res.status(400).json({ error: 'Email and password are required.' });
@@ -670,7 +723,7 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
     return;
   }
 
-  const token = generateToken(user);
+  const token = await createSessionAndSetCookie(res, req, user, Boolean(rememberMe));
   res.json({
     token,
     user: {
@@ -687,6 +740,153 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       github_username: user.github_username
     }
   });
+});
+
+// 4.0. Logout - Invalidate Session & Clear Cookie
+authRouter.post('/logout', async (req: Request, res: Response): Promise<void> => {
+  try {
+    let token = req.cookies?.shiori_session;
+    if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, config.jwtSecret) as any;
+        if (decoded?.sessionId) {
+          await runQuery('DELETE FROM user_sessions WHERE id = ?', [decoded.sessionId]);
+        }
+        if (decoded?.id) {
+          const io = getIO();
+          if (io) {
+            io.in(`user:${decoded.id}`).disconnectSockets(true);
+          }
+        }
+      } catch {}
+    }
+
+    const isProd = process.env.NODE_ENV === 'production';
+    res.clearCookie('shiori_session', {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      path: '/'
+    });
+
+    res.json({ success: true, message: 'Logged out successfully.' });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to complete logout.' });
+  }
+});
+
+// 4.0.1. WebAuthn - Check Credential Availability
+authRouter.get('/webauthn/has-credential', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = (req.query.email as string) || '';
+    if (email.trim()) {
+      const cleanEmail = email.trim().toLowerCase();
+      const user = await queryOne('SELECT id FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', [cleanEmail, cleanEmail]);
+      if (user) {
+        const cred = await queryOne('SELECT id FROM webauthn_credentials WHERE user_id = ? LIMIT 1', [user.id]);
+        res.json({ hasCredential: Boolean(cred) });
+        return;
+      }
+    }
+    
+    // Check if any credential exists for discoverable credentials
+    const anyCred = await queryOne('SELECT id FROM webauthn_credentials LIMIT 1');
+    res.json({ hasCredential: Boolean(anyCred) });
+  } catch (err: any) {
+    res.json({ hasCredential: false });
+  }
+});
+
+// 4.0.2. WebAuthn - Registration Options (requires authenticated user)
+authRouter.post('/webauthn/register/options', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const options = await createRegistrationOptions(req, req.user!);
+    res.json(options);
+  } catch (err: any) {
+    console.error('[WEBAUTHN REGISTER OPTIONS ERROR]', err);
+    res.status(500).json({ error: err.message || 'Failed to generate registration options.' });
+  }
+});
+
+// 4.0.3. WebAuthn - Registration Verify (requires authenticated user)
+authRouter.post('/webauthn/register/verify', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const result = await verifyAndSaveRegistration(req, req.user!.id, req.body, req.headers['user-agent'] as string);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[WEBAUTHN REGISTER VERIFY ERROR]', err);
+    res.status(400).json({ error: err.message || 'Failed to verify WebAuthn registration.' });
+  }
+});
+
+// 4.0.4. WebAuthn - Login Options (public)
+authRouter.post('/webauthn/login/options', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body || {};
+    const options = await createLoginOptions(req, email);
+    res.json(options);
+  } catch (err: any) {
+    console.error('[WEBAUTHN LOGIN OPTIONS ERROR]', err);
+    res.status(500).json({ error: err.message || 'Failed to generate login options.' });
+  }
+});
+
+// 4.0.5. WebAuthn - Login Verify (public assertion verification)
+authRouter.post('/webauthn/login/verify', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { assertion, rememberMe } = req.body;
+    if (!assertion) {
+      res.status(400).json({ error: 'Missing WebAuthn assertion response.' });
+      return;
+    }
+
+    const result = await verifyLoginResponse(req, assertion);
+    const token = await createSessionAndSetCookie(res, req, result.user, Boolean(rememberMe));
+
+    res.json({
+      success: true,
+      token,
+      user: result.user
+    });
+  } catch (err: any) {
+    console.error('[WEBAUTHN LOGIN VERIFY ERROR]', err);
+    res.status(400).json({ error: err.message || 'Failed to authenticate using device passkey.' });
+  }
+});
+
+// 4.0.6. WebAuthn - List User Credentials (Settings -> Security)
+authRouter.get('/webauthn/credentials', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const credentials = await queryAll(
+      `SELECT id, credential_id, device_name, created_at, last_used_at 
+       FROM webauthn_credentials WHERE user_id = ? ORDER BY created_at DESC`,
+      [req.user!.id]
+    );
+    res.json({ credentials: credentials || [] });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve credentials.' });
+  }
+});
+
+// 4.0.7. WebAuthn - Remove Specific Credential (Settings -> Security)
+authRouter.delete('/webauthn/credentials/:id', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const credId = req.params.id;
+    const cred = await queryOne('SELECT id FROM webauthn_credentials WHERE id = ? AND user_id = ?', [credId, req.user!.id]);
+    if (!cred) {
+      res.status(404).json({ error: 'Credential not found or not owned by this account.' });
+      return;
+    }
+
+    await runQuery('DELETE FROM webauthn_credentials WHERE id = ? AND user_id = ?', [credId, req.user!.id]);
+    res.json({ success: true, message: 'Device credential removed successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to remove credential.' });
+  }
 });
 
 // 4.1. Forgot Username (Sends username & SHIORI ID to verified email)
@@ -1017,6 +1217,10 @@ authRouter.delete('/account', authMiddleware, async (req: AuthRequest, res: Resp
     await runQuery('DELETE FROM user_settings WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM user_patch_notes WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM global_activities WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM webauthn_credentials WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM webauthn_challenges WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM user_sessions WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM oauth_accounts WHERE user_id = ?', [userId]);
 
     // 3. Delete user record
     await runQuery('DELETE FROM users WHERE id = ?', [userId]);

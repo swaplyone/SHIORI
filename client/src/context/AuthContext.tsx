@@ -237,6 +237,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    // Revoke server session and clear HttpOnly cookie
+    fetchJson('/api/auth/logout', { method: 'POST' }).catch(() => {});
+
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);

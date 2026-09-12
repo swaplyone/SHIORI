@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Settings,
@@ -27,8 +27,11 @@ import {
   Radio,
   Play,
   Square,
-  Volume2
+  Volume2,
+  Fingerprint,
+  Loader2
 } from 'lucide-react';
+import { startRegistration } from '@simplewebauthn/browser';
 import { useAuth } from '../context/AuthContext';
 import { useSpark } from '../context/SparkContext';
 import { EInkTheme, UIMode, MatteLevel, FontOption, JAPANESE_MATTE_PRESETS, JapaneseMattePreset } from '../types';
@@ -140,7 +143,84 @@ export const SettingsPage: React.FC = () => {
   } = useSpark();
 
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'appearance' | 'spark' | 'privacy' | 'notifications' | 'account' | 'pwa'>('appearance');
+  const [activeTab, setActiveTab] = useState<'appearance' | 'spark' | 'security' | 'privacy' | 'notifications' | 'account' | 'pwa'>('appearance');
+
+  const [deviceCredentials, setDeviceCredentials] = useState<any[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [registeringDevice, setRegisteringDevice] = useState(false);
+  const [deviceNotice, setDeviceNotice] = useState<string>('');
+  const [deviceError, setDeviceError] = useState<string>('');
+
+  const loadDeviceCredentials = async () => {
+    setLoadingDevices(true);
+    try {
+      const { ok, data } = await fetchJson('/api/auth/webauthn/credentials');
+      if (ok && data?.credentials) {
+        setDeviceCredentials(data.credentials);
+      }
+    } catch (err) {
+      console.error('Failed to load device credentials:', err);
+    } finally {
+      setLoadingDevices(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'security') {
+      loadDeviceCredentials();
+    }
+  }, [activeTab]);
+
+  const handleRegisterDevice = async () => {
+    setDeviceError('');
+    setDeviceNotice('');
+    setRegisteringDevice(true);
+    try {
+      const { ok, data: options } = await fetchJson('/api/auth/webauthn/register/options', {
+        method: 'POST'
+      });
+      if (!ok || !options) {
+        throw new Error(options?.error || 'Failed to start device registration');
+      }
+
+      const regResponse = await startRegistration({ optionsJSON: options });
+      const { ok: verifyOk, data: verifyData } = await fetchJson('/api/auth/webauthn/register/verify', {
+        method: 'POST',
+        body: JSON.stringify(regResponse)
+      });
+
+      if (verifyOk) {
+        setDeviceNotice(`✓ ${verifyData.deviceName || 'Device'} registered successfully!`);
+        await loadDeviceCredentials();
+      } else {
+        throw new Error(verifyData?.error || 'Registration could not be verified.');
+      }
+    } catch (err: any) {
+      setDeviceError(err.message || 'Device registration could not be completed.');
+    } finally {
+      setRegisteringDevice(false);
+    }
+  };
+
+  const handleRemoveDevice = async (id: string, deviceName: string) => {
+    if (!confirm(`Are you sure you want to remove ${deviceName}? Your SHIORI account will remain active, but this device won't be able to log in directly.`)) {
+      return;
+    }
+
+    try {
+      const { ok } = await fetchJson(`/api/auth/webauthn/credentials/${id}`, {
+        method: 'DELETE'
+      });
+      if (ok) {
+        setDeviceNotice(`✓ Device credential removed.`);
+        setDeviceCredentials((prev) => prev.filter((d) => d.id !== id));
+      } else {
+        alert('Failed to remove device credential.');
+      }
+    } catch (err) {
+      console.error('Failed to remove device:', err);
+    }
+  };
 
   const [testingVoice, setTestingVoice] = useState<SparkVoice | null>(null);
 
@@ -280,6 +360,7 @@ export const SettingsPage: React.FC = () => {
         {[
           { key: 'appearance', label: 'APPEARANCE & PERSONALIZATION' },
           { key: 'spark', label: '✦ SPARK COMPANION' },
+          { key: 'security', label: 'SECURITY & DEVICE LOGIN' },
           { key: 'privacy', label: 'PRIVACY' },
           { key: 'notifications', label: 'NOTIFICATIONS' },
           { key: 'account', label: 'ACCOUNT' },
@@ -1169,6 +1250,118 @@ export const SettingsPage: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECURITY & DEVICE LOGIN TAB */}
+      {activeTab === 'security' && (
+        <div className="space-y-6 font-technical text-xs">
+          <div className="p-6 bg-eink-surface border border-eink-border rounded-sm space-y-5 shadow-eink-sm">
+            <div className="border-b border-eink-border pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-sm text-eink-text uppercase flex items-center gap-2">
+                  <Fingerprint className="w-4 h-4 text-eink-accent" />
+                  <span>DEVICE LOGIN · デバイス認証</span>
+                </h3>
+                <p className="text-[11px] text-eink-textSecondary font-sans mt-0.5">
+                  Authenticate instantly using your device's native fingerprint, Face ID, Windows Hello, or PIN via secure WebAuthn passkeys.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRegisterDevice}
+                disabled={registeringDevice}
+                className="px-3.5 py-1.5 bg-eink-text text-eink-bg font-bold rounded-sm text-xs flex items-center gap-1.5 hover:opacity-90 transition-all cursor-pointer self-start sm:self-auto disabled:opacity-50"
+              >
+                {registeringDevice ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>REGISTERING...</span>
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint className="w-3.5 h-3.5" />
+                    <span>ADD THIS DEVICE</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {deviceNotice && (
+              <div className="p-3 bg-eink-bg border-2 border-eink-text text-xs text-eink-text font-bold rounded-sm">
+                {deviceNotice}
+              </div>
+            )}
+
+            {deviceError && (
+              <div className="p-3 bg-eink-bg border-2 border-red-500/80 text-xs text-red-600 font-bold rounded-sm">
+                ✕ {deviceError}
+              </div>
+            )}
+
+            {loadingDevices ? (
+              <div className="py-8 text-center text-eink-textMuted flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Loading registered devices...</span>
+              </div>
+            ) : deviceCredentials.length === 0 ? (
+              <div className="py-8 text-center border border-dashed border-eink-border rounded-sm p-6 space-y-2">
+                <Fingerprint className="w-8 h-8 mx-auto text-eink-textMuted opacity-60" />
+                <p className="font-bold text-xs text-eink-text">No device credentials registered yet.</p>
+                <p className="text-[11px] text-eink-textMuted max-w-sm mx-auto font-sans">
+                  Click "ADD THIS DEVICE" above to register Windows Hello, Touch ID, Face ID, or Android Biometrics for fast 1-tap login.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <span className="text-[10px] uppercase font-bold text-eink-textMuted tracking-wider block">
+                  REGISTERED DEVICES ({deviceCredentials.length})
+                </span>
+
+                <div className="grid grid-cols-1 gap-2.5">
+                  {deviceCredentials.map((cred) => {
+                    const createdDate = cred.created_at
+                      ? new Date(cred.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      : 'Recently';
+                    const lastUsed = cred.last_used_at
+                      ? new Date(cred.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      : 'Never';
+
+                    return (
+                      <div
+                        key={cred.id}
+                        className="p-4 bg-eink-bg border border-eink-border rounded-sm flex items-center justify-between gap-4"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full border border-eink-border bg-eink-surface flex items-center justify-center">
+                            <Fingerprint className="w-4 h-4 text-eink-accent" />
+                          </div>
+                          <div>
+                            <span className="font-bold text-xs text-eink-text flex items-center gap-1.5">
+                              <span>✓</span>
+                              <span>{cred.device_name || 'Platform Authenticator'}</span>
+                            </span>
+                            <span className="text-[10px] text-eink-textMuted font-mono block mt-0.5">
+                              Added {createdDate} • Last used {lastUsed}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDevice(cred.id, cred.device_name || 'this device')}
+                          className="px-2.5 py-1 text-[11px] border border-eink-border hover:border-red-500 hover:text-red-600 bg-eink-surface rounded-sm transition-colors cursor-pointer font-bold"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
