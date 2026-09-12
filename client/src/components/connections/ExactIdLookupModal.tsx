@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Search, Check, Send, UserCheck, Users } from 'lucide-react';
+import { X, Search, Check, Send, UserCheck, Users, Camera } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface ExactIdLookupModalProps {
@@ -7,13 +7,15 @@ interface ExactIdLookupModalProps {
   onClose: () => void;
   onRequestSent: () => void;
   initialQuery?: string;
+  onOpenScanner?: () => void;
 }
 
 export const ExactIdLookupModal: React.FC<ExactIdLookupModalProps> = ({
   isOpen,
   onClose,
   onRequestSent,
-  initialQuery
+  initialQuery,
+  onOpenScanner
 }) => {
   const { token } = useAuth();
   const [searchInput, setSearchInput] = useState(initialQuery || '');
@@ -169,6 +171,22 @@ export const ExactIdLookupModal: React.FC<ExactIdLookupModalProps> = ({
                     <Search className="w-3.5 h-3.5" />
                     <span>{loading ? 'SEARCHING...' : 'FIND'}</span>
                   </button>
+                </div>
+                <div className="flex items-center justify-between pt-1 text-[11px] text-eink-textMuted">
+                  <span>Enter SHIORI ID, username, or email</span>
+                  {onOpenScanner && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenScanner();
+                      }}
+                      className="text-eink-text font-bold hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Camera className="w-3 h-3 text-eink-text" />
+                      <span>Scan QR Code</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </form>

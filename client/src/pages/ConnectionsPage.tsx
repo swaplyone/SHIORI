@@ -15,13 +15,15 @@ import {
   ArrowRight,
   Shield,
   X,
-  QrCode
+  QrCode,
+  Camera
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { Connection, ConnectionRequest } from '../types';
 import { ExactIdLookupModal } from '../components/connections/ExactIdLookupModal';
 import { ConnectionQrCodeModal } from '../components/connections/ConnectionQrCodeModal';
+import { QrScannerModal } from '../components/connections/QrScannerModal';
 import { ConnectionsGridSkeleton } from '../components/ui/Skeleton';
 
 export const ConnectionsPage: React.FC = () => {
@@ -38,6 +40,7 @@ export const ConnectionsPage: React.FC = () => {
   });
   const [isLookupOpen, setIsLookupOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [initialLookupQuery, setInitialLookupQuery] = useState('');
   const [removeModalConn, setRemoveModalConn] = useState<Connection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -173,6 +176,15 @@ export const ConnectionsPage: React.FC = () => {
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
+            onClick={() => setIsScannerOpen(true)}
+            className="px-3.5 py-2 border border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-xs font-technical font-bold text-eink-text rounded-sm flex items-center gap-2 transition-colors cursor-pointer"
+            title="Scan teammate's QR Code"
+          >
+            <Camera className="w-4 h-4" />
+            <span>SCAN QR</span>
+          </button>
+
+          <button
             onClick={() => setIsQrModalOpen(true)}
             className="px-3.5 py-2 border border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-xs font-technical font-bold text-eink-text rounded-sm flex items-center gap-2 transition-colors cursor-pointer"
           >
@@ -209,10 +221,19 @@ export const ConnectionsPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <button
+            onClick={() => setIsScannerOpen(true)}
+            className="px-3.5 py-2 border border-eink-border bg-eink-bg hover:bg-eink-surfaceHover text-xs font-bold text-eink-text rounded-sm flex items-center gap-2 self-start sm:self-auto transition-colors cursor-pointer"
+            title="Scan a teammate's QR Code"
+          >
+            <Camera className="w-4 h-4" />
+            <span>SCAN QR</span>
+          </button>
+
           <button
             onClick={() => setIsQrModalOpen(true)}
-            className="px-3.5 py-2 border border-eink-border bg-eink-bg hover:bg-eink-surfaceHover text-xs font-bold text-eink-text rounded-sm flex items-center gap-2 transition-colors cursor-pointer"
+            className="px-3.5 py-2 border border-eink-border bg-eink-bg hover:bg-eink-surfaceHover text-xs font-bold text-eink-text rounded-sm flex items-center gap-2 self-start sm:self-auto transition-colors cursor-pointer"
             title="Display QR code for teammates to scan"
           >
             <QrCode className="w-4 h-4" />
@@ -221,7 +242,7 @@ export const ConnectionsPage: React.FC = () => {
 
           <button
             onClick={handleCopyId}
-            className="px-4 py-2 border border-eink-border bg-eink-bg hover:bg-eink-surfaceHover text-xs font-bold text-eink-text rounded-sm flex items-center gap-2 transition-colors cursor-pointer"
+            className="px-4 py-2 border border-eink-border bg-eink-bg hover:bg-eink-surfaceHover text-xs font-bold text-eink-text rounded-sm flex items-center gap-2 self-start sm:self-auto transition-colors cursor-pointer"
           >
             {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
             <span>{copied ? 'COPIED TO CLIPBOARD' : 'COPY ID'}</span>
@@ -450,10 +471,21 @@ export const ConnectionsPage: React.FC = () => {
         userName={user?.name || user?.username}
       />
 
+      {/* QR Scanner Modal */}
+      <QrScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScanSuccess={(scannedId) => {
+          setInitialLookupQuery(scannedId);
+          setIsLookupOpen(true);
+        }}
+      />
+
       {/* Exact-ID Lookup Modal */}
       <ExactIdLookupModal
         isOpen={isLookupOpen}
         initialQuery={initialLookupQuery}
+        onOpenScanner={() => setIsScannerOpen(true)}
         onClose={() => {
           setIsLookupOpen(false);
           setInitialLookupQuery('');
