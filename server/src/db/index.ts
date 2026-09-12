@@ -591,7 +591,9 @@ async function initPgSchema(pool: pg.Pool) {
         patch_version TEXT NOT NULL,
         seen_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE (user_id, patch_version)
-      );`
+      );`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT;`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT DEFAULT 'local';`
     ];
 
     for (const migration of migrations) {

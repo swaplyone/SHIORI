@@ -279,6 +279,375 @@ authRouter.post('/register', async (req: Request, res: Response): Promise<void> 
   });
 });
 
+// Helper for safe social login / registration without creating duplicate users
+async function findOrCreateSocialUser(opts: {
+  provider: 'github' | 'google';
+  email: string;
+  name: string;
+  avatarUrl?: string | null;
+  githubUsername?: string | null;
+  googleId?: string | null;
+  githubId?: string | null;
+  accessToken?: string | null;
+}): Promise<{ user: any; token: string }> {
+  const cleanEmail = opts.email.trim().toLowerCase();
+
+  // 1. Check existing user by email, or by github_username / google_id
+  let existingUser = await queryOne(
+    'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
+    [cleanEmail]
+  );
+
+  if (!existingUser && opts.githubUsername) {
+    existingUser = await queryOne(
+      'SELECT * FROM users WHERE github_username = ? OR LOWER(username) = LOWER(?)',
+      [opts.githubUsername, opts.githubUsername]
+    );
+  }
+
+  if (!existingUser && opts.googleId) {
+    existingUser = await queryOne(
+      'SELECT * FROM users WHERE google_id = ?',
+      [opts.googleId]
+    );
+  }
+
+  if (existingUser) {
+    // Safely update profile with linked social data without breaking existing workspaces or tasks
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (opts.provider === 'github' && opts.githubUsername) {
+      updates.push('github_connected = 1', 'github_username = ?', 'github_avatar = ?');
+      params.push(opts.githubUsername, opts.avatarUrl || null);
+    }
+    if (opts.googleId && !existingUser.google_id) {
+      updates.push('google_id = ?');
+      params.push(opts.googleId);
+    }
+    if (opts.avatarUrl && !existingUser.avatar_url) {
+      updates.push('avatar_url = ?');
+      params.push(opts.avatarUrl);
+    }
+
+    if (updates.length > 0) {
+      params.push(existingUser.id);
+      await runQuery(`UPDATE users SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`, params);
+    }
+
+    if (opts.provider === 'github' && opts.githubUsername) {
+      await runQuery(`
+        INSERT OR REPLACE INTO github_accounts (
+          id, user_id, github_id, username, avatar_url, access_token, auth_status, last_verified_at, connected_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'CONNECTED', datetime('now'), datetime('now'))
+      `, [
+        uuidv4(),
+        existingUser.id,
+        opts.githubId || opts.githubUsername,
+        opts.githubUsername,
+        opts.avatarUrl || null,
+        opts.accessToken || null
+      ]);
+    }
+
+    const refreshedUser = await queryOne('SELECT * FROM users WHERE id = ?', [existingUser.id]);
+    const token = generateToken(refreshedUser);
+    return { user: refreshedUser, token };
+  }
+
+  // 2. New User Registration
+  const id = uuidv4();
+  const shioriId = generateShioriId();
+  
+  let baseUsername = (opts.githubUsername || cleanEmail.split('@')[0] || 'developer').replace(/[^a-zA-Z0-9_]/g, '');
+  if (!baseUsername) baseUsername = 'developer';
+  let candidateUsername = baseUsername;
+  let attempt = 1;
+  while (await queryOne('SELECT id FROM users WHERE LOWER(username) = LOWER(?)', [candidateUsername])) {
+    candidateUsername = `${baseUsername}_${Math.floor(100 + Math.random() * 900)}`;
+    attempt++;
+    if (attempt > 10) break;
+  }
+
+  await runQuery(`
+    INSERT INTO users (
+      id, shiori_id, email, password_hash, username, name, avatar_url, points, theme,
+      github_connected, github_username, github_avatar, google_id, auth_provider, created_at, updated_at
+    ) VALUES (
+      ?, ?, ?, NULL, ?, ?, ?, 120, 'light',
+      ?, ?, ?, ?, ?, datetime('now'), datetime('now')
+    )
+  `, [
+    id,
+    shioriId,
+    cleanEmail,
+    candidateUsername,
+    opts.name || candidateUsername,
+    opts.avatarUrl || null,
+    opts.provider === 'github' ? 1 : 0,
+    opts.githubUsername || null,
+    opts.provider === 'github' ? opts.avatarUrl || null : null,
+    opts.googleId || null,
+    opts.provider
+  ]);
+
+  await runQuery('INSERT INTO user_settings (user_id) VALUES (?)', [id]);
+
+  const workspaceId = uuidv4();
+  await runQuery(`
+    INSERT INTO workspaces (id, name, slug, description, creator_id)
+    VALUES (?, 'Personal Workspace', ?, 'My personal workspace', ?)
+  `, [workspaceId, `ws-${candidateUsername}`, id]);
+
+  await runQuery(`
+    INSERT INTO workspace_members (id, workspace_id, user_id, role, joined_at)
+    VALUES (?, ?, ?, 'owner', datetime('now'))
+  `, [uuidv4(), workspaceId, id]);
+
+  if (opts.provider === 'github' && opts.githubUsername) {
+    await runQuery(`
+      INSERT OR REPLACE INTO github_accounts (
+        id, user_id, github_id, username, avatar_url, access_token, auth_status, last_verified_at, connected_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'CONNECTED', datetime('now'), datetime('now'))
+    `, [
+      uuidv4(),
+      id,
+      opts.githubId || opts.githubUsername,
+      opts.githubUsername,
+      opts.avatarUrl || null,
+      opts.accessToken || null
+    ]);
+  }
+
+  const newUser = await queryOne('SELECT * FROM users WHERE id = ?', [id]);
+  const token = generateToken(newUser);
+  return { user: newUser, token };
+}
+
+// GET GitHub OAuth Authorization URL for Login / Signup
+authRouter.get('/github/url', (req: Request, res: Response): void => {
+  const clientId = config.githubClientId || 'Ov23li1zsUXHPz3jSsYD';
+  let origin = config.clientUrl;
+  const reqOrigin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+  if (reqOrigin && (reqOrigin.includes('vercel.app') || reqOrigin.includes('swaplyone.in') || reqOrigin.includes('localhost'))) {
+    origin = reqOrigin;
+  }
+
+  const stateObj = {
+    action: 'LOGIN',
+    origin,
+    timestamp: Date.now(),
+    nonce: Math.random().toString(36).substring(2, 15)
+  };
+  const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=read:user,user:email&state=${encodeURIComponent(state)}&prompt=select_account`;
+  res.json({ url: authUrl });
+});
+
+// GET GitHub OAuth Callback for Login
+authRouter.get('/github/callback', async (req: Request, res: Response): Promise<void> => {
+  const { code, state, error, error_description } = req.query;
+  let clientOrigin = config.clientUrl;
+
+  if (state && typeof state === 'string') {
+    try {
+      const decoded = JSON.parse(Buffer.from(decodeURIComponent(state), 'base64').toString('utf-8'));
+      if (decoded.origin) clientOrigin = decoded.origin;
+    } catch {}
+  }
+
+  if (error) {
+    res.redirect(`${clientOrigin}/login?error=${encodeURIComponent(String(error_description || error))}`);
+    return;
+  }
+
+  if (!code) {
+    res.redirect(`${clientOrigin}/login?error=missing_github_code`);
+    return;
+  }
+
+  try {
+    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        client_id: config.githubClientId || 'Ov23li1zsUXHPz3jSsYD',
+        client_secret: config.githubClientSecret || '91383118cc197d454fe2c9f50caa42edf96c519b',
+        code
+      })
+    });
+    const tokenData = (await tokenRes.json()) as any;
+    const accessToken = tokenData.access_token;
+    if (!accessToken) {
+      res.redirect(`${clientOrigin}/login?error=github_token_exchange_failed`);
+      return;
+    }
+
+    const userRes = await fetch('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'SHIORI-App' }
+    });
+    const ghUser = (await userRes.json()) as any;
+
+    let email = ghUser.email;
+    if (!email) {
+      const emailsRes = await fetch('https://api.github.com/user/emails', {
+        headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'SHIORI-App' }
+      });
+      if (emailsRes.ok) {
+        const emails = (await emailsRes.json()) as any[];
+        const primary = emails.find((e: any) => e.primary && e.verified) || emails.find((e: any) => e.verified) || emails[0];
+        if (primary) email = primary.email;
+      }
+    }
+
+    if (!email) {
+      email = `${ghUser.login}@users.noreply.github.com`;
+    }
+
+    const { token } = await findOrCreateSocialUser({
+      provider: 'github',
+      email,
+      name: ghUser.name || ghUser.login,
+      avatarUrl: ghUser.avatar_url,
+      githubUsername: ghUser.login,
+      githubId: String(ghUser.id),
+      accessToken
+    });
+
+    res.redirect(`${clientOrigin}/login?token=${token}`);
+  } catch (err: any) {
+    console.error('[GITHUB LOGIN CALLBACK ERROR]', err);
+    res.redirect(`${clientOrigin}/login?error=github_auth_failed`);
+  }
+});
+
+// GET Google OAuth Authorization URL for Login / Signup
+authRouter.get('/google/url', (req: Request, res: Response): void => {
+  let origin = config.clientUrl;
+  const reqOrigin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+  if (reqOrigin && (reqOrigin.includes('vercel.app') || reqOrigin.includes('swaplyone.in') || reqOrigin.includes('localhost'))) {
+    origin = reqOrigin;
+  }
+
+  if (!config.googleClientId) {
+    res.status(400).json({ error: 'Google OAuth is not configured on this instance. Please configure GOOGLE_CLIENT_ID.' });
+    return;
+  }
+
+  const stateObj = {
+    action: 'LOGIN',
+    origin,
+    timestamp: Date.now(),
+    nonce: Math.random().toString(36).substring(2, 15)
+  };
+  const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
+  const redirectUri = `${origin}/api/auth/google/callback`;
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(config.googleClientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=openid%20profile%20email&state=${encodeURIComponent(state)}&prompt=select_account`;
+  res.json({ url: authUrl });
+});
+
+// GET Google OAuth Callback for Login
+authRouter.get('/google/callback', async (req: Request, res: Response): Promise<void> => {
+  const { code, state, error } = req.query;
+  let clientOrigin = config.clientUrl;
+
+  if (state && typeof state === 'string') {
+    try {
+      const decoded = JSON.parse(Buffer.from(decodeURIComponent(state), 'base64').toString('utf-8'));
+      if (decoded.origin) clientOrigin = decoded.origin;
+    } catch {}
+  }
+
+  if (error) {
+    res.redirect(`${clientOrigin}/login?error=${encodeURIComponent(String(error))}`);
+    return;
+  }
+
+  if (!code) {
+    res.redirect(`${clientOrigin}/login?error=missing_google_code`);
+    return;
+  }
+
+  try {
+    const redirectUri = `${clientOrigin}/api/auth/google/callback`;
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code: String(code),
+        client_id: config.googleClientId,
+        client_secret: config.googleClientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code'
+      })
+    });
+
+    const tokenData = (await tokenRes.json()) as any;
+    if (!tokenData.access_token) {
+      res.redirect(`${clientOrigin}/login?error=google_token_exchange_failed`);
+      return;
+    }
+
+    const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+    const googleUser = (await userInfoRes.json()) as any;
+
+    if (!googleUser.email) {
+      res.redirect(`${clientOrigin}/login?error=google_email_missing`);
+      return;
+    }
+
+    const { token } = await findOrCreateSocialUser({
+      provider: 'google',
+      email: googleUser.email,
+      name: googleUser.name || googleUser.email.split('@')[0],
+      avatarUrl: googleUser.picture,
+      googleId: googleUser.id
+    });
+
+    res.redirect(`${clientOrigin}/login?token=${token}`);
+  } catch (err: any) {
+    console.error('[GOOGLE LOGIN CALLBACK ERROR]', err);
+    res.redirect(`${clientOrigin}/login?error=google_auth_failed`);
+  }
+});
+
+// POST Google ID Token Verification for One-Tap / Client-side GIS
+authRouter.post('/google/verify-credential', async (req: Request, res: Response): Promise<void> => {
+  const { credential } = req.body;
+  if (!credential) {
+    res.status(400).json({ error: 'Google credential token is required.' });
+    return;
+  }
+
+  try {
+    const parts = credential.split('.');
+    if (parts.length < 2) {
+      res.status(400).json({ error: 'Invalid Google credential token.' });
+      return;
+    }
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+    if (!payload.email) {
+      res.status(400).json({ error: 'Google credential token missing email.' });
+      return;
+    }
+
+    const { user, token } = await findOrCreateSocialUser({
+      provider: 'google',
+      email: payload.email,
+      name: payload.name || payload.email.split('@')[0],
+      avatarUrl: payload.picture,
+      googleId: payload.sub
+    });
+
+    res.json({ token, user });
+  } catch (err: any) {
+    console.error('[GOOGLE VERIFY CREDENTIAL ERROR]', err);
+    res.status(500).json({ error: 'Failed to verify Google credential.' });
+  }
+});
+
 // 4. Real Login
 authRouter.post('/login', async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;

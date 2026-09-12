@@ -24,5 +24,7 @@ export const config = {
   githubClientId: process.env.GITHUB_CLIENT_ID || 'Ov23li1zsUXHPz3jSsYD',
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET || '91383118cc197d454fe2c9f50caa42edf96c519b',
   githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET || 'shiori_webhook_signature_secret',
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   dbPath: process.env.DB_PATH || path.resolve(dbDir, 'shiori.sqlite'),
 };
