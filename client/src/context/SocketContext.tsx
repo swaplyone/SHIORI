@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
-
 import { API_BASE_URL } from '../utils/api';
 
 interface SocketContextType {
@@ -14,13 +13,26 @@ const SocketContext = createContext<SocketContextType>({ socket: null, isConnect
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  const { user, updateUser } = useAuth();
+  const { user, token, updateUser } = useAuth();
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    // Connect Socket.IO directly to backend server (Render API in production, localhost in dev)
+    // If user is not authenticated, ensure socket is disconnected and null
+    if (!token || !user) {
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      setSocket(null);
+      setIsConnected(false);
+      return;
+    }
+
+    // Connect Socket.IO directly to backend server with authenticated JWT
     const backendUrl = API_BASE_URL || window.location.origin;
     const socketInstance = io(backendUrl, {
+      auth: { token },
       transports: ['polling', 'websocket'],
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,
@@ -38,6 +50,10 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     socketInstance.on('connect', () => {
       setIsConnected(true);
+      // Auto-join user room upon connection
+      if (user?.id) {
+        socketInstance.emit('join-user', user.id);
+      }
     });
 
     socketInstance.on('disconnect', () => {
@@ -53,14 +69,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       socketInstance.disconnect();
       socketRef.current = null;
     };
-  }, []);
-
-  // Join user room whenever user ID or connection status updates
-  useEffect(() => {
-    if (socket && isConnected && user?.id) {
-      socket.emit('join-user', user.id);
-    }
-  }, [socket, isConnected, user?.id]);
+  }, [token, user?.id]);
 
   return (
     <SocketContext.Provider value={{ socket, isConnected }}>

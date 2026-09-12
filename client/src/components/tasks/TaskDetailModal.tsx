@@ -44,6 +44,7 @@ import { triggerUndoToast } from '../ui/UndoToast';
 import { reminderManager } from '../../utils/reminderManager';
 import { getTodoLifecycleStatus } from '../../utils/taskLifecycle';
 import { TaskActivityTimeline } from './TaskActivityTimeline';
+import { CompletedTaskWalkthroughModal } from './CompletedTaskWalkthroughModal';
 
 interface TaskDetailModalProps {
   taskId: string | null;
@@ -69,6 +70,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isHandoffOpen, setIsHandoffOpen] = useState(false);
   const [isFocusOpen, setIsFocusOpen] = useState(false);
+  const [isWalkthroughOpen, setIsWalkthroughOpen] = useState(false);
 
   // Edit fields state
   const [isEditingDetails, setIsEditingDetails] = useState(false);
@@ -1147,9 +1149,18 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
                     <CheckCircle2 className="w-4 h-4 text-eink-text" />
                     <span>COMPLETION EVIDENCE & AUDIT</span>
                   </span>
-                  <span className="text-[10px] font-mono font-bold bg-eink-bg border border-eink-border px-1.5 py-0.5 rounded">
-                    SOURCE: {task.completion_source || (task.auto_completed ? 'GITHUB_COMMIT' : 'MANUAL')}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsWalkthroughOpen(true)}
+                      className="text-[10px] font-technical font-bold border border-eink-border bg-eink-bg hover:bg-eink-surface px-2 py-0.5 rounded cursor-pointer transition-colors"
+                    >
+                      [ VIEW FULL WALKTHROUGH ]
+                    </button>
+                    <span className="text-[10px] font-mono font-bold bg-eink-bg border border-eink-border px-1.5 py-0.5 rounded">
+                      SOURCE: {task.completion_source || (task.auto_completed ? 'GITHUB_COMMIT' : 'MANUAL')}
+                    </span>
+                  </div>
                 </div>
                 <div className="text-xs space-y-1 font-sans text-eink-textSecondary">
                   <p><strong>Reason:</strong> {task.completion_reason || (task.auto_completed ? 'Auto-verified through GitHub commit.' : 'Marked completed manually.')}</p>
@@ -1450,6 +1461,12 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
           isOpen={isFocusOpen}
           task={task}
           onClose={() => setIsFocusOpen(false)}
+        />
+
+        <CompletedTaskWalkthroughModal
+          task={task}
+          isOpen={isWalkthroughOpen}
+          onClose={() => setIsWalkthroughOpen(false)}
         />
       </div>
     </div>

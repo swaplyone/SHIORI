@@ -91,14 +91,13 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSimulator, onOpenCom
 
               <nav className="mt-4 space-y-1">
                 {[
-                  { to: '/dashboard', label: 'Dashboard', icon: Home },
+                  { to: '/home', label: 'Dashboard', icon: Home },
                   { to: '/tasks', label: 'My Tasks', icon: CheckSquare },
-                  { to: '/projects', label: 'Projects', icon: FolderGit2 },
+                  { to: '/repositories', label: 'Projects', icon: FolderGit2 },
                   { to: '/workspaces', label: 'Workspaces', icon: Building2 },
                   { to: '/connections', label: 'Connections (SHIORI ID)', icon: Users },
                   { to: '/github', label: 'GitHub Hub', icon: Github },
-                  { to: '/activity', label: 'Activity & Reports', icon: Activity },
-                  { to: '/journal', label: 'Daily & Weekly Journal', icon: BookOpen },
+                  { to: '/weekly-report', label: 'Weekly Report', icon: Activity },
                   { to: '/notifications', label: 'Notifications', icon: Bell, badge: unreadCount },
                   { to: '/settings', label: 'Settings', icon: Settings },
                 ].map((item) => {
@@ -173,10 +172,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSimulator, onOpenCom
       {/* Bottom Navigation Bar */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-eink-bg border-t border-eink-border flex items-center justify-around py-2 px-1 safe-area-bottom">
         {[
-          { to: '/dashboard', label: 'HOME', icon: Home },
+          { to: '/home', label: 'HOME', icon: Home },
           { to: '/tasks', label: 'TASKS', icon: CheckSquare },
-          { to: '/projects', label: 'PROJECTS', icon: FolderGit2 },
-          { to: '/activity', label: 'ACTIVITY', icon: Activity },
+          { to: '/repositories', label: 'PROJECTS', icon: FolderGit2 },
+          { to: '/weekly-report', label: 'REPORT', icon: Activity },
           { to: '/settings', label: 'SETTINGS', icon: Settings },
         ].map((tab) => {
           const Icon = tab.icon;

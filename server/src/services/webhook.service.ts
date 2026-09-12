@@ -5,15 +5,23 @@ import { recalculateTaskEvidence } from './evidence.service.js';
 import { emitToWorkspace, emitToTask, emitToUser, broadcastEvent } from './socket.service.js';
 import { config } from '../config.js';
 
-export function verifyWebhookSignature(payload: string, signatureHeader?: string): boolean {
-  if (!signatureHeader || !config.githubWebhookSecret) return true;
-  try {
-    const hmac = crypto.createHmac('sha256', config.githubWebhookSecret);
-    const digest = 'sha256=' + hmac.update(payload).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signatureHeader));
-  } catch {
-    return false;
+export function verifyWebhookSignature(payload: string, signatureHeader?: string, customSecret?: string): boolean {
+  const secret = customSecret || config.githubWebhookSecret;
+  if (secret) {
+    if (!signatureHeader) {
+      console.warn('[WEBHOOK SECURITY] Webhook rejected: Secret configured but signature header is missing.');
+      return false;
+    }
+    try {
+      const hmac = crypto.createHmac('sha256', secret);
+      const digest = 'sha256=' + hmac.update(payload).digest('hex');
+      return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signatureHeader));
+    } catch (err) {
+      console.warn('[WEBHOOK SECURITY] Webhook rejected: Signature verification failed.');
+      return false;
+    }
   }
+  return true;
 }
 
 // Extract keywords from task title for intelligent, simple relevance matching
@@ -55,10 +63,16 @@ export async function processPushEvent(payload: any) {
   // Find user associated with this push
   let matchedUser = await queryOne('SELECT * FROM users WHERE github_username = ? OR username = ?', [sender, sender]);
   if (!matchedUser) {
-    matchedUser = await queryOne('SELECT * FROM users WHERE email = ?', ['lijith@swaplyone.com']) || await queryOne('SELECT * FROM users LIMIT 1');
+    // Match against creator/member of project associated with this repository
+    matchedUser = await queryOne(`
+      SELECT u.* FROM projects p
+      JOIN users u ON p.created_by = u.id
+      WHERE LOWER(p.github_repo_name) = LOWER(?) OR LOWER(p.name) = LOWER(?)
+      ORDER BY p.created_at DESC LIMIT 1
+    `, [repoName, repoName]);
   }
 
-  const userId = matchedUser?.id || 'user-lijith-001';
+  const userId = matchedUser?.id || null;
 
   // 2. Award +10 SHIORI Points for meaningful Git push
   const filesChanged = (primaryCommit.added?.length || 0) + (primaryCommit.modified?.length || 0) + (primaryCommit.removed?.length || 0) || 1;

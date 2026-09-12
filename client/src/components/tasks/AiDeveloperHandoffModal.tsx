@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Copy, Check, Terminal, AlertTriangle, GitBranch, RefreshCw, Hash } from 'lucide-react';
+import { X, Copy, Check, Terminal, AlertTriangle, GitBranch, RefreshCw, Hash, ArrowRight, Play, CheckCircle } from 'lucide-react';
 import { Task } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 
@@ -17,8 +17,12 @@ export const AiDeveloperHandoffModal: React.FC<AiDeveloperHandoffModalProps> = (
   const { token } = useAuth();
   const [loading, setLoading] = useState(false);
   const [promptData, setPromptData] = useState<any>(null);
+
+  // Separate copy state flags for each block
   const [copiedPrompt, setCopiedPrompt] = useState(false);
-  const [copiedCommands, setCopiedCommands] = useState(false);
+  const [copiedSetup, setCopiedSetup] = useState(false);
+  const [copiedStart, setCopiedStart] = useState(false);
+  const [copiedFinish, setCopiedFinish] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
   const fetchPrompt = async () => {
@@ -52,41 +56,42 @@ export const AiDeveloperHandoffModal: React.FC<AiDeveloperHandoffModalProps> = (
 
   if (!isOpen || !task) return null;
 
-  const handleCopyPrompt = async () => {
-    if (!promptData?.prompt) return;
+  const copyToClipboard = async (text: string, setCopied: (val: boolean) => void) => {
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(promptData.prompt);
-      setCopiedPrompt(true);
-      setTimeout(() => setCopiedPrompt(false), 2000);
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy prompt:', err);
+      console.error('Failed to copy text:', err);
     }
   };
 
-  const handleCopySetupCommands = async () => {
-    if (!promptData?.setupCommands) return;
-    try {
-      await navigator.clipboard.writeText(promptData.setupCommands);
-      setCopiedCommands(true);
-      setTimeout(() => setCopiedCommands(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy commands:', err);
-    }
-  };
+  const branchSetupCommands =
+    promptData?.branchSetupCommands ||
+    promptData?.setupCommands ||
+    (promptData?.requiredBranch
+      ? `git fetch origin\ngit switch -c ${promptData.requiredBranch} origin/${promptData.defaultBranch || 'main'}\ngit push -u origin ${promptData.requiredBranch}`
+      : '');
 
-  const handleCopyId = async () => {
-    try {
-      await navigator.clipboard.writeText(task.task_code);
-      setCopiedId(true);
-      setTimeout(() => setCopiedId(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy task ID:', err);
-    }
-  };
+  const startTaskCommands =
+    promptData?.startTaskCommands ||
+    (promptData?.requiredBranch
+      ? `git switch ${promptData.requiredBranch}\ngit pull origin ${promptData.requiredBranch}`
+      : '');
+
+  const finishTaskCommands =
+    promptData?.finishTaskCommands ||
+    (promptData?.requiredBranch
+      ? `git add .\ngit commit -m "[${task.task_code}] ${task.title}"\ngit push origin ${promptData.requiredBranch}`
+      : '');
+
+  const isBranchVerified = promptData?.branchStatus === 'VERIFIED';
+  const isBranchNotCreated = promptData?.reason === 'BRANCH_NOT_CREATED';
 
   return (
     <div className="fixed inset-0 z-[10002] bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-4 font-sans select-none animate-fade-in">
-      <div className="bg-eink-bg border-2 border-eink-border shadow-eink-card rounded-sm max-w-lg w-full p-5 sm:p-6 space-y-4">
+      <div className="bg-eink-bg border-2 border-eink-border shadow-eink-card rounded-sm max-w-xl w-full p-5 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto eink-scrollbar">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-eink-border pb-3">
           <div className="flex items-center gap-2">
@@ -101,7 +106,7 @@ export const AiDeveloperHandoffModal: React.FC<AiDeveloperHandoffModalProps> = (
                 <span className="font-mono text-xs font-bold bg-eink-surface px-1.5 py-0.5 border border-eink-border rounded text-eink-text">
                   {task.task_code}
                 </span>
-                <h3 className="font-technical font-bold text-xs sm:text-sm text-eink-text truncate max-w-[240px] sm:max-w-[280px]">
+                <h3 className="font-technical font-bold text-xs sm:text-sm text-eink-text truncate max-w-[240px] sm:max-w-[320px]">
                   {task.title}
                 </h3>
               </div>
@@ -121,128 +126,151 @@ export const AiDeveloperHandoffModal: React.FC<AiDeveloperHandoffModalProps> = (
             <RefreshCw className="w-5 h-5 animate-spin mx-auto text-eink-text" />
             <p>Resolving developer identity & verifying GitHub branch...</p>
           </div>
-        ) : promptData?.ready ? (
-          /* Ready & Verified Prompt */
-          <>
+        ) : promptData?.ready || isBranchNotCreated ? (
+          <div className="space-y-4">
+            {/* Branch Status Banner */}
             <div className="flex items-center justify-between p-2.5 bg-eink-surface border border-eink-border rounded text-xs font-technical">
               <div className="flex items-center gap-2">
                 <GitBranch className="w-4 h-4 text-eink-text" />
                 <span>
-                  Branch: <strong className="font-mono">{promptData.requiredBranch}</strong>
+                  Expected Branch: <strong className="font-mono">{promptData.requiredBranch}</strong>
                 </span>
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 rounded font-mono">
-                ✓ VERIFIED
-              </span>
+              {isBranchVerified ? (
+                <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 rounded font-mono">
+                  ✓ Branch verified
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 rounded font-mono">
+                  ⚠ First-time branch setup required
+                </span>
+              )}
             </div>
 
-            {/* Prompt Preview Card */}
-            <div className="bg-eink-surface border border-eink-border rounded-sm p-3.5 space-y-2 font-mono text-[11px] max-h-52 overflow-y-auto eink-scrollbar">
-              <div className="flex items-center justify-between text-[10px] text-eink-textMuted border-b border-eink-border/50 pb-1">
-                <span className="flex items-center gap-1 font-bold">
-                  <Terminal className="w-3 h-3" />
-                  <span>INTELLIGENT AI PROMPT</span>
+            {/* BLOCK 1: BRANCH SETUP */}
+            <div className="border border-eink-border bg-eink-surface rounded-sm p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-technical font-bold uppercase text-eink-text flex items-center gap-1.5">
+                  <GitBranch className="w-3.5 h-3.5" />
+                  <span>BRANCH SETUP</span>
                 </span>
-                <span className="text-[9px] uppercase">READY FOR AI ASSISTANT</span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(branchSetupCommands, setCopiedSetup)}
+                  className="px-2.5 py-1 border border-eink-border bg-eink-bg hover:bg-eink-surface rounded text-[10px] font-mono font-bold text-eink-text flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  {copiedSetup ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedSetup ? 'COPIED ✓' : 'COPY'}</span>
+                </button>
               </div>
-              <pre className="whitespace-pre-wrap text-eink-text leading-relaxed font-mono">
-                {promptData.prompt}
+              <pre className="bg-eink-bg p-2 rounded border border-eink-border/70 font-mono text-[11px] text-eink-text leading-relaxed whitespace-pre-wrap select-all">
+                {branchSetupCommands}
               </pre>
             </div>
 
-            {/* Actions */}
-            <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
-              <button
-                type="button"
-                onClick={handleCopyPrompt}
-                className="w-full sm:flex-1 py-2.5 px-4 bg-eink-text text-eink-bg font-mono font-bold text-xs rounded-sm flex items-center justify-center gap-2 shadow-eink-sm hover:opacity-90 active:scale-[0.99] transition-all cursor-pointer"
-              >
-                {copiedPrompt ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>COPIED PROMPT ✓</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>COPY AI PROMPT</span>
-                  </>
-                )}
-              </button>
+            {/* BLOCK 2: START TASK */}
+            <div className="border border-eink-border bg-eink-surface rounded-sm p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-technical font-bold uppercase text-eink-text flex items-center gap-1.5">
+                  <Play className="w-3.5 h-3.5" />
+                  <span>START TASK</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(startTaskCommands, setCopiedStart)}
+                  className="px-2.5 py-1 border border-eink-border bg-eink-bg hover:bg-eink-surface rounded text-[10px] font-mono font-bold text-eink-text flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  {copiedStart ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedStart ? 'COPIED ✓' : 'COPY'}</span>
+                </button>
+              </div>
+              <pre className="bg-eink-bg p-2 rounded border border-eink-border/70 font-mono text-[11px] text-eink-text leading-relaxed whitespace-pre-wrap select-all">
+                {startTaskCommands}
+              </pre>
+            </div>
 
-              <button
-                type="button"
-                onClick={handleCopyId}
-                className="w-full sm:w-auto py-2.5 px-3.5 border border-eink-border bg-eink-bg hover:bg-eink-surface text-eink-text font-mono font-bold text-xs rounded-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                {copiedId ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{task.task_code} ✓</span>
-                  </>
-                ) : (
-                  <>
-                    <Hash className="w-3.5 h-3.5 text-eink-textMuted" />
-                    <span>COPY ID</span>
-                  </>
+            {/* BLOCK 3: FINISH TASK */}
+            <div className="border border-eink-border bg-eink-surface rounded-sm p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-technical font-bold uppercase text-eink-text flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  <span>FINISH TASK</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(finishTaskCommands, setCopiedFinish)}
+                  className="px-2.5 py-1 border border-eink-border bg-eink-bg hover:bg-eink-surface rounded text-[10px] font-mono font-bold text-eink-text flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  {copiedFinish ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedFinish ? 'COPIED ✓' : 'COPY'}</span>
+                </button>
+              </div>
+              <pre className="bg-eink-bg p-2 rounded border border-eink-border/70 font-mono text-[11px] text-eink-text leading-relaxed whitespace-pre-wrap select-all">
+                {finishTaskCommands}
+              </pre>
+            </div>
+
+            {/* BLOCK 4: AI CODING PROMPT */}
+            {promptData?.prompt && (
+              <div className="border border-eink-border bg-eink-surface rounded-sm p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-technical font-bold uppercase text-eink-text flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5" />
+                    <span>AI CODING PROMPT</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(promptData.prompt, setCopiedPrompt)}
+                    className="px-2.5 py-1 bg-eink-text text-eink-bg rounded text-[10px] font-mono font-bold flex items-center gap-1 shadow-eink-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+                  >
+                    {copiedPrompt ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedPrompt ? 'COPIED PROMPT ✓' : 'COPY'}</span>
+                  </button>
+                </div>
+                <pre className="bg-eink-bg p-2.5 rounded border border-eink-border/70 font-mono text-[11px] text-eink-text leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto eink-scrollbar select-all">
+                  {promptData.prompt}
+                </pre>
+              </div>
+            )}
+
+            {/* Bottom Actions */}
+            <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(task.task_code, setCopiedId)}
+                  className="px-3 py-1.5 border border-eink-border bg-eink-bg hover:bg-eink-surface text-eink-text font-mono font-bold text-xs rounded-sm flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Hash className="w-3.5 h-3.5 text-eink-textMuted" />
+                  <span>{copiedId ? `${task.task_code} ✓` : 'COPY ID'}</span>
+                </button>
+
+                {!isBranchVerified && (
+                  <button
+                    type="button"
+                    onClick={fetchPrompt}
+                    className="px-3 py-1.5 border border-eink-border bg-eink-bg hover:bg-eink-surface text-eink-text font-technical font-bold text-xs rounded-sm flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Re-check branch existence on GitHub"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>RE-CHECK</span>
+                  </button>
                 )}
-              </button>
+              </div>
 
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full sm:w-auto py-2.5 px-3.5 border border-transparent hover:border-eink-border text-eink-textMuted hover:text-eink-text font-technical text-xs rounded-sm transition-colors cursor-pointer"
+                className="px-4 py-1.5 bg-eink-text text-eink-bg font-technical font-bold text-xs rounded-sm shadow-eink-sm hover:opacity-90 active:scale-[0.99] transition-all cursor-pointer"
               >
                 DONE
               </button>
             </div>
-          </>
-        ) : promptData?.reason === 'BRANCH_NOT_CREATED' ? (
-          /* Branch Missing / Setup Guidance */
-          <div className="space-y-3 font-technical text-xs">
-            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 rounded space-y-1.5">
-              <div className="flex items-center gap-1.5 text-amber-900 dark:text-amber-200 font-bold">
-                <AlertTriangle className="w-4 h-4 text-amber-600" />
-                <span>BRANCH SETUP REQUIRED</span>
-              </div>
-              <p className="text-[11px] text-amber-800 dark:text-amber-300 font-sans leading-normal">
-                Assigned branch <strong className="font-mono">{promptData.requiredBranch}</strong> has not been created on GitHub yet. Run these commands in your local repository to create and push your branch:
-              </p>
-            </div>
-
-            <div className="bg-eink-surface border border-eink-border rounded p-3 font-mono text-[11px] text-eink-text space-y-2">
-              <div className="text-[10px] text-eink-textMuted uppercase font-bold">
-                FIRST-TIME BRANCH SETUP
-              </div>
-              <pre className="whitespace-pre-wrap leading-relaxed select-all">
-                {promptData.setupCommands}
-              </pre>
-            </div>
-
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={handleCopySetupCommands}
-                className="flex-1 py-2 px-3 bg-eink-text text-eink-bg font-bold font-mono text-xs rounded shadow-eink-sm flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                {copiedCommands ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedCommands ? 'COPIED COMMANDS ✓' : 'COPY SETUP COMMANDS'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={fetchPrompt}
-                className="py-2 px-3 border border-eink-border bg-eink-bg hover:bg-eink-surface rounded font-bold text-xs flex items-center gap-1 text-eink-text cursor-pointer"
-                title="Re-check GitHub for created branch"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>RE-CHECK</span>
-              </button>
-            </div>
           </div>
         ) : (
-          /* Generic or Identity Not Verified State */
+          /* Missing GitHub Identity or Error State */
           <div className="space-y-3 font-technical text-xs">
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-300 rounded space-y-1 text-rose-900 dark:text-rose-200">
+            <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-300 rounded space-y-1.5 text-rose-900 dark:text-rose-200">
               <div className="flex items-center gap-1.5 font-bold">
                 <AlertTriangle className="w-4 h-4 text-rose-600" />
                 <span>GIT SETUP INCOMPLETE</span>
@@ -255,7 +283,7 @@ export const AiDeveloperHandoffModal: React.FC<AiDeveloperHandoffModalProps> = (
               <button
                 type="button"
                 onClick={onClose}
-                className="py-1.5 px-4 bg-eink-text text-eink-bg font-bold rounded text-xs"
+                className="py-1.5 px-4 bg-eink-text text-eink-bg font-bold rounded text-xs cursor-pointer"
               >
                 CLOSE
               </button>
@@ -266,4 +294,3 @@ export const AiDeveloperHandoffModal: React.FC<AiDeveloperHandoffModalProps> = (
     </div>
   );
 };
-

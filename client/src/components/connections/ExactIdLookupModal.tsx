@@ -6,32 +6,24 @@ interface ExactIdLookupModalProps {
   isOpen: boolean;
   onClose: () => void;
   onRequestSent: () => void;
+  initialQuery?: string;
 }
 
 export const ExactIdLookupModal: React.FC<ExactIdLookupModalProps> = ({
   isOpen,
   onClose,
   onRequestSent,
+  initialQuery
 }) => {
   const { token } = useAuth();
-  const [searchInput, setSearchInput] = useState('');
+  const [searchInput, setSearchInput] = useState(initialQuery || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [foundPerson, setFoundPerson] = useState<any>(null);
   const [requestSuccess, setRequestSuccess] = useState(false);
 
-  if (!isOpen) return null;
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchInput(e.target.value);
-    setFoundPerson(null);
-    setError('');
-    setRequestSuccess(false);
-  };
-
-  const handleLookup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchInput.trim() || !token) return;
+  const performLookup = async (queryToSearch: string) => {
+    if (!queryToSearch.trim() || !token) return;
     setError('');
     setLoading(true);
     try {
@@ -41,7 +33,7 @@ export const ExactIdLookupModal: React.FC<ExactIdLookupModalProps> = ({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ query: searchInput.trim(), shioriId: searchInput.trim() })
+        body: JSON.stringify({ query: queryToSearch.trim(), shioriId: queryToSearch.trim() })
       });
       const data = await res.json();
       if (res.ok && data.person) {
@@ -54,6 +46,27 @@ export const ExactIdLookupModal: React.FC<ExactIdLookupModalProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  React.useEffect(() => {
+    if (isOpen && initialQuery) {
+      setSearchInput(initialQuery);
+      performLookup(initialQuery);
+    }
+  }, [isOpen, initialQuery]);
+
+  if (!isOpen) return null;
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchInput(e.target.value);
+    setFoundPerson(null);
+    setError('');
+    setRequestSuccess(false);
+  };
+
+  const handleLookup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    performLookup(searchInput);
   };
 
   const handleSendRequest = async () => {

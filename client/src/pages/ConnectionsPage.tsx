@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Users,
   Copy,
@@ -13,17 +14,20 @@ import {
   UserX,
   ArrowRight,
   Shield,
-  X
+  X,
+  QrCode
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { Connection, ConnectionRequest } from '../types';
 import { ExactIdLookupModal } from '../components/connections/ExactIdLookupModal';
+import { ConnectionQrCodeModal } from '../components/connections/ConnectionQrCodeModal';
 import { ConnectionsGridSkeleton } from '../components/ui/Skeleton';
 
 export const ConnectionsPage: React.FC = () => {
   const { token, user } = useAuth();
   const { triggerEInkRefresh } = useNotifications();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [myShioriId, setMyShioriId] = useState('SHI-3A91M');
   const [copied, setCopied] = useState(false);
@@ -33,6 +37,8 @@ export const ConnectionsPage: React.FC = () => {
     outgoing: []
   });
   const [isLookupOpen, setIsLookupOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [initialLookupQuery, setInitialLookupQuery] = useState('');
   const [removeModalConn, setRemoveModalConn] = useState<Connection | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -100,6 +106,16 @@ export const ConnectionsPage: React.FC = () => {
     return () => window.removeEventListener('shiori-refresh', handleRefresh);
   }, [token]);
 
+  useEffect(() => {
+    const addQuery = searchParams.get('add');
+    if (addQuery) {
+      setInitialLookupQuery(addQuery);
+      setIsLookupOpen(true);
+      searchParams.delete('add');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams]);
+
   const handleCopyId = () => {
     navigator.clipboard.writeText(myShioriId);
     setCopied(true);
@@ -155,13 +171,26 @@ export const ConnectionsPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsLookupOpen(true)}
-          className="px-4 py-2 bg-eink-text text-eink-bg text-xs font-technical font-bold rounded-sm flex items-center gap-2 shadow-eink-sm hover:opacity-90 self-start sm:self-auto cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>ADD CONNECTION</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={() => setIsQrModalOpen(true)}
+            className="px-3.5 py-2 border border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-xs font-technical font-bold text-eink-text rounded-sm flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            <QrCode className="w-4 h-4" />
+            <span>MY QR CODE</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setInitialLookupQuery('');
+              setIsLookupOpen(true);
+            }}
+            className="px-4 py-2 bg-eink-text text-eink-bg text-xs font-technical font-bold rounded-sm flex items-center gap-2 shadow-eink-sm hover:opacity-90 self-start sm:self-auto cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>ADD CONNECTION</span>
+          </button>
+        </div>
       </div>
 
       {/* YOUR SHIORI ID CARD */}
@@ -180,13 +209,24 @@ export const ConnectionsPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleCopyId}
-          className="px-4 py-2 border border-eink-border bg-eink-bg hover:bg-eink-surfaceHover text-xs font-bold text-eink-text rounded-sm flex items-center gap-2 self-start sm:self-auto transition-colors cursor-pointer"
-        >
-          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-          <span>{copied ? 'COPIED TO CLIPBOARD' : 'COPY ID'}</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={() => setIsQrModalOpen(true)}
+            className="px-3.5 py-2 border border-eink-border bg-eink-bg hover:bg-eink-surfaceHover text-xs font-bold text-eink-text rounded-sm flex items-center gap-2 transition-colors cursor-pointer"
+            title="Display QR code for teammates to scan"
+          >
+            <QrCode className="w-4 h-4" />
+            <span>SHOW QR</span>
+          </button>
+
+          <button
+            onClick={handleCopyId}
+            className="px-4 py-2 border border-eink-border bg-eink-bg hover:bg-eink-surfaceHover text-xs font-bold text-eink-text rounded-sm flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            <span>{copied ? 'COPIED TO CLIPBOARD' : 'COPY ID'}</span>
+          </button>
+        </div>
       </div>
 
       {/* PENDING REQUESTS */}
@@ -402,10 +442,22 @@ export const ConnectionsPage: React.FC = () => {
         </div>
       )}
 
+      {/* QR Code Modal */}
+      <ConnectionQrCodeModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
+        shioriId={myShioriId}
+        userName={user?.name || user?.username}
+      />
+
       {/* Exact-ID Lookup Modal */}
       <ExactIdLookupModal
         isOpen={isLookupOpen}
-        onClose={() => setIsLookupOpen(false)}
+        initialQuery={initialLookupQuery}
+        onClose={() => {
+          setIsLookupOpen(false);
+          setInitialLookupQuery('');
+        }}
         onRequestSent={() => {
           fetchRequests();
           triggerEInkRefresh();

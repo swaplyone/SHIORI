@@ -35,6 +35,7 @@ import { TaskCalendarView } from '../components/tasks/TaskCalendarView';
 import { UndoToast, triggerUndoToast } from '../components/ui/UndoToast';
 import { parseNaturalLanguageTask, ParsedTaskInput } from '../utils/nlpTaskParser';
 import { getTodoLifecycleStatus } from '../utils/taskLifecycle';
+import { CompletedTaskWalkthroughModal } from '../components/tasks/CompletedTaskWalkthroughModal';
 
 export const TasksPage: React.FC = () => {
   const { token, user } = useAuth();
@@ -54,6 +55,7 @@ export const TasksPage: React.FC = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createInitialStatus, setCreateInitialStatus] = useState<TaskStatus>('PENDING');
   const [createdHandoffTask, setCreatedHandoffTask] = useState<Task | null>(null);
+  const [walkthroughTask, setWalkthroughTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Live NLP parsing for Quick Add
@@ -429,7 +431,7 @@ export const TasksPage: React.FC = () => {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                openTaskModal(task.id);
+                setWalkthroughTask(task);
               }}
               className="px-2.5 py-1 border border-eink-border bg-eink-surface hover:bg-eink-surfaceHover text-eink-text font-bold rounded-sm text-[10px] font-technical transition-colors cursor-pointer"
             >
@@ -803,6 +805,12 @@ export const TasksPage: React.FC = () => {
         isOpen={Boolean(createdHandoffTask)}
         task={createdHandoffTask}
         onClose={() => setCreatedHandoffTask(null)}
+      />
+
+      <CompletedTaskWalkthroughModal
+        task={walkthroughTask}
+        isOpen={Boolean(walkthroughTask)}
+        onClose={() => setWalkthroughTask(null)}
       />
 
       <UndoToast />

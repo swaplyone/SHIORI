@@ -19,6 +19,52 @@ export async function getNextTaskNumber(projectId: string, githubRepo?: string |
   return { nextNum, taskCode };
 }
 
+/**
+ * Master Security Model Authorization Helper
+ * Validates task existence and ensures authenticated user is creator, assignee,
+ * project member, or workspace member.
+ */
+export async function verifyTaskAccess(
+  taskIdOrCode: string,
+  userId: string
+): Promise<{ task: any; authorized: boolean }> {
+  const task = await queryOne(`
+    SELECT t.*, 
+           p.id as proj_id, p.name as proj_name, p.slug as proj_slug, p.github_repo_name as project_github_repo,
+           p.working_mode, p.default_branch as proj_default_branch, p.created_by as proj_owner_id,
+           u.name as assignee_name, u.avatar_url as assignee_avatar,
+           u.github_username as assignee_github_username, u.username as assignee_username,
+           creator.name as creator_name
+    FROM tasks t
+    LEFT JOIN projects p ON t.project_id = p.id
+    LEFT JOIN users u ON t.assignee_id = u.id
+    LEFT JOIN users creator ON t.created_by = creator.id
+    WHERE t.id = ? OR t.task_code = ?
+    ORDER BY (
+      CASE 
+        WHEN t.id = ? THEN 0
+        WHEN t.created_by = ? OR t.assignee_id = ? THEN 1
+        ELSE 2
+      END
+    ) ASC, t.created_at DESC
+    LIMIT 1
+  `, [taskIdOrCode, taskIdOrCode.toUpperCase(), taskIdOrCode, userId, userId]);
+
+  if (!task) return { task: null, authorized: false };
+
+  const isAuthorized =
+    task.created_by === userId ||
+    task.assignee_id === userId ||
+    (task.project_id && (await queryOne(`
+      SELECT 1 FROM projects WHERE id = ? AND (created_by = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?))
+    `, [task.project_id, userId, userId]))) ||
+    (task.workspace_id && (await queryOne(`
+      SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?
+    `, [task.workspace_id, userId])));
+
+  return { task, authorized: Boolean(isAuthorized) };
+}
+
 // Helper for computing next recurring occurrence
 function getNextRecurrenceDate(rule: string, baseDateStr?: string | null): string {
   const base = baseDateStr ? new Date(baseDateStr) : new Date();
@@ -452,15 +498,13 @@ tasksRouter.get('/:id/commits', authMiddleware, async (req: AuthRequest, res: Re
   try {
     const { id } = req.params;
 
-    const task = await queryOne(`
-      SELECT t.*, p.github_repo_name as project_github_repo
-      FROM tasks t
-      LEFT JOIN projects p ON t.project_id = p.id
-      WHERE t.id = ? OR t.task_code = ?
-    `, [id, id.toUpperCase()]);
-
+    const { task, authorized } = await verifyTaskAccess(id, req.user!.id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (!authorized) {
+      res.status(403).json({ error: 'Not authorized to access this task' });
       return;
     }
 
@@ -562,9 +606,13 @@ tasksRouter.post('/:id/commits', authMiddleware, async (req: AuthRequest, res: R
       return;
     }
 
-    const task = await queryOne('SELECT * FROM tasks WHERE id = ? OR task_code = ?', [id, id.toUpperCase()]);
+    const { task, authorized } = await verifyTaskAccess(id, req.user!.id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (!authorized) {
+      res.status(403).json({ error: 'Not authorized to record commits on this task' });
       return;
     }
 
@@ -648,9 +696,13 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
   const githubPrState = req.body.githubPrState || req.body.github_pr_state;
   const githubCiStatus = req.body.githubCiStatus || req.body.github_ci_status;
 
-  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  const { task: current, authorized } = await verifyTaskAccess(id, req.user!.id);
   if (!current) {
     res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to modify this task' });
     return;
   }
 
@@ -871,9 +923,13 @@ tasksRouter.patch('/:id', authMiddleware, async (req: AuthRequest, res: Response
 // POST Archive task
 tasksRouter.post('/:id/archive', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  const { task: current, authorized } = await verifyTaskAccess(id, req.user!.id);
   if (!current) {
     res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to modify this task' });
     return;
   }
 
@@ -890,9 +946,13 @@ tasksRouter.post('/:id/archive', authMiddleware, async (req: AuthRequest, res: R
 // POST Restore task from archive
 tasksRouter.post('/:id/restore', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  const { task: current, authorized } = await verifyTaskAccess(id, req.user!.id);
   if (!current) {
     res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to modify this task' });
     return;
   }
 
@@ -909,9 +969,13 @@ tasksRouter.post('/:id/restore', authMiddleware, async (req: AuthRequest, res: R
 // DELETE Task (Soft delete preserving permanent historical task identity & GitHub evidence)
 tasksRouter.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  const { task: current, authorized } = await verifyTaskAccess(id, req.user!.id);
   if (!current) {
     res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to delete this task' });
     return;
   }
 
@@ -928,9 +992,13 @@ tasksRouter.delete('/:id', authMiddleware, async (req: AuthRequest, res: Respons
 // POST Undo Delete Task (Restores task without changing task number)
 tasksRouter.post('/:id/undo-delete', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  const { task: current, authorized } = await verifyTaskAccess(id, req.user!.id);
   if (!current) {
     res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to modify this task' });
     return;
   }
 
@@ -947,9 +1015,13 @@ tasksRouter.post('/:id/undo-delete', authMiddleware, async (req: AuthRequest, re
 // POST Confirm Verification (User confirms medium-confidence AI match -> DONE)
 tasksRouter.post('/:id/confirm-verification', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  const { task: current, authorized } = await verifyTaskAccess(id, req.user!.id);
   if (!current) {
     res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to confirm verification for this task' });
     return;
   }
 
@@ -985,9 +1057,13 @@ tasksRouter.post('/:id/confirm-verification', authMiddleware, async (req: AuthRe
 // POST Reject Verification (User rejects medium-confidence AI match -> restored to PENDING)
 tasksRouter.post('/:id/reject-verification', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const current = await queryOne('SELECT * FROM tasks WHERE id = ?', [id]);
+  const { task: current, authorized } = await verifyTaskAccess(id, req.user!.id);
   if (!current) {
     res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to reject verification for this task' });
     return;
   }
 
@@ -1026,7 +1102,17 @@ tasksRouter.post('/:id/reject-verification', authMiddleware, async (req: AuthReq
 // Subtask management
 tasksRouter.get('/:id/subtasks', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [id]);
+  const { task, authorized } = await verifyTaskAccess(id, req.user!.id);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to access this task' });
+    return;
+  }
+
+  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [task.id]);
   res.json({ subtasks: subtasks || [] });
 });
 
@@ -1037,14 +1123,25 @@ tasksRouter.post('/:id/subtasks', authMiddleware, async (req: AuthRequest, res: 
     res.status(400).json({ error: 'Subtask title is required' });
     return;
   }
+
+  const { task, authorized } = await verifyTaskAccess(id, req.user!.id);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to modify this task' });
+    return;
+  }
+
   const subtaskId = uuidv4();
   await runQuery(`
     INSERT INTO task_subtasks (id, task_id, title, completed, position, created_at)
     VALUES (?, ?, ?, 0, 100, datetime('now'))
-  `, [subtaskId, id, title.trim()]);
+  `, [subtaskId, task.id, title.trim()]);
 
-  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [id]);
-  emitToTask(id, 'subtask:updated', { subtasks });
+  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [task.id]);
+  emitToTask(task.id, 'subtask:updated', { subtasks });
   res.status(201).json({ subtasks });
 });
 
@@ -1052,24 +1149,45 @@ tasksRouter.patch('/:id/subtasks/:subtaskId', authMiddleware, async (req: AuthRe
   const { id, subtaskId } = req.params;
   const { completed, title, position } = req.body;
 
+  const { task, authorized } = await verifyTaskAccess(id, req.user!.id);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to modify this task' });
+    return;
+  }
+
   await runQuery(`
     UPDATE task_subtasks SET
       completed = COALESCE(?, completed),
       title = COALESCE(?, title),
       position = COALESCE(?, position)
     WHERE id = ? AND task_id = ?
-  `, [completed !== undefined ? (completed ? 1 : 0) : null, title ? title.trim() : null, position !== undefined ? position : null, subtaskId, id]);
+  `, [completed !== undefined ? (completed ? 1 : 0) : null, title ? title.trim() : null, position !== undefined ? position : null, subtaskId, task.id]);
 
-  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [id]);
-  emitToTask(id, 'subtask:updated', { subtasks });
+  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [task.id]);
+  emitToTask(task.id, 'subtask:updated', { subtasks });
   res.json({ subtasks });
 });
 
 tasksRouter.delete('/:id/subtasks/:subtaskId', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id, subtaskId } = req.params;
-  await runQuery('DELETE FROM task_subtasks WHERE id = ? AND task_id = ?', [subtaskId, id]);
-  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [id]);
-  emitToTask(id, 'subtask:updated', { subtasks });
+
+  const { task, authorized } = await verifyTaskAccess(id, req.user!.id);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to modify this task' });
+    return;
+  }
+
+  await runQuery('DELETE FROM task_subtasks WHERE id = ? AND task_id = ?', [subtaskId, task.id]);
+  const subtasks = await queryAll('SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY position ASC, created_at ASC', [task.id]);
+  emitToTask(task.id, 'subtask:updated', { subtasks });
   res.json({ subtasks });
 });
 
@@ -1082,16 +1200,26 @@ tasksRouter.post('/:id/comments', authMiddleware, async (req: AuthRequest, res: 
     return;
   }
 
+  const { task, authorized } = await verifyTaskAccess(id, req.user!.id);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+  if (!authorized) {
+    res.status(403).json({ error: 'Not authorized to comment on this task' });
+    return;
+  }
+
   const commentId = uuidv4();
   await runQuery(`
     INSERT INTO task_comments (id, task_id, user_id, content, created_at)
     VALUES (?, ?, ?, ?, datetime('now'))
-  `, [commentId, id, req.user!.id, content]);
+  `, [commentId, task.id, req.user!.id, content]);
 
   await runQuery(`
     INSERT INTO task_activity (id, task_id, user_id, action_type, summary, details, created_at)
     VALUES (?, ?, ?, 'COMMENT_ADDED', ?, ?, datetime('now'))
-  `, [uuidv4(), id, req.user!.id, `Comment added by ${req.user!.name}`, content]);
+  `, [uuidv4(), task.id, req.user!.id, `Comment added by ${req.user!.name}`, content]);
 
   const comments = await queryAll(`
     SELECT c.*, u.name as user_name, u.avatar_url as user_avatar, u.username
@@ -1099,9 +1227,9 @@ tasksRouter.post('/:id/comments', authMiddleware, async (req: AuthRequest, res: 
     JOIN users u ON c.user_id = u.id
     WHERE c.task_id = ?
     ORDER BY c.created_at ASC
-  `, [id]);
+  `, [task.id]);
 
-  emitToTask(id, 'task:comment', { comments });
+  emitToTask(task.id, 'task:comment', { comments });
   res.status(201).json({ comments });
 });
 
@@ -1461,6 +1589,10 @@ Expected commit format:
 
 [${task.task_code}] ${task.title}`;
 
+      const branchSetupCommands = `git switch ${requiredBranch}\ngit pull origin ${requiredBranch}`;
+      const startTaskCommands = `git switch ${requiredBranch}\ngit pull origin ${requiredBranch}`;
+      const finishTaskCommands = `git add .\ngit commit -m "[${task.task_code}] ${task.title}"\ngit push origin ${requiredBranch}`;
+
       res.json({
         ready: true,
         workingMode: 'SOLO',
@@ -1477,6 +1609,9 @@ Expected commit format:
           title: task.title,
           description: task.description
         },
+        branchSetupCommands,
+        startTaskCommands,
+        finishTaskCommands,
         prompt
       });
       return;
@@ -1590,6 +1725,8 @@ Expected commit format:
 
     if (!isBranchVerified) {
       const setupCommands = `git fetch origin\ngit switch -c ${assignedBranch} origin/${defaultBranch}\ngit push -u origin ${assignedBranch}`;
+      const startTaskCommands = `git switch ${assignedBranch}\ngit pull origin ${assignedBranch}`;
+      const finishTaskCommands = `git add .\ngit commit -m "[${task.task_code}] ${task.title}"\ngit push origin ${assignedBranch}`;
 
       res.json({
         ready: false,
@@ -1599,6 +1736,9 @@ Expected commit format:
         requiredBranch: assignedBranch,
         defaultBranch,
         setupCommands,
+        branchSetupCommands: setupCommands,
+        startTaskCommands,
+        finishTaskCommands,
         developer: {
           name: developerName,
           githubUsername
@@ -1660,6 +1800,10 @@ Expected commit format:
 
 [${task.task_code}] ${task.title}`;
 
+    const branchSetupCommands = `git fetch origin\ngit switch -c ${assignedBranch} origin/${defaultBranch}\ngit push -u origin ${assignedBranch}`;
+    const startTaskCommands = `git switch ${assignedBranch}\ngit pull origin ${assignedBranch}`;
+    const finishTaskCommands = `git add .\ngit commit -m "[${task.task_code}] ${task.title}"\ngit push origin ${assignedBranch}`;
+
     res.json({
       ready: true,
       workingMode: 'TEAM',
@@ -1676,6 +1820,9 @@ Expected commit format:
         title: task.title,
         description: task.description
       },
+      branchSetupCommands,
+      startTaskCommands,
+      finishTaskCommands,
       prompt
     });
   } catch (err: any) {

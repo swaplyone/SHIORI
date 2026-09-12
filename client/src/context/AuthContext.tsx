@@ -202,12 +202,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               applyAppearance(sMode, sAccent, sFont, sMatte);
             }
           } else if (status === 401) {
-            localStorage.removeItem('shiori_token');
-            localStorage.removeItem('shiori_user');
-            localStorage.removeItem('shiori_settings');
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i);
+              if (k && (k.startsWith('shiori_') || k.startsWith('shiori.'))) {
+                keysToRemove.push(k);
+              }
+            }
+            keysToRemove.forEach((k) => localStorage.removeItem(k));
+            sessionStorage.clear();
             setToken(null);
             setUser(null);
             setSettings(null);
+            window.dispatchEvent(new Event('shiori:logout'));
           }
         } catch {
           console.warn('[SHIORI Auth] Validating offline/cached session.');
@@ -230,16 +237,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    localStorage.removeItem('shiori_token');
-    localStorage.removeItem('shiori_user');
-    localStorage.removeItem('shiori_settings');
-    localStorage.removeItem('shiori_scheduled_reminders');
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('shiori_') || k.startsWith('shiori.'))) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
     sessionStorage.clear();
     setToken(null);
     setUser(null);
     setSettings(null);
     applyTheme('light');
     applyAppearance('eink_matte', '#2E5A36', 'geist', 'natural');
+    window.dispatchEvent(new Event('shiori:logout'));
   };
 
   const demoLogin = async () => {

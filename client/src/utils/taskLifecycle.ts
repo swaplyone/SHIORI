@@ -23,11 +23,19 @@ export interface TaskLifecycleInfo {
 }
 
 /**
- * Parses any date/deadline string safely in local timezone
+ * Parses any date/deadline string safely in local timezone, supporting Date objects, timestamps, and ISO strings
  */
-function parseDateSafe(dateStr?: string | null): Date | null {
-  if (!dateStr || typeof dateStr !== 'string') return null;
-  const s = dateStr.trim();
+function parseDateSafe(dateVal?: string | Date | number | null): Date | null {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date) {
+    return isNaN(dateVal.getTime()) ? null : dateVal;
+  }
+  if (typeof dateVal === 'number') {
+    const d = new Date(dateVal);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof dateVal !== 'string') return null;
+  const s = dateVal.trim();
   if (!s || s.toLowerCase() === 'today' || s.toLowerCase() === 'tomorrow' || s.toLowerCase() === 'next occurrence') {
     return null;
   }

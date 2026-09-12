@@ -421,6 +421,7 @@ export async function verifyAndProcessCommits(
             SELECT t.*, p.workspace_id as proj_workspace_id, p.name as proj_name,
                    p.working_mode, p.default_branch as proj_default_branch,
                    u.github_username as assignee_github_username, u.username as assignee_username,
+                   pm.github_username as member_github_username,
                    pm.branch_name as member_branch_name
             FROM tasks t
             LEFT JOIN projects p ON t.project_id = p.id
@@ -452,6 +453,7 @@ export async function verifyAndProcessCommits(
             SELECT t.*, p.workspace_id as proj_workspace_id, p.name as proj_name,
                    p.working_mode, p.default_branch as proj_default_branch,
                    u.github_username as assignee_github_username, u.username as assignee_username,
+                   pm.github_username as member_github_username,
                    pm.branch_name as member_branch_name
             FROM tasks t
             LEFT JOIN projects p ON t.project_id = p.id
@@ -474,7 +476,7 @@ export async function verifyAndProcessCommits(
           matchedTask = task;
 
           // Validate Author & Branch alignment
-          const expectedAssigneeGithub = (task.assignee_github_username || task.assignee_username || '').toLowerCase();
+          const expectedAssigneeGithub = (task.member_github_username || task.assignee_github_username || task.assignee_username || '').toLowerCase();
           const commitAuthor = (authorUsername || authorName || '').toLowerCase();
           const isAuthorMismatch = Boolean(expectedAssigneeGithub && commitAuthor && commitAuthor !== expectedAssigneeGithub);
           

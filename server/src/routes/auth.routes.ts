@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { generateSecureOTP, hashOTP, verifyOTPHash } from '../services/otp.service.js';
 import { sendOtpEmail, sendUsernameEmail } from '../services/email.service.js';
+import { emitToUser, getIO } from '../services/socket.service.js';
 
 export const authRouter = Router();
 
@@ -623,8 +624,12 @@ authRouter.delete('/account', authMiddleware, async (req: AuthRequest, res: Resp
   const userId = req.user!.id;
 
   try {
-    // Clean up all user associated data safely
-    await runQuery('DELETE FROM tasks WHERE created_by = ? OR assignee_id = ?', [userId, userId]);
+    // 1. Unassign user from tasks created by other users (protect User B's tasks from deletion)
+    await runQuery('UPDATE tasks SET assignee_id = NULL, assignment_status = \'NONE\' WHERE assignee_id = ? AND created_by != ?', [userId, userId]);
+
+    // 2. Clean up tasks created by this user
+    await runQuery('DELETE FROM tasks WHERE created_by = ?', [userId]);
+
     await runQuery('DELETE FROM task_comments WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM task_activity WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM project_members WHERE user_id = ?', [userId]);
@@ -641,9 +646,18 @@ authRouter.delete('/account', authMiddleware, async (req: AuthRequest, res: Resp
     await runQuery('DELETE FROM blocks WHERE blocker_id = ? OR blocked_id = ?', [userId, userId]);
     await runQuery('DELETE FROM notifications WHERE user_id = ?', [userId]);
     await runQuery('DELETE FROM user_settings WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM user_patch_notes WHERE user_id = ?', [userId]);
+    await runQuery('DELETE FROM global_activities WHERE user_id = ?', [userId]);
 
-    // Delete user record
+    // 3. Delete user record
     await runQuery('DELETE FROM users WHERE id = ?', [userId]);
+
+    // 4. Invalidate active socket sessions immediately
+    emitToUser(userId, 'auth:revoked', { reason: 'account_deleted' });
+    const io = getIO();
+    if (io) {
+      io.in(`user:${userId}`).disconnectSockets(true);
+    }
 
     res.json({ success: true, message: 'Your SHIORI account has been permanently deleted.' });
   } catch (error: any) {
