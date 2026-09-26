@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "npm --prefix server run dev",
-    "build": "npm --prefix server install && npm --prefix server run build",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install && npm --prefix server run build",
     "start": "npm --prefix server run start"
   },
   "keywords": [
