@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import dns from 'dns';
+import { config } from '../config.js';
 
 try {
   dns.setDefaultResultOrder('ipv4first');
@@ -274,7 +275,7 @@ Username: ${username}
 SHIORI ID: ${shioriId}
 Email: ${cleanTo}
 
-You can now sign in at https://swaplyone-shiori.onrender.com/login using your username or email.
+You can now sign in at ${config.clientUrl}/login using your username or email.
 
 SHIORI — A SwaplyOne product • Plan. Build. Verify.`;
 
