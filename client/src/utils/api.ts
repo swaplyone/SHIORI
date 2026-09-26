@@ -11,7 +11,7 @@ export const API_BASE_URL = (
     window.location.port === '5173' ||
     window.location.port === '3000' ||
     window.location.port === '4000'
-  ) ? '' : 'https://shiori-backend.onrender.com')
+  ) ? '' : 'https://shiori-vw8w.onrender.com')
 ).replace(/\/+$/, '');
 
 export function getApiUrl(path: string): string {

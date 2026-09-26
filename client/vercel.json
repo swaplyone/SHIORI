@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://shiori-backend.onrender.com/api/$1"
+      "destination": "https://shiori-vw8w.onrender.com/api/$1"
     },
     {
       "source": "/socket.io/(.*)",
-      "destination": "https://shiori-backend.onrender.com/socket.io/$1"
+      "destination": "https://shiori-vw8w.onrender.com/socket.io/$1"
     },
     {
       "source": "/(.*)",
