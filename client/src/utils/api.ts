@@ -1,8 +1,10 @@
 // Central API configuration and safe fetch utilities for SHIORI
 
+// In browser environments, always use relative paths so Vercel rewrites proxy without CORS issues
 export const API_BASE_URL = (
-  (import.meta as any).env?.VITE_API_URL || 
-  (typeof window !== 'undefined' ? '' : 'https://shiori-vw8w.onrender.com')
+  typeof window !== 'undefined'
+    ? ''
+    : ((import.meta as any).env?.VITE_API_URL || 'https://shiori-vw8w.onrender.com')
 ).replace(/\/+$/, '');
 
 export function getApiUrl(path: string): string {
