@@ -821,8 +821,7 @@ export async function queryAll<T = any>(sql: string, params: any[] = []): Promis
       const result = await pgPool.query(pgSql, pgParams);
       return result.rows as T[];
     } catch (err: any) {
-      console.error('[DATABASE PG ERROR queryAll]', err.message);
-      return [];
+      console.error('[DATABASE PG ERROR queryAll - falling back to SQLite]', err.message);
     }
   }
 
@@ -846,8 +845,7 @@ export async function queryOne<T = any>(sql: string, params: any[] = []): Promis
       const res = await pgPool.query(pgSql, pgParams);
       return (res.rows[0] as T) || null;
     } catch (err: any) {
-      console.error('[DATABASE PG ERROR queryOne]', err.message);
-      return null;
+      console.error('[DATABASE PG ERROR queryOne - falling back to SQLite]', err.message);
     }
   }
 
@@ -871,8 +869,7 @@ export async function runQuery(sql: string, params: any[] = []): Promise<void> {
       await pgPool.query(pgSql, pgParams);
       return;
     } catch (err: any) {
-      console.error('[DATABASE PG ERROR runQuery]', err.message);
-      return;
+      console.error('[DATABASE PG ERROR runQuery - falling back to SQLite]', err.message);
     }
   }
 
@@ -888,15 +885,18 @@ export async function runQuery(sql: string, params: any[] = []): Promise<void> {
  * Initializes the database connection on server start
  */
 export async function initDatabaseConnection(): Promise<void> {
+  // Always initialize local SQLite engine so it's ready as an immediate resilient fallback
+  await getDb();
+
   if (pgPool) {
     try {
       await initPgSchema(pgPool);
       console.log('[DATABASE STATUS] ✓ Connected to permanent Supabase PostgreSQL cloud database.');
     } catch (err: any) {
       console.error('[DATABASE CONNECT ERROR]', err.message);
+      console.log(`[DATABASE STATUS] Resilient SQLite fallback active at: ${dbFilePath}`);
     }
   } else {
-    await getDb();
     console.log(`[DATABASE STATUS] ✓ Using local SQLite database at: ${dbFilePath}`);
   }
 }
