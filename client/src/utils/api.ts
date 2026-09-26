@@ -2,16 +2,7 @@
 
 export const API_BASE_URL = (
   (import.meta as any).env?.VITE_API_URL || 
-  (typeof window !== 'undefined' && (
-    window.location.hostname === 'localhost' || 
-    window.location.hostname === '127.0.0.1' || 
-    window.location.hostname.startsWith('192.168.') || 
-    window.location.hostname.startsWith('10.') || 
-    window.location.hostname.endsWith('.local') ||
-    window.location.port === '5173' ||
-    window.location.port === '3000' ||
-    window.location.port === '4000'
-  ) ? '' : 'https://shiori-vw8w.onrender.com')
+  (typeof window !== 'undefined' ? '' : 'https://shiori-vw8w.onrender.com')
 ).replace(/\/+$/, '');
 
 export function getApiUrl(path: string): string {
